@@ -1,0 +1,34 @@
+{
+    "name": "paycrypt-backend",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "PayCrypt Backend",
+    "main": "server.js",
+    "scripts": {
+        "dev": "nodemon server.js",
+        "start": "node server.js",
+        "migrate": "knex migrate:latest",
+        "migrate:rollback": "knex migrate:rollback",
+        "migrate:rollback:all": "knex migrate:rollback --all",
+        "migrate:make": "knex migrate:make",
+        "migrate:status": "knex migrate:status",
+        "seed": "knex seed:run",
+        "seed:make": "knex seed:make",
+        "db:reset": "knex migrate:rollback --all && knex migrate:latest && knex seed:run"
+    },
+    "dependencies": {
+        "express": "^4.18.2",
+        "knex": "^2.5.1",
+        "mysql2": "^3.6.0",
+        "cors": "^2.8.5",
+        "helmet": "^7.0.0",
+        "dotenv": "^16.3.1",
+        "express-rate-limit": "^6.8.1",
+        "joi": "^17.9.2",
+        "bcrypt": "^5.1.0",
+        "jsonwebtoken": "^9.0.1"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.1"
+    }
+}
