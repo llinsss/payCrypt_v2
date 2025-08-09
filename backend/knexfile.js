@@ -25,7 +25,7 @@ const config = {
 
   production: {
     client: "mysql2",
-    connection: {
+    connection: process.env.MYSQL_URL || {
       host: process.env.DB_HOST,
       port: process.env.DB_PORT,
       database: process.env.DB_NAME,
