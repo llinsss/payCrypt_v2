@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { AuthUser } from '../types';
+import { authApi, mapBackendUserToAuthUser } from '../utils/authApi';
+import { ApiError } from '../utils/api';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -29,47 +31,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored auth token and validate
+    // Check for stored auth token and validate with backend
     const token = localStorage.getItem('auth_token');
     if (token) {
-      // In a real app, validate token with backend
-      const mockUser: AuthUser = {
-        id: '1',
-        tag: 'llins',
-        email: 'user@example.com',
-        walletAddress: '0x742d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
-        isVerified: true,
-        kycStatus: 'verified',
-        createdAt: '2024-01-15T10:30:00Z',
-        lastLogin: new Date().toISOString(),
-        role: 'user'
-      };
-      setUser(mockUser);
+      // Try to get current user from backend
+      authApi.getCurrentUser()
+        .then(user => {
+          setUser(user);
+        })
+        .catch(error => {
+          console.error('Failed to validate token:', error);
+          // Token might be invalid, remove it
+          localStorage.removeItem('auth_token');
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    } else {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const mockUser: AuthUser = {
-        id: '1',
-        tag: email.split('@')[0],
-        email,
-        walletAddress: '0x742d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
-        isVerified: true,
-        kycStatus: 'verified',
-        createdAt: '2024-01-15T10:30:00Z',
-        lastLogin: new Date().toISOString(),
-        role: email.includes('admin') ? 'admin' : 'user'
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem('auth_token', 'mock_token_' + Date.now());
+      const response = await authApi.login({ email, password });
+      const user = mapBackendUserToAuthUser(response.user);
+      setUser(user);
     } catch (error) {
+      if (error instanceof ApiError) {
+        throw new Error(error.message);
+      }
       throw new Error('Login failed');
     } finally {
       setIsLoading(false);
@@ -79,24 +71,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const register = async (tag: string, email: string, password: string, walletAddress: string) => {
     setIsLoading(true);
     try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const newUser: AuthUser = {
-        id: Date.now().toString(),
-        tag,
-        email,
-        walletAddress,
-        isVerified: false,
-        kycStatus: 'none',
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        role: 'user'
-      };
-      
-      setUser(newUser);
-      localStorage.setItem('auth_token', 'mock_token_' + Date.now());
+      const response = await authApi.register({ 
+        email, 
+        tag, 
+        address: walletAddress, 
+        password 
+      });
+      const user = mapBackendUserToAuthUser(response.user);
+      setUser(user);
     } catch (error) {
+      if (error instanceof ApiError) {
+        throw new Error(error.message);
+      }
       throw new Error('Registration failed');
     } finally {
       setIsLoading(false);
@@ -104,8 +90,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
+    authApi.logout();
     setUser(null);
-    localStorage.removeItem('auth_token');
   };
 
   const updateUser = (userData: Partial<AuthUser>) => {
