@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, LogIn, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface LoginFormData {
   email: string;
@@ -16,6 +17,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const { login, isLoading } = useAuth();
+  const navigate = useNavigate();
   
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>();
 
@@ -23,6 +25,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
     try {
       setError('');
       await login(data.email, data.password);
+      navigate('/');
     } catch (err) {
       setError('Invalid email or password');
     }

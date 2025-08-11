@@ -5,7 +5,6 @@ import {
   ArrowRightLeft, 
   CreditCard, 
   Settings, 
-  Shield,
   BarChart3,
   QrCode,
   Users,
@@ -14,33 +13,32 @@ import {
   UserPlus,
   Coins
 } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 import PayCryptLogo from './Logo';
 
 interface SidebarProps {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
   isAdmin?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isAdmin = false }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
   const userMenuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Home },
-    { id: 'balances', label: 'Balances', icon: CreditCard },
-    { id: 'multi-currency', label: 'Multi-Currency', icon: Coins },
-    { id: 'deposits', label: 'Deposits', icon: ArrowUpDown },
-    { id: 'qr-code', label: 'QR Code', icon: QrCode },
-    { id: 'withdraw', label: 'Withdraw', icon: CreditCard },
-    { id: 'swap', label: 'Swap', icon: ArrowRightLeft },
-    { id: 'bills', label: 'Pay Bills', icon: Receipt },
-    { id: 'split', label: 'Split Payment', icon: UserPlus },
-    { id: 'settings', label: 'Settings', icon: Settings }
+    { to: '/', label: 'Dashboard', icon: Home, end: true },
+    { to: '/balances', label: 'Balances', icon: CreditCard },
+    { to: '/multi-currency', label: 'Multi-Currency', icon: Coins },
+    { to: '/deposits', label: 'Deposits', icon: ArrowUpDown },
+    { to: '/qr-code', label: 'QR Code', icon: QrCode },
+    { to: '/withdraw', label: 'Withdraw', icon: CreditCard },
+    { to: '/swap', label: 'Swap', icon: ArrowRightLeft },
+    { to: '/bills', label: 'Pay Bills', icon: Receipt },
+    { to: '/split', label: 'Split Payment', icon: UserPlus },
+    { to: '/settings', label: 'Settings', icon: Settings }
   ];
 
   const adminMenuItems = [
-    { id: 'admin-overview', label: 'Overview', icon: BarChart3 },
-    { id: 'admin-users', label: 'Users', icon: Users },
-    { id: 'admin-transactions', label: 'Payouts', icon: DollarSign },
-    { id: 'admin-analytics', label: 'Analytics', icon: BarChart3 }
+    { to: '/admin/overview', label: 'Overview', icon: BarChart3 },
+    { to: '/admin/users', label: 'Users', icon: Users },
+    { to: '/admin/payouts', label: 'Payouts', icon: DollarSign },
+    { to: '/admin/analytics', label: 'Analytics', icon: BarChart3 }
   ];
 
   const menuItems = isAdmin ? adminMenuItems : userMenuItems;
@@ -54,21 +52,24 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isAdmin = fal
       <nav className="px-4 space-y-1 flex-1">
         {menuItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          
           return (
-            <button
-              key={item.id}
-              onClick={() => onTabChange(item.id)}
-              className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-left transition-colors duration-200 ${
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) => `w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-left transition-colors duration-200 ${
                 isActive
                   ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
               }`}
             >
-              <Icon className={`w-5 h-5 ${isActive ? 'text-blue-700' : 'text-gray-400'}`} />
-              <span className="font-medium">{item.label}</span>
-            </button>
+              {({ isActive }) => (
+                <>
+                  <Icon className={`w-5 h-5 ${isActive ? 'text-blue-700' : 'text-gray-400'}`} />
+                  <span className="font-medium">{item.label}</span>
+                </>
+              )}
+            </NavLink>
           );
         })}
       </nav>

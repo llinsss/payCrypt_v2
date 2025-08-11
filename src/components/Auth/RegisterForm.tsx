@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, UserPlus, Loader2, Wallet } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface RegisterFormData {
   tag: string;
@@ -21,6 +22,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const { register: registerUser, isLoading } = useAuth();
+  const navigate = useNavigate();
   
   const { register, handleSubmit, formState: { errors }, watch } = useForm<RegisterFormData>();
   const password = watch('password');
@@ -29,6 +31,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
     try {
       setError('');
       await registerUser(data.tag, data.email, data.password, data.walletAddress);
+      navigate('/');
     } catch (err) {
       setError('Registration failed. Please try again.');
     }
