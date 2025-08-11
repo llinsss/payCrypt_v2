@@ -22,7 +22,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
   const [error, setError] = useState('');
   const { register: registerUser, isLoading } = useAuth();
   
-  const { register, handleSubmit, formState: { errors }, watch } = useForm<RegisterFormData>();
+  const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm<RegisterFormData>();
   const password = watch('password');
 
   const onSubmit = async (data: RegisterFormData) => {
@@ -30,7 +30,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
       setError('');
       await registerUser(data.tag, data.email, data.password, data.walletAddress);
     } catch (err) {
-      setError('Registration failed. Please try again.');
+      const message = err instanceof Error ? err.message : 'Registration failed. Please try again.';
+      setError(message);
     }
   };
 
@@ -118,8 +119,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
                 type="button"
                 onClick={() => {
                   const address = generateWallet();
-                  // In a real app, you'd set this value properly
-                  console.log('Generated address:', address);
+                  setValue('walletAddress', address, { shouldValidate: true });
                 }}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-600 hover:text-blue-800"
                 title="Generate new wallet"
