@@ -2,7 +2,7 @@
 
 A comprehensive backend API built with modern JavaScript using ES6 modules.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Runtime:** Node.js
 - **Framework:** Express.js
@@ -18,7 +18,7 @@ A comprehensive backend API built with modern JavaScript using ES6 modules.
 - MySQL (v8.0 or higher)
 - npm or yarn
 
-## 🚀 Quick Setup
+## Quick Setup
 
 ### 1. Clone and Install Dependencies
 
@@ -151,7 +151,7 @@ curl -X POST http://localhost:3000/api/auth/login \
   }'
 ```
 
-## 🛡️ Security Features
+##  Security Features
 
 - **Helmet** - Sets security headers
 - **CORS** - Cross-origin resource sharing
@@ -177,7 +177,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 2. Check token format: `Bearer <token>`
 3. Verify token hasn't expired (24h default)
 
-## 🚀 Deployment Tips
+## Deployment Tips
 
 1. Set `NODE_ENV=production` in production
 2. Use proper MySQL credentials
@@ -187,4 +187,4 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 ---
 
-Happy coding! 🎉
+Happy coding! 
