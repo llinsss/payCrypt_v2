@@ -113,7 +113,7 @@ function AppRoutes() {
           <Route path="overview" element={<AdminDashboard />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="payouts" element={<AdminPayouts />} />
-          <Route path="analytics" element={<div className=\"text-center py-12 text-gray-500\">Admin Analytics Panel - Coming Soon</div>} />
+          <Route path="analytics" element={<div className="text-center py-12 text-gray-500">Admin Analytics Panel - Coming Soon</div>} />
         </Route>
       </Route>
 
