@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, UserPlus, Loader2, Wallet } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -25,6 +25,23 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
   const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm<RegisterFormData>();
   const password = watch('password');
 
+  useEffect(() => {
+    const eth = (window as any).ethereum;
+    if (!eth) return;
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (accounts && accounts[0]) {
+        setValue('walletAddress', accounts[0], { shouldValidate: true });
+      }
+    };
+
+    eth.on?.('accountsChanged', handleAccountsChanged);
+
+    return () => {
+      eth.removeListener?.('accountsChanged', handleAccountsChanged);
+    };
+  }, [setValue]);
+
   const onSubmit = async (data: RegisterFormData) => {
     try {
       setError('');
@@ -35,10 +52,24 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
     }
   };
 
-  const generateWallet = () => {
-    // Mock wallet generation
-    const mockAddress = '0x' + Math.random().toString(16).substr(2, 40);
-    return mockAddress;
+  const connectWallet = async () => {
+    try {
+      setError('');
+      const eth = (window as any).ethereum;
+      if (!eth) {
+        setError('No Ethereum provider found. Install MetaMask and try again.');
+        return;
+      }
+      const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' });
+      if (accounts && accounts[0]) {
+        setValue('walletAddress', accounts[0], { shouldValidate: true });
+      } else {
+        setError('No accounts returned from wallet.');
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to connect wallet.';
+      setError(message);
+    }
   };
 
   return (
@@ -117,12 +148,9 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
               />
               <button
                 type="button"
-                onClick={() => {
-                  const address = generateWallet();
-                  setValue('walletAddress', address, { shouldValidate: true });
-                }}
+                onClick={() => { connectWallet(); }}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-600 hover:text-blue-800"
-                title="Generate new wallet"
+                title="Connect wallet (MetaMask)"
               >
                 <Wallet className="w-5 h-5" />
               </button>
