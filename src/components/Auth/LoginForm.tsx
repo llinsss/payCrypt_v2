@@ -4,7 +4,7 @@ import { Eye, EyeOff, LogIn, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface LoginFormData {
-  email: string;
+  entity: string;
   password: string;
 }
 
@@ -22,9 +22,10 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
   const onSubmit = async (data: LoginFormData) => {
     try {
       setError('');
-      await login(data.email, data.password);
+      await login(data.entity, data.password);
     } catch (err) {
-      setError('Invalid email or password');
+      const message = err instanceof Error ? err.message : 'Invalid credentials';
+      setError(message);
     }
   };
 
@@ -42,22 +43,18 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address
+              Email or Tag
             </label>
             <input
-              {...register('email', { 
-                required: 'Email is required',
-                pattern: {
-                  value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                  message: 'Invalid email address'
-                }
+              {...register('entity', { 
+                required: 'Email or tag is required'
               })}
-              type="email"
+              type="text"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-              placeholder="Enter your email"
+              placeholder="Enter your email or @tag"
             />
-            {errors.email && (
-              <p className="text-red-600 text-sm mt-1">{errors.email.message}</p>
+            {errors.entity && (
+              <p className="text-red-600 text-sm mt-1">{errors.entity.message}</p>
             )}
           </div>
 

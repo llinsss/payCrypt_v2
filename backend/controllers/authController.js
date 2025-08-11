@@ -4,20 +4,23 @@ import User from "../models/User.js";
 export const register = async (req, res) => {
   try {
     const { email, tag, address, password } = req.body;
+    // Normalize inputs
+    const normalizedEmail = (email || "").trim().toLowerCase();
+    const normalizedTag = (tag || "").trim();
 
     // Check if user email already exists
-    const existingUserEmail = await User.findByEmail(email);
+    const existingUserEmail = await User.findByEmail(normalizedEmail);
     if (existingUserEmail) {
-      return res.status(400).json({ error: "User email already exists" });
+      return res.status(409).json({ error: "User email already exists" });
     }
 
     // Check if user tag already exists
-    const existingUserTag = await User.findByTag(tag);
+    const existingUserTag = await User.findByTag(normalizedTag);
     if (existingUserTag) {
-      return res.status(400).json({ error: "User tag already exists" });
+      return res.status(409).json({ error: "User tag already exists" });
     }
     // Create new user
-    const user = await User.create({ email, tag, address, password });
+    const user = await User.create({ email: normalizedEmail, tag: normalizedTag, address, password });
 
     // Generate JWT token
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
