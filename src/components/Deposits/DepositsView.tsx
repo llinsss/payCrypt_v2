@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, QrCode, Share2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Copy, Share2, CheckCircle, AlertCircle } from 'lucide-react';
 import { mockUser, mockChains, mockTokens } from '../../utils/mockData';
 
 const DepositsView: React.FC = () => {
@@ -7,7 +7,6 @@ const DepositsView: React.FC = () => {
   const [copiedAddress, setCopiedAddress] = useState('');
 
   const userTag = `@${mockUser.tag}`;
-  const depositAddress = mockUser.walletAddress;
 
   const handleCopy = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
@@ -30,7 +29,6 @@ const DepositsView: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900 mb-2">How to Receive Crypto</h3>
             <div className="text-gray-700 space-y-1">
               <p>• Share your unique tag <span className="font-mono bg-white px-2 py-1 rounded text-blue-600">{userTag}</span> with senders</p>
-              <p>• Or use your wallet address for direct deposits</p>
               <p>• Funds will appear in your balance once confirmed on-chain</p>
             </div>
           </div>
@@ -93,36 +91,7 @@ const DepositsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Wallet Address */}
-      <div className="bg-white rounded-xl p-6 border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Wallet Address ({selectedChainData?.name})
-        </h3>
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <div className="text-sm text-gray-500 mb-1">Deposit Address</div>
-              <div className="font-mono text-gray-900 break-all">{depositAddress}</div>
-            </div>
-            <div className="flex space-x-2 ml-4">
-              <button
-                onClick={() => handleCopy(depositAddress, 'address')}
-                className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                {copiedAddress === 'address' ? (
-                  <CheckCircle className="w-5 h-5 text-emerald-600" />
-                ) : (
-                  <Copy className="w-5 h-5" />
-                )}
-              </button>
-              <button className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors">
-                <QrCode className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      
       {/* Supported Tokens */}
       <div className="bg-white rounded-xl p-6 border border-gray-200">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Eye, EyeOff, UserPlus, Loader2, Wallet } from 'lucide-react';
+import { Eye, EyeOff, UserPlus, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,7 +9,6 @@ interface RegisterFormData {
   email: string;
   password: string;
   confirmPassword: string;
-  walletAddress: string;
   acceptTerms: boolean;
 }
 
@@ -27,20 +26,19 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
   const { register, handleSubmit, formState: { errors }, watch } = useForm<RegisterFormData>();
   const password = watch('password');
 
+  // Account abstraction: generate a wallet on signup (frontend mock). In production,
+  // the backend should create and return the wallet for the user.
+  const generateWallet = () => '0x' + Math.random().toString(16).substr(2, 40);
+
   const onSubmit = async (data: RegisterFormData) => {
     try {
       setError('');
-      await registerUser(data.tag, data.email, data.password, data.walletAddress);
+      const generatedAddress = generateWallet();
+      await registerUser(data.tag, data.email, data.password, generatedAddress);
       navigate('/');
     } catch (err) {
       setError('Registration failed. Please try again.');
     }
-  };
-
-  const generateWallet = () => {
-    // Mock wallet generation
-    const mockAddress = '0x' + Math.random().toString(16).substr(2, 40);
-    return mockAddress;
   };
 
   return (
@@ -97,41 +95,6 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
             />
             {errors.email && (
               <p className="text-red-600 text-sm mt-1">{errors.email.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Wallet Address
-            </label>
-            <div className="relative">
-              <input
-                {...register('walletAddress', { 
-                  required: 'Wallet address is required',
-                  pattern: {
-                    value: /^0x[a-fA-F0-9]{40}$/,
-                    message: 'Invalid Ethereum address'
-                  }
-                })}
-                type="text"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors pr-12"
-                placeholder="0x..."
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const address = generateWallet();
-                  // In a real app, you'd set this value properly
-                  console.log('Generated address:', address);
-                }}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-600 hover:text-blue-800"
-                title="Generate new wallet"
-              >
-                <Wallet className="w-5 h-5" />
-              </button>
-            </div>
-            {errors.walletAddress && (
-              <p className="text-red-600 text-sm mt-1">{errors.walletAddress.message}</p>
             )}
           </div>
 
