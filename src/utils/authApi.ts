@@ -3,7 +3,7 @@ import { AuthUser } from '../types';
 
 // Auth API interfaces
 export interface LoginRequest {
-  email: string;
+  entity: string;
   password: string;
 }
 
@@ -21,11 +21,8 @@ export interface AuthResponse {
     id: string;
     email: string;
     tag: string;
-    address: string;
-    isVerified: boolean;
-    kycStatus: string;
-    createdAt: string;
-    role?: string;
+    photo: string;
+    kyc_status: string;
   };
 }
 
@@ -73,8 +70,8 @@ export const authApi = {
   // Get current user (if we add a /me endpoint later)
   async getCurrentUser(): Promise<AuthUser> {
     try {
-      const response = await apiClient.get<{ user: AuthUser }>('/auth/me');
-      return response.user;
+      const response = await apiClient.get<{ user: AuthResponse['user'] }>('/auth/me');
+      return mapBackendUserToAuthUser(response.user);
     } catch (error) {
       console.error('Failed to get current user:', error);
       throw error;
@@ -95,15 +92,31 @@ export const authApi = {
 
 // Helper function to convert backend user to frontend AuthUser format
 export const mapBackendUserToAuthUser = (backendUser: AuthResponse['user']): AuthUser => {
+  // Map backend KYC status to frontend format
+  const mapKycStatus = (status: string): 'none' | 'pending' | 'verified' | 'rejected' => {
+    switch (status) {
+      case 'not_started':
+        return 'none';
+      case 'pending':
+        return 'pending';
+      case 'verified':
+        return 'verified';
+      case 'rejected':
+        return 'rejected';
+      default:
+        return 'none';
+    }
+  };
+
   return {
     id: backendUser.id,
     tag: backendUser.tag,
     email: backendUser.email,
-    walletAddress: backendUser.address,
-    isVerified: backendUser.isVerified,
-    kycStatus: backendUser.kycStatus as 'none' | 'pending' | 'verified' | 'rejected',
-    createdAt: backendUser.createdAt,
+    walletAddress: '', // Will need to get this from user profile or wallet endpoint
+    isVerified: false, // Default value, can be updated later
+    kycStatus: mapKycStatus(backendUser.kyc_status),
+    createdAt: new Date().toISOString(), // Default to current time
     lastLogin: new Date().toISOString(),
-    role: (backendUser.role as 'user' | 'admin') || 'user'
+    role: 'user' // Default role
   };
 };
