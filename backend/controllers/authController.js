@@ -6,7 +6,7 @@ export const register = async (req, res) => {
     const { email, tag, address, password } = req.body;
     // Normalize inputs
     const normalizedEmail = (email || "").trim().toLowerCase();
-    const normalizedTag = (tag || "").trim();
+    const normalizedTag = (tag || "").trim().toLowerCase();
 
     // Check if user email already exists
     const existingUserEmail = await User.findByEmail(normalizedEmail);
@@ -47,8 +47,14 @@ export const login = async (req, res) => {
   try {
     const { entity, password } = req.body;
 
+    // Normalize login entity: allow email or @tag, trim, and lowercase
+    const rawEntity = (entity || "").trim();
+    const stripped = rawEntity.startsWith("@") ? rawEntity.slice(1) : rawEntity;
+    const isEmailLike = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(stripped);
+    const lookupEntity = isEmailLike ? stripped.toLowerCase() : stripped.toLowerCase();
+
     // Find user by entity
-    const user = await User.findByEntity(entity);
+    const user = await User.findByEntity(lookupEntity);
     if (!user) {
       return res.status(400).json({ error: "Invalid credentials" });
     }
