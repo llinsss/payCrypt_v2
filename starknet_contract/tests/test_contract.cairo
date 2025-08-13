@@ -45,18 +45,18 @@ fn test_contract_deployment() {
 
 #[test]
 fn test_register_tag() {
-    let aji: ContractAddress = contract_address_const::<'aji'>();
+    let collins: ContractAddress = contract_address_const::<'collins'>();
     let contract_address = deploy_contract("TagRouter");
     let dispatcher = ITagRouterDispatcher { contract_address };
-    let aji_address = dispatcher.register_tag('Aji', aji);
+    let collins_address = dispatcher.register_tag('collins', collins);
 
-    let ajiadd: felt252 = aji_address.into();
+    let collinsadd: felt252 = collins_address.into();
 
-    println!("aji address {} :", ajiadd);
+    println!("collins address {} :", collinsadd);
 
-    let Aji = dispatcher.get_user('Aji');
-    assert(Aji.owner == aji, 'wrong address');
-    assert(Aji.user_wallet == aji_address, 'wrong balance');
-    assert(Aji.exists, 'wrong name');
+    let Collins = dispatcher.get_user('collins');
+    assert(Collins.owner == collins, 'wrong address');
+    assert(Collins.user_wallet == collins_address, 'wrong balance');
+    assert(Collins.exists, 'exists');
 }
 
