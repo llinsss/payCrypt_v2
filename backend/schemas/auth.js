@@ -6,10 +6,11 @@ export const authSchemas = {
     email: Joi.string().email().required(),
     address: Joi.any().allow("", null),
     password: Joi.string().min(6).required(),
+    role: Joi.any().allow("", null),
   }),
 
   login: Joi.object({
-    entity: Joi.string().required(),
+    email: Joi.string().required(),
     password: Joi.string().required(),
   }),
 };

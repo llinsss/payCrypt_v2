@@ -1,9 +1,11 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import knex from "knex";
+import { createUserBalance } from "./balanceController.js";
 
 export const register = async (req, res) => {
   try {
-    const { email, tag, address, password } = req.body;
+    const { email, tag, address, password, role } = req.body;
 
     // Check if user email already exists
     const existingUserEmail = await User.findByEmail(email);
@@ -16,24 +18,30 @@ export const register = async (req, res) => {
     if (existingUserTag) {
       return res.status(400).json({ error: "User tag already exists" });
     }
+    const photo = `https://api.dicebear.com/9.x/initials/svg?seed=${tag}`;
     // Create new user
-    const user = await User.create({ email, tag, address, password });
+    const user = await User.create({
+      email,
+      tag,
+      address,
+      password,
+      photo,
+      role,
+    });
 
     // Generate JWT token
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
       expiresIn: "24h",
     });
 
+    user.password = undefined;
+
+    const create_balances = await createUserBalance(user.id);
+
     res.status(201).json({
       message: "User registered successfully",
       token,
-      user: {
-        id: user.id,
-        tag: user.tag,
-        email: user.email,
-        photo: user.photo,
-        kyc_status: user.kyc_status,
-      },
+      user,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -42,10 +50,10 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { entity, password } = req.body;
+    const { email, password } = req.body;
 
-    // Find user by entity
-    const user = await User.findByEntity(entity);
+    // Find user by email
+    const user = await User.findByEmail(email);
     if (!user) {
       return res.status(400).json({ error: "Invalid credentials" });
     }
@@ -61,16 +69,17 @@ export const login = async (req, res) => {
       expiresIn: "24h",
     });
 
+    const last_login = new Date();
+    const update_user = await User.update(user.id, {
+      last_login: new Date(),
+    });
+
+    user.password = undefined;
+
     res.json({
       message: "Login successful",
       token,
-      user: {
-        id: user.id,
-        tag: user.tag,
-        email: user.email,
-        photo: user.photo,
-        kyc_status: user.kyc_status,
-      },
+      user: { ...user, last_login },
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

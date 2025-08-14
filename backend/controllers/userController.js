@@ -1,3 +1,5 @@
+import Balance from "../models/Balance.js";
+import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 
 export const profile = async (req, res) => {
@@ -11,7 +13,34 @@ export const profile = async (req, res) => {
 
     // Remove password from response
     const { password, ...userWithoutPassword } = user;
-    res.json(userWithoutPassword);
+    res.json({
+      message: "Profile fetched",
+      user: userWithoutPassword,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const dashboard_summary = async (req, res) => {
+  try {
+    const { id } = req.user;
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const total_balance = await Balance.totalBalanceByUser(user.id);
+    const total_deposit = await Transaction.totalDepositByUser(user.id);
+    const total_withdrawal = await Transaction.totalWithdrawalByUser(user.id);
+    res.json({
+      total_balance: total_balance[0]?.amount ? Number(total_balance[0].amount) : 0,
+      total_deposit: total_deposit[0]?.amount ? Number(total_deposit[0].amount) : 0,
+      total_withdrawal: total_withdrawal[0]?.amount
+        ? Number(total_withdrawal[0].amount)
+        : 0,
+      portfolio_growth: 0,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

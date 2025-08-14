@@ -8,7 +8,7 @@ const Kyc = {
 
   async findById(id) {
     return await db("kyc")
-      .select("kyc.*", "users.email as email", "users.tag as tag")
+      .select("kyc.*", "users.email as user_email", "users.tag as user_tag")
       .leftJoin("users", "kyc.user_id", "users.id")
       .where("kyc.id", id)
       .first();
@@ -16,7 +16,7 @@ const Kyc = {
 
   async getAll(limit = 10, offset = 0) {
     return await db("kyc")
-      .select("kyc.*", "users.email as email", "users.tag as tag")
+      .select("kyc.*", "users.email as user_email", "users.tag as user_tag")
       .leftJoin("users", "kyc.user_id", "users.id")
       .limit(limit)
       .offset(offset)

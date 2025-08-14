@@ -12,7 +12,7 @@ const WithdrawView: React.FC = () => {
 
   const selectedBalance = mockBalances.find(b => b.symbol === selectedAsset);
   const maxAmount = selectedBalance?.amount || 0;
-  const usdValue = amount ? parseFloat(amount) * (selectedBalance?.usdValue || 0) / (selectedBalance?.amount || 1) : 0;
+  const usd_value = amount ? parseFloat(amount) * (selectedBalance?.usd_value || 0) / (selectedBalance?.amount || 1) : 0;
 
   const handleMaxClick = () => {
     setAmount(maxAmount.toString());
@@ -87,7 +87,7 @@ const WithdrawView: React.FC = () => {
           >
             {mockBalances.map(balance => (
               <option key={balance.symbol} value={balance.symbol}>
-                {balance.symbol} - {formatCrypto(balance.amount, balance.symbol)} ({formatCurrency(balance.usdValue)})
+                {balance.symbol} - {formatCrypto(balance.amount, balance.symbol)} ({formatCurrency(balance.usd_value)})
               </option>
             ))}
           </select>
@@ -117,7 +117,7 @@ const WithdrawView: React.FC = () => {
           
           <div className="flex justify-between text-sm text-gray-600">
             <span>Available: {formatCrypto(maxAmount, selectedAsset)}</span>
-            {amount && <span>≈ {formatCurrency(usdValue)}</span>}
+            {amount && <span>≈ {formatCurrency(usd_value)}</span>}
           </div>
         </div>
       </div>
@@ -167,7 +167,7 @@ const WithdrawView: React.FC = () => {
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Platform Fee (1%):</span>
-            <span className="font-medium">{formatCurrency(usdValue * 0.01)}</span>
+            <span className="font-medium">{formatCurrency(usd_value * 0.01)}</span>
           </div>
           {withdrawType === 'fiat' && (
             <div className="flex justify-between">
@@ -178,7 +178,7 @@ const WithdrawView: React.FC = () => {
           <div className="border-t border-gray-300 pt-2 mt-2">
             <div className="flex justify-between text-base font-semibold">
               <span>Total Fees:</span>
-              <span>${(2.50 + (usdValue * 0.01) + (withdrawType === 'fiat' ? 5 : 0)).toFixed(2)}</span>
+              <span>${(2.50 + (usd_value * 0.01) + (withdrawType === 'fiat' ? 5 : 0)).toFixed(2)}</span>
             </div>
           </div>
         </div>

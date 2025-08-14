@@ -32,7 +32,7 @@ const SettingsView: React.FC = () => {
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Wallet Address</label>
-                  <div className="text-gray-900 font-mono text-sm break-all">{user?.walletAddress}</div>
+                  <div className="text-gray-900 font-mono text-sm break-all">{user?.address}</div>
                 </div>
               </div>
             </div>

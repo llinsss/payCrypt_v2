@@ -19,12 +19,12 @@ const AdminDashboard: React.FC = () => {
       tag: 'john_doe',
       token: 'USDC',
       amount: 1000,
-      usdValue: 1000,
+      usd_value: 1000,
       status: 'completed' as const,
-      txHash: '0x456...def',
+      tx_hash: '0x456...def',
       chain: 'ethereum',
       timestamp: '2024-01-20T11:30:00Z',
-      fromAddress: '0x123...abc'
+      from_address: '0x123...abc'
     },
     {
       id: '5',
@@ -32,11 +32,11 @@ const AdminDashboard: React.FC = () => {
       tag: 'alice_crypto',
       token: 'ETH',
       amount: 0.8,
-      usdValue: 1960,
+      usd_value: 1960,
       status: 'pending' as const,
       chain: 'ethereum',
       timestamp: '2024-01-20T10:15:00Z',
-      toAddress: '0x789...ghi'
+      to_address: '0x789...ghi'
     }
   ];
 

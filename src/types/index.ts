@@ -1,34 +1,47 @@
 export interface User {
   id: string;
   tag: string;
-  walletAddress: string;
-  isVerified: boolean;
-  createdAt: string;
+  address: string;
+  is_verified: boolean;
+  created_at: string;
   totalDeposits: number;
   totalWithdrawals: number;
 }
 
 export interface Balance {
+  user_id: string;
   token: string;
   symbol: string;
   amount: number;
-  usdValue: number;
-  chain: string;
+  usd_value: number;
+  address: string;
+  tag: string;
+  user_email?: string;
+  user_tag?: string;
 }
 
 export interface Transaction {
   id: string;
-  type: 'deposit' | 'withdrawal' | 'swap' | 'transfer';
-  tag: string;
-  token: string;
+  reference: string;
+  user_id: number;
+  balance_id: number;
+  chain_id: number;
+  type: "deposit" | "withdrawal" | "swap" | "transfer";
   amount: number;
-  usdValue: number;
-  status: 'pending' | 'completed' | 'failed';
-  txHash?: string;
-  chain: string;
-  timestamp: string;
-  fromAddress?: string;
-  toAddress?: string;
+  usd_value: number;
+  status: "pending" | "completed" | "failed";
+  tx_hash?: string;
+  timestamp?: string;
+  from_address?: string;
+  to_address?: string;
+  description?: string;
+  extra?: string;
+  token_name?: string;
+  token_logo_url?: string;
+  token_symbol?: string;
+  token_price?: string;
+  chain_name?: string;
+  chain_symbol?: string;
 }
 
 export interface SwapQuote {
@@ -45,9 +58,9 @@ export interface FiatPayout {
   id: string;
   tag: string;
   amount: number;
-  currency: 'NGN';
-  provider: 'paystack' | 'monnify';
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  currency: "NGN";
+  provider: "paystack" | "monnify";
+  status: "pending" | "processing" | "completed" | "failed";
   bankAccount: string;
   timestamp: string;
   requiresApproval?: boolean;
@@ -59,9 +72,9 @@ export interface Chain {
   id: string;
   name: string;
   symbol: string;
-  rpcUrl: string;
-  blockExplorer: string;
-  nativeCurrency: string;
+  rpc_url: string;
+  block_explorer: string;
+  native_currency: string;
 }
 
 export interface Token {
@@ -69,7 +82,7 @@ export interface Token {
   symbol: string;
   name: string;
   decimals: number;
-  logoUrl: string;
+  logo_url: string;
   chain: string;
   price: number;
 }
@@ -78,22 +91,25 @@ export interface AuthUser {
   id: string;
   tag: string;
   email: string;
-  walletAddress: string;
-  isVerified: boolean;
-  kycStatus: 'none' | 'pending' | 'verified' | 'rejected';
-  createdAt: string;
-  lastLogin: string;
-  role: 'user' | 'admin';
+  address: string;
+  is_verified: boolean;
+  kyc_status: "none" | "pending" | "verified" | "rejected";
+  created_at: string;
+  last_login: string;
+  role: "user" | "admin";
 }
 
 export interface KYCData {
-  fullName: string;
-  phoneNumber: string;
-  bankName: string;
-  accountNumber: string;
+  user_id: string;
+  full_name: string;
+  phone_number: string;
+  bank_name: string;
+  account_number: string;
   bvn?: string;
-  idDocument?: File;
-  proofOfAddress?: File;
+  id_document?: File;
+  proof_of_address?: File;
+  extra_document?: File;
+  extra_content?: string;
 }
 
 export interface AdminStats {
@@ -107,7 +123,7 @@ export interface AdminStats {
 }
 
 export interface WebSocketMessage {
-  type: 'balance_update' | 'transaction_update' | 'system_alert';
+  type: "balance_update" | "transaction_update" | "system_alert";
   data: any;
   timestamp: string;
 }

@@ -13,38 +13,38 @@ const AdminUsers: React.FC = () => {
       id: '1',
       tag: 'llins',
       email: 'llins@example.com',
-      walletAddress: '0x742d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
-      isVerified: true,
-      kycStatus: 'verified',
-      createdAt: '2024-01-15T10:30:00Z',
-      lastLogin: '2024-01-20T14:30:00Z',
+      address: '0x742d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
+      is_verified: true,
+      kyc_status: 'verified',
+      created_at: '2024-01-15T10:30:00Z',
+      last_login: '2024-01-20T14:30:00Z',
       role: 'user'
     },
     {
       id: '2',
       tag: 'crypto_whale',
       email: 'whale@example.com',
-      walletAddress: '0x123d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
-      isVerified: true,
-      kycStatus: 'pending',
-      createdAt: '2024-01-10T08:15:00Z',
-      lastLogin: '2024-01-20T12:00:00Z',
+      address: '0x123d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
+      is_verified: true,
+      kyc_status: 'pending',
+      created_at: '2024-01-10T08:15:00Z',
+      last_login: '2024-01-20T12:00:00Z',
       role: 'user'
     },
     {
       id: '3',
       tag: 'new_user',
       email: 'newuser@example.com',
-      walletAddress: '0x456d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
-      isVerified: false,
-      kycStatus: 'none',
-      createdAt: '2024-01-20T16:45:00Z',
-      lastLogin: '2024-01-20T16:45:00Z',
+      address: '0x456d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
+      is_verified: false,
+      kyc_status: 'none',
+      created_at: '2024-01-20T16:45:00Z',
+      last_login: '2024-01-20T16:45:00Z',
       role: 'user'
     }
   ];
 
-  const getKYCStatusColor = (status: string) => {
+  const getkyc_statusColor = (status: string) => {
     switch (status) {
       case 'verified':
         return 'text-emerald-600 bg-emerald-50';
@@ -73,7 +73,7 @@ const AdminUsers: React.FC = () => {
   const filteredUsers = mockUsers.filter(user => {
     const matchesSearch = user.tag.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === 'all' || user.kycStatus === filterStatus;
+    const matchesFilter = filterStatus === 'all' || user.kyc_status === filterStatus;
     return matchesSearch && matchesFilter;
   });
 
@@ -166,20 +166,20 @@ const AdminUsers: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-mono text-gray-900">
-                      {user.walletAddress.slice(0, 8)}...{user.walletAddress.slice(-6)}
+                      {user.address.slice(0, 8)}...{user.address.slice(-6)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium rounded-full ${getKYCStatusColor(user.kycStatus)}`}>
-                      {getKYCIcon(user.kycStatus)}
-                      <span className="capitalize">{user.kycStatus}</span>
+                    <span className={`inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium rounded-full ${getkyc_statusColor(user.kyc_status)}`}>
+                      {getKYCIcon(user.kyc_status)}
+                      <span className="capitalize">{user.kyc_status}</span>
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(user.createdAt).toLocaleDateString()}
+                    {new Date(user.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(user.lastLogin).toLocaleDateString()}
+                    {new Date(user.last_login).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
@@ -230,26 +230,26 @@ const AdminUsers: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Wallet Address</label>
-                  <div className="text-gray-900 font-mono text-sm break-all">{selectedUser.walletAddress}</div>
+                  <div className="text-gray-900 font-mono text-sm break-all">{selectedUser.address}</div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">KYC Status</label>
-                  <span className={`inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium rounded-full ${getKYCStatusColor(selectedUser.kycStatus)}`}>
-                    {getKYCIcon(selectedUser.kycStatus)}
-                    <span className="capitalize">{selectedUser.kycStatus}</span>
+                  <span className={`inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium rounded-full ${getkyc_statusColor(selectedUser.kyc_status)}`}>
+                    {getKYCIcon(selectedUser.kyc_status)}
+                    <span className="capitalize">{selectedUser.kyc_status}</span>
                   </span>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Joined</label>
-                  <div className="text-gray-900">{new Date(selectedUser.createdAt).toLocaleString()}</div>
+                  <div className="text-gray-900">{new Date(selectedUser.created_at).toLocaleString()}</div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Last Login</label>
-                  <div className="text-gray-900">{new Date(selectedUser.lastLogin).toLocaleString()}</div>
+                  <div className="text-gray-900">{new Date(selectedUser.last_login).toLocaleString()}</div>
                 </div>
               </div>
 
-              {selectedUser.kycStatus === 'pending' && (
+              {selectedUser.kyc_status === 'pending' && (
                 <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                   <h4 className="font-medium text-amber-900 mb-2">KYC Actions</h4>
                   <div className="flex space-x-3">

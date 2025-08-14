@@ -1,23 +1,21 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { AuthUser } from '../types';
-import { authApi, mapBackendUserToAuthUser } from '../utils/authApi';
-import { ApiError } from '../utils/api';
-
-interface AuthContextType {
-  user: AuthUser | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (tag: string, email: string, password: string, walletAddress: string) => Promise<void>;
-  logout: () => void;
-  isLoading: boolean;
-  updateUser: (userData: Partial<AuthUser>) => void;
-}
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import { useNavigate } from "react-router-dom";
+import { authApi, mapBackendUserToAuthUser } from "../utils/authApi";
+import { AuthUser, AuthContextType, RegisterData } from "../types/auth";
+import { ApiError } from "../utils/api";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };
@@ -28,85 +26,87 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false); // For form loading states
+  const navigate = useNavigate();
 
+  // Check for existing token on mount and validate it
   useEffect(() => {
-    // Check for stored auth token and validate with backend
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      // Try to get current user from backend
-      authApi.getCurrentUser()
-        .then(user => {
-          setUser(user);
-        })
-        .catch(error => {
-          console.error('Failed to validate token:', error);
-          // Token might be invalid, remove it
-          localStorage.removeItem('auth_token');
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    } else {
-      setIsLoading(false);
-    }
+    const initializeAuth = async () => {
+      try {
+        if (authApi.isAuthenticated()) {
+          // Validate token by fetching current user
+          const currentUser = await authApi.getCurrentUser();
+          setUser(currentUser);
+        }
+      } catch (error) {
+        console.error("Auth initialization failed:", error);
+        // Token is invalid, remove it
+        authApi.logout();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeAuth();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<void> => {
     setIsLoading(true);
     try {
       const response = await authApi.login({ email, password });
-      const user = mapBackendUserToAuthUser(response.user);
-      setUser(user);
+      const authUser = mapBackendUserToAuthUser(response.user);
+      setUser(authUser);
     } catch (error) {
+      let errorMessage = "Login failed";
+
       if (error instanceof ApiError) {
-        throw new Error(error.message);
+        errorMessage = error.message;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
-      throw new Error('Login failed');
+
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (tag: string, email: string, password: string, walletAddress: string) => {
+  const register = async (userData: RegisterData): Promise<void> => {
     setIsLoading(true);
     try {
-      const response = await authApi.register({ 
-        email, 
-        tag, 
-        address: walletAddress, 
-        password 
-      });
-      const user = mapBackendUserToAuthUser(response.user);
-      setUser(user);
+      const response = await authApi.register(userData);
+      const authUser = mapBackendUserToAuthUser(response.user);
+      setUser(authUser);
     } catch (error) {
+      let errorMessage = "Registration failed";
+
       if (error instanceof ApiError) {
-        throw new Error(error.message);
+        errorMessage = error.message;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
-      throw new Error('Registration failed');
+
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const logout = () => {
+  const logout = (): void => {
     authApi.logout();
     setUser(null);
+    navigate("/login");
   };
 
-  const updateUser = (userData: Partial<AuthUser>) => {
-    if (user) {
-      setUser({ ...user, ...userData });
-    }
-  };
-
-  const value = {
+  const value: AuthContextType = {
     user,
     login,
     register,
     logout,
+    loading,
     isLoading,
-    updateUser
+    isAuthenticated: !!user,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

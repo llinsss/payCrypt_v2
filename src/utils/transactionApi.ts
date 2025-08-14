@@ -7,8 +7,8 @@ export interface CreateTransactionRequest {
   token: string;
   amount: number;
   chain: string;
-  toAddress?: string;
-  fromAddress?: string;
+  to_address?: string;
+  from_address?: string;
 }
 
 export interface TransactionResponse {
@@ -17,13 +17,13 @@ export interface TransactionResponse {
   type: string;
   token: string;
   amount: number;
-  usdValue: number;
+  usd_value: number;
   status: string;
-  txHash?: string;
+  tx_hash?: string;
   chain: string;
-  createdAt: string;
-  fromAddress?: string;
-  toAddress?: string;
+  created_at: string;
+  from_address?: string;
+  to_address?: string;
 }
 
 // Transaction API functions
@@ -92,12 +92,12 @@ export const mapBackendTransactionToTransaction = (backendTransaction: Transacti
     tag: '', // This would need to be populated from user data
     token: backendTransaction.token,
     amount: backendTransaction.amount,
-    usdValue: backendTransaction.usdValue,
+    usd_value: backendTransaction.usd_value,
     status: backendTransaction.status as 'pending' | 'completed' | 'failed',
-    txHash: backendTransaction.txHash,
+    tx_hash: backendTransaction.tx_hash,
     chain: backendTransaction.chain,
-    timestamp: backendTransaction.createdAt,
-    fromAddress: backendTransaction.fromAddress,
-    toAddress: backendTransaction.toAddress
+    timestamp: backendTransaction.created_at,
+    from_address: backendTransaction.from_address,
+    to_address: backendTransaction.to_address
   };
 };

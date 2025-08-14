@@ -23,7 +23,7 @@ const MultiCurrencyView: React.FC = () => {
       token: 'NGN',
       symbol: 'NGN',
       amount: 125000,
-      usdValue: 125000 / 1600, // Assuming 1 USD = 1600 NGN
+      usd_value: 125000 / 1600, // Assuming 1 USD = 1600 NGN
       chain: 'fiat'
     }
   ];
@@ -58,7 +58,7 @@ const MultiCurrencyView: React.FC = () => {
       <div className="bg-gradient-to-br from-blue-600 to-purple-700 rounded-xl p-6 text-white">
         <h3 className="text-lg font-semibold mb-4">Total Portfolio Value</h3>
         <div className="text-3xl font-bold mb-2">
-          {formatCurrency(extendedBalances.reduce((sum, balance) => sum + balance.usdValue, 0))}
+          {formatCurrency(extendedBalances.reduce((sum, balance) => sum + balance.usd_value, 0))}
         </div>
         <div className="flex items-center space-x-2 text-blue-100">
           <TrendingUp className="w-4 h-4" />
@@ -124,7 +124,7 @@ const MultiCurrencyView: React.FC = () => {
                   )}
                 </div>
                 <div className="text-lg font-semibold text-gray-700">
-                  {formatCurrency(balance.usdValue)}
+                  {formatCurrency(balance.usd_value)}
                 </div>
               </div>
 

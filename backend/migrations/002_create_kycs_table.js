@@ -2,12 +2,16 @@ export const up = async (knex) => {
   return knex.schema.createTable("kyc", (table) => {
     table.increments("id").primary();
     table.integer("user_id").unsigned().notNullable();
-    table.string("type", 255);
-    table.string("number", 255);
+    table.string("full_name", 255);
+    table.string("phone_number", 255);
+    table.string("bank_name", 255);
+    table.string("account_number", 255);
+    table.string("bvn", 255);
     table.string("status", 255).defaultTo('pending');
-    table.string("front_image", 255);
-    table.string("back_image", 255);
-    table.text("content");
+    table.string("id_document", 255);
+    table.string("proof_of_address", 255);
+    table.string("extra_document", 255);
+    table.text("extra_content");
     table.timestamp("created_at").defaultTo(knex.fn.now());
     table.timestamp("updated_at").defaultTo(knex.fn.now());
 
