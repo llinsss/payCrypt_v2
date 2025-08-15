@@ -1,5 +1,5 @@
-import { apiClient } from './api';
-import { AuthUser } from '../types';
+import { apiClient } from "./api";
+import { AuthUser } from "../types/auth";
 
 // Auth API interfaces
 export interface LoginRequest {
@@ -22,9 +22,11 @@ export interface AuthResponse {
     email: string;
     tag: string;
     address: string;
-    isVerified: boolean;
-    kycStatus: string;
-    createdAt: string;
+    photo: string;
+    is_verified: boolean;
+    kyc_status: string;
+    created_at: string;
+    updated_at: string;
     role?: string;
   };
 }
@@ -34,16 +36,19 @@ export const authApi = {
   // Login user
   async login(credentials: LoginRequest): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
-      
+      const response = await apiClient.post<AuthResponse>(
+        "/auth/login",
+        credentials
+      );
+
       // Store token in localStorage
       if (response.token) {
-        localStorage.setItem('auth_token', response.token);
+        localStorage.setItem("auth_token", response.token);
       }
-      
+
       return response;
     } catch (error) {
-      console.error('Login failed:', error);
+      console.error("Login failed:", error);
       throw error;
     }
   },
@@ -51,59 +56,73 @@ export const authApi = {
   // Register new user
   async register(userData: RegisterRequest): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<AuthResponse>('/auth/register', userData);
-      
+      const response = await apiClient.post<AuthResponse>(
+        "/auth/register",
+        userData
+      );
+
+      console.log(response);
       // Store token in localStorage
       if (response.token) {
-        localStorage.setItem('auth_token', response.token);
+        localStorage.setItem("auth_token", response.token);
       }
-      
+
       return response;
     } catch (error) {
-      console.error('Registration failed:', error);
+      console.error("Registration failed:", error);
       throw error;
     }
   },
 
   // Logout user
   logout(): void {
-    localStorage.removeItem('auth_token');
+    localStorage.removeItem("auth_token");
   },
 
   // Get current user (if we add a /me endpoint later)
   async getCurrentUser(): Promise<AuthUser> {
     try {
-      const response = await apiClient.get<{ user: AuthUser }>('/auth/me');
+      const response = await apiClient.get<{ user: AuthUser }>(
+        "/users/profile"
+      );
       return response.user;
     } catch (error) {
-      console.error('Failed to get current user:', error);
+      console.error("Failed to get current user:", error);
       throw error;
     }
   },
 
   // Check if user is authenticated
   isAuthenticated(): boolean {
-    const token = localStorage.getItem('auth_token');
+    const token = localStorage.getItem("auth_token");
     return !!token;
   },
 
   // Get stored token
   getToken(): string | null {
-    return localStorage.getItem('auth_token');
-  }
+    return localStorage.getItem("auth_token");
+  },
 };
 
 // Helper function to convert backend user to frontend AuthUser format
-export const mapBackendUserToAuthUser = (backendUser: AuthResponse['user']): AuthUser => {
+export const mapBackendUserToAuthUser = (
+  backendUser: AuthResponse["user"]
+): AuthUser => {
   return {
     id: backendUser.id,
     tag: backendUser.tag,
     email: backendUser.email,
-    walletAddress: backendUser.address,
-    isVerified: backendUser.isVerified,
-    kycStatus: backendUser.kycStatus as 'none' | 'pending' | 'verified' | 'rejected',
-    createdAt: backendUser.createdAt,
-    lastLogin: new Date().toISOString(),
-    role: (backendUser.role as 'user' | 'admin') || 'user'
+    address: backendUser.address,
+    photo: backendUser.photo,
+    is_verified: backendUser.is_verified,
+    kyc_status: backendUser.kyc_status as
+      | "none"
+      | "pending"
+      | "verified"
+      | "rejected",
+    created_at: backendUser.created_at,
+    updated_at: backendUser.updated_at,
+    last_login: new Date().toISOString(),
+    role: (backendUser.role as "user" | "admin") || "user",
   };
 };

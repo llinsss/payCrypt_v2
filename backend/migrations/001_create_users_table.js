@@ -5,8 +5,11 @@ export const up = async (knex) => {
     table.string("email", 100).unique().notNullable();
     table.string("password", 255).notNullable();
     table.string("address", 255).notNullable();
+    table.string("kyc_status", 255).defaultTo("none");
+    table.string("role", 255).defaultTo("user");
     table.string("photo", 255);
-    table.string("kyc_status", 255).defaultTo("not_started");
+    table.boolean("is_verified").defaultTo(false);
+    table.timestamp("last_login").defaultTo(knex.fn.now());
     table.timestamp("created_at").defaultTo(knex.fn.now());
     table.timestamp("updated_at").defaultTo(knex.fn.now());
     table.index("tag");

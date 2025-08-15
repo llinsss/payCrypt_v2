@@ -1,28 +1,22 @@
 export const up = async (knex) => {
   return knex.schema.createTable("transactions", (table) => {
     table.increments("id").primary();
-    table.integer("user_id").unsigned().notNullable();
-    table.integer("wallet_id").unsigned().notNullable();
+    table.integer("user_id").unsigned();
+    table.integer("token_id").unsigned();
+    table.integer("chain_id").unsigned();
     table.string("reference", 255);
     table.string("type", 255);
-    table.string("action", 255);
-    table.decimal("amount", 18, 12).defaultTo(0);
-    table.decimal("balance_before", 18, 12).defaultTo(0);
-    table.decimal("balance_after", 18, 12).defaultTo(0);
-    table.string("status", 255).defaultTo("successful");
-    table.string("hash", 255);
-    table.string("token", 255);
-    table.string("rate", 255);
+    table.string("status", 255).defaultTo("completed");
+    table.string("tx_hash", 255);
+    table.decimal("usd_value", 18, 3).defaultTo(0);
+    table.decimal("amount", 18, 8).defaultTo(0);
+    table.string("timestamp", 255);
+    table.string("from_address", 255);
+    table.string("to_address", 255);
     table.text("description");
     table.text("extra");
     table.timestamp("created_at").defaultTo(knex.fn.now());
     table.timestamp("updated_at").defaultTo(knex.fn.now());
-    table
-      .foreign("wallet_id")
-      .references("id")
-      .inTable("wallets")
-      .onDelete("CASCADE");
-    table.index("wallet_id");
     table
       .foreign("user_id")
       .references("id")

@@ -17,7 +17,7 @@ const KYCForm: React.FC = () => {
       // Mock API call
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      updateUser({ kycStatus: 'pending' });
+      updateUser({ kyc_status: 'pending' });
       alert('KYC information submitted successfully! We will review your documents within 24-48 hours.');
     } catch (error) {
       alert('Failed to submit KYC information. Please try again.');
@@ -33,7 +33,7 @@ const KYCForm: React.FC = () => {
     }
   };
 
-  if (user?.kycStatus === 'verified') {
+  if (user?.kyc_status === 'verified') {
     return (
       <div className="bg-emerald-50 rounded-xl p-6 border border-emerald-200">
         <div className="flex items-center space-x-3">
@@ -47,7 +47,7 @@ const KYCForm: React.FC = () => {
     );
   }
 
-  if (user?.kycStatus === 'pending') {
+  if (user?.kyc_status === 'pending') {
     return (
       <div className="bg-amber-50 rounded-xl p-6 border border-amber-200">
         <div className="flex items-center space-x-3">
@@ -81,13 +81,13 @@ const KYCForm: React.FC = () => {
                 Full Name *
               </label>
               <input
-                {...register('fullName', { required: 'Full name is required' })}
+                {...register('full_name', { required: 'Full name is required' })}
                 type="text"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter your full name"
               />
-              {errors.fullName && (
-                <p className="text-red-600 text-sm mt-1">{errors.fullName.message}</p>
+              {errors.full_name && (
+                <p className="text-red-600 text-sm mt-1">{errors.full_name.message}</p>
               )}
             </div>
 
@@ -96,7 +96,7 @@ const KYCForm: React.FC = () => {
                 Phone Number *
               </label>
               <input
-                {...register('phoneNumber', { 
+                {...register('phone_number', { 
                   required: 'Phone number is required',
                   pattern: {
                     value: /^(\+234|0)[789][01]\d{8}$/,
@@ -107,8 +107,8 @@ const KYCForm: React.FC = () => {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="+234 or 0"
               />
-              {errors.phoneNumber && (
-                <p className="text-red-600 text-sm mt-1">{errors.phoneNumber.message}</p>
+              {errors.phone_number && (
+                <p className="text-red-600 text-sm mt-1">{errors.phone_number.message}</p>
               )}
             </div>
           </div>
@@ -119,7 +119,7 @@ const KYCForm: React.FC = () => {
                 Bank Name *
               </label>
               <select
-                {...register('bankName', { required: 'Bank name is required' })}
+                {...register('bank_name', { required: 'Bank name is required' })}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Select your bank</option>
@@ -132,8 +132,8 @@ const KYCForm: React.FC = () => {
                 <option value="union">Union Bank</option>
                 <option value="sterling">Sterling Bank</option>
               </select>
-              {errors.bankName && (
-                <p className="text-red-600 text-sm mt-1">{errors.bankName.message}</p>
+              {errors.bank_name && (
+                <p className="text-red-600 text-sm mt-1">{errors.bank_name.message}</p>
               )}
             </div>
 
@@ -142,7 +142,7 @@ const KYCForm: React.FC = () => {
                 Account Number *
               </label>
               <input
-                {...register('accountNumber', { 
+                {...register('account_number', { 
                   required: 'Account number is required',
                   pattern: {
                     value: /^\d{10}$/,
@@ -153,8 +153,8 @@ const KYCForm: React.FC = () => {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="10-digit account number"
               />
-              {errors.accountNumber && (
-                <p className="text-red-600 text-sm mt-1">{errors.accountNumber.message}</p>
+              {errors.account_number && (
+                <p className="text-red-600 text-sm mt-1">{errors.account_number.message}</p>
               )}
             </div>
           </div>
@@ -192,14 +192,14 @@ const KYCForm: React.FC = () => {
                   <input
                     type="file"
                     accept="image/*,.pdf"
-                    onChange={(e) => handleFileUpload(e, 'idDocument')}
+                    onChange={(e) => handleFileUpload(e, 'id_document')}
                     className="hidden"
                     id="id-document"
                   />
                   <label htmlFor="id-document" className="cursor-pointer">
                     <Camera className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm text-gray-600">
-                      {uploadedFiles.idDocument ? uploadedFiles.idDocument.name : 'Click to upload ID document'}
+                      {uploadedFiles.id_document ? uploadedFiles.id_document.name : 'Click to upload ID document'}
                     </p>
                   </label>
                 </div>
@@ -213,14 +213,14 @@ const KYCForm: React.FC = () => {
                   <input
                     type="file"
                     accept="image/*,.pdf"
-                    onChange={(e) => handleFileUpload(e, 'proofOfAddress')}
+                    onChange={(e) => handleFileUpload(e, 'proof_of_address')}
                     className="hidden"
                     id="proof-address"
                   />
                   <label htmlFor="proof-address" className="cursor-pointer">
                     <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm text-gray-600">
-                      {uploadedFiles.proofOfAddress ? uploadedFiles.proofOfAddress.name : 'Click to upload utility bill'}
+                      {uploadedFiles.proof_of_address ? uploadedFiles.proof_of_address.name : 'Click to upload utility bill'}
                     </p>
                   </label>
                 </div>

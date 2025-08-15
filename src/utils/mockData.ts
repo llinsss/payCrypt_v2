@@ -5,33 +5,33 @@ export const mockChains: Chain[] = [
     id: 'ethereum',
     name: 'Ethereum',
     symbol: 'ETH',
-    rpcUrl: 'https://mainnet.infura.io/v3/',
-    blockExplorer: 'https://etherscan.io',
-    nativeCurrency: 'ETH'
+    rpc_url: 'https://mainnet.infura.io/v3/',
+    block_explorer: 'https://etherscan.io',
+    native_currency: 'ETH'
   },
   {
     id: 'starknet',
     name: 'Starknet',
     symbol: 'STRK',
-    rpcUrl: 'https://alpha-mainnet.starknet.io',
-    blockExplorer: 'https://starkscan.co',
-    nativeCurrency: 'STRK'
+    rpc_url: 'https://alpha-mainnet.starknet.io',
+    block_explorer: 'https://starkscan.co',
+    native_currency: 'STRK'
   },
   {
     id: 'base',
     name: 'Base',
     symbol: 'ETH',
-    rpcUrl: 'https://mainnet.base.org',
-    blockExplorer: 'https://basescan.org',
-    nativeCurrency: 'ETH'
+    rpc_url: 'https://mainnet.base.org',
+    block_explorer: 'https://basescan.org',
+    native_currency: 'ETH'
   },
   {
     id: 'core',
     name: 'Core',
     symbol: 'CORE',
-    rpcUrl: 'https://rpc.coredao.org',
-    blockExplorer: 'https://scan.coredao.org',
-    nativeCurrency: 'CORE'
+    rpc_url: 'https://rpc.coredao.org',
+    block_explorer: 'https://scan.coredao.org',
+    native_currency: 'CORE'
   }
 ];
 
@@ -41,7 +41,7 @@ export const mockTokens: Token[] = [
     symbol: 'ETH',
     name: 'Ethereum',
     decimals: 18,
-    logoUrl: 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
+    logo_url: 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
     chain: 'ethereum',
     price: 2450.0
   },
@@ -50,7 +50,7 @@ export const mockTokens: Token[] = [
     symbol: 'USDC',
     name: 'USD Coin',
     decimals: 6,
-    logoUrl: 'https://cryptologos.cc/logos/usd-coin-usdc-logo.png',
+    logo_url: 'https://cryptologos.cc/logos/usd-coin-usdc-logo.png',
     chain: 'ethereum',
     price: 1.0
   },
@@ -59,7 +59,7 @@ export const mockTokens: Token[] = [
     symbol: 'STRK',
     name: 'Starknet Token',
     decimals: 18,
-    logoUrl: 'https://cryptologos.cc/logos/starknet-strk-logo.png',
+    logo_url: 'https://cryptologos.cc/logos/starknet-strk-logo.png',
     chain: 'starknet',
     price: 0.75
   },
@@ -68,7 +68,7 @@ export const mockTokens: Token[] = [
     symbol: 'CORE',
     name: 'Core Token',
     decimals: 18,
-    logoUrl: 'https://cryptologos.cc/logos/core-core-logo.png',
+    logo_url: 'https://cryptologos.cc/logos/core-core-logo.png',
     chain: 'core',
     price: 1.25
   }
@@ -77,9 +77,9 @@ export const mockTokens: Token[] = [
 export const mockUser: User = {
   id: '1',
   tag: 'llins',
-  walletAddress: '0x742d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
-  isVerified: true,
-  createdAt: '2024-01-15T10:30:00Z',
+  address: '0x742d35Cc6634C0532925a3b8D404FdDA8C6b8AC2',
+  is_verified: true,
+  created_at: '2024-01-15T10:30:00Z',
   totalDeposits: 15000,
   totalWithdrawals: 3500
 };
@@ -89,28 +89,28 @@ export const mockBalances: Balance[] = [
     token: 'ETH',
     symbol: 'ETH',
     amount: 2.5,
-    usdValue: 6125.0,
+    usd_value: 6125.0,
     chain: 'ethereum'
   },
   {
     token: 'USDC',
     symbol: 'USDC',
     amount: 5000,
-    usdValue: 5000.0,
+    usd_value: 5000.0,
     chain: 'ethereum'
   },
   {
     token: 'STRK',
     symbol: 'STRK',
     amount: 1500,
-    usdValue: 1125.0,
+    usd_value: 1125.0,
     chain: 'starknet'
   },
   {
     token: 'CORE',
     symbol: 'CORE',
     amount: 800,
-    usdValue: 1000.0,
+    usd_value: 1000.0,
     chain: 'core'
   }
 ];
@@ -122,12 +122,12 @@ export const mockTransactions: Transaction[] = [
     tag: 'llins',
     token: 'ETH',
     amount: 1.0,
-    usdValue: 2450.0,
+    usd_value: 2450.0,
     status: 'completed',
-    txHash: '0x123...abc',
+    tx_hash: '0x123...abc',
     chain: 'ethereum',
     timestamp: '2024-01-20T14:30:00Z',
-    fromAddress: '0x456...def'
+    from_address: '0x456...def'
   },
   {
     id: '2',
@@ -135,11 +135,11 @@ export const mockTransactions: Transaction[] = [
     tag: 'llins',
     token: 'USDC',
     amount: 500,
-    usdValue: 500.0,
+    usd_value: 500.0,
     status: 'pending',
     chain: 'ethereum',
     timestamp: '2024-01-20T13:15:00Z',
-    toAddress: '0x789...ghi'
+    to_address: '0x789...ghi'
   },
   {
     id: '3',
@@ -147,9 +147,9 @@ export const mockTransactions: Transaction[] = [
     tag: 'llins',
     token: 'ETH',
     amount: 0.5,
-    usdValue: 1225.0,
+    usd_value: 1225.0,
     status: 'completed',
-    txHash: '0x321...cba',
+    tx_hash: '0x321...cba',
     chain: 'ethereum',
     timestamp: '2024-01-20T12:00:00Z'
   }

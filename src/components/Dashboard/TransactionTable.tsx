@@ -1,21 +1,33 @@
-import React from 'react';
-import { ArrowUpRight, ArrowDownLeft, ArrowRightLeft, ExternalLink } from 'lucide-react';
-import { Transaction } from '../../types';
-import { getTransactionStatusColor, formatCurrency, formatCrypto } from '../../utils/mockData';
+import React from "react";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  ArrowRightLeft,
+  ExternalLink,
+} from "lucide-react";
+import { Transaction } from "../../types";
+import {
+  getTransactionStatusColor,
+  formatCurrency,
+  formatCrypto,
+} from "../../utils/mockData";
 
 interface TransactionTableProps {
   transactions: Transaction[];
   showUserColumn?: boolean;
 }
 
-const TransactionTable: React.FC<TransactionTableProps> = ({ transactions, showUserColumn = false }) => {
+const TransactionTable: React.FC<TransactionTableProps> = ({
+  transactions,
+  showUserColumn = false,
+}) => {
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case 'deposit':
+      case "deposit":
         return <ArrowDownLeft className="w-4 h-4 text-emerald-600" />;
-      case 'withdrawal':
+      case "withdrawal":
         return <ArrowUpRight className="w-4 h-4 text-red-600" />;
-      case 'swap':
+      case "swap":
         return <ArrowRightLeft className="w-4 h-4 text-blue-600" />;
       default:
         return <ArrowRightLeft className="w-4 h-4 text-gray-600" />;
@@ -29,9 +41,11 @@ const TransactionTable: React.FC<TransactionTableProps> = ({ transactions, showU
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900">Recent Transactions</h3>
+        <h3 className="text-lg font-semibold text-gray-900">
+          Recent Transactions
+        </h3>
       </div>
-      
+
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50">
@@ -74,24 +88,32 @@ const TransactionTable: React.FC<TransactionTableProps> = ({ transactions, showU
                 </td>
                 {showUserColumn && (
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-blue-600 font-medium">@{tx.tag}</span>
+                    <span className="text-sm text-blue-600 font-medium">
+                      @{tx.user_tag}
+                    </span>
                   </td>
                 )}
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div>
                     <div className="text-sm font-medium text-gray-900">
-                      {formatCrypto(tx.amount, tx.token)}
+                      {formatCrypto(tx.amount, tx.token_symbol)}
                     </div>
                     <div className="text-sm text-gray-500">
-                      {formatCurrency(tx.usdValue)}
+                      {formatCurrency(tx.usd_value)}
                     </div>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-sm text-gray-900 capitalize">{tx.chain}</span>
+                  <span className="text-sm text-gray-900 capitalize">
+                    {tx.chain_name}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getTransactionStatusColor(tx.status)}`}>
+                  <span
+                    className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getTransactionStatusColor(
+                      tx.status
+                    )}`}
+                  >
                     {tx.status}
                   </span>
                 </td>
@@ -99,7 +121,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({ transactions, showU
                   {new Date(tx.timestamp).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {tx.txHash && (
+                  {tx.tx_hash && (
                     <button className="text-blue-600 hover:text-blue-800 transition-colors">
                       <ExternalLink className="w-4 h-4" />
                     </button>

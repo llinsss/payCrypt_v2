@@ -6,21 +6,23 @@ import dotenv from "dotenv";
 
 // Import routes
 import authRoutes from "./routes/auth.js";
+import balancesRoutes from "./routes/balances.js";
 import userRoutes from "./routes/users.js";
 import kycRoutes from "./routes/kycs.js";
 import transactionRoutes from "./routes/transactions.js";
-import walletRoutes from "./routes/wallets.js";
+import tokenRoutes from "./routes/tokens.js";
+import chainRoutes from "./routes/chains.js";
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 10000, // limit each IP to 100 requests per windowMs
   message: "Too many requests from this IP, please try again later.",
 });
 
@@ -29,9 +31,10 @@ app.use(helmet());
 
 // CORS configuration for production
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: "*",
+  // process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
 app.use(limiter);
@@ -49,10 +52,12 @@ app.get("/health", (req, res) => {
 
 // API routes
 app.use("/api/auth", authRoutes);
+app.use("/api/balances", balancesRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/kycs", kycRoutes);
 app.use("/api/transactions", transactionRoutes);
-app.use("/api/wallets", walletRoutes);
+app.use("/api/tokens", tokenRoutes);
+app.use("/api/chains", chainRoutes);
 
 // 404 handler
 app.use("*", (req, res) => {

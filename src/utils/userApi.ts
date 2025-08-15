@@ -5,7 +5,7 @@ import { User } from '../types';
 export interface UpdateUserRequest {
   tag?: string;
   email?: string;
-  walletAddress?: string;
+  address?: string;
 }
 
 export interface UserResponse {
@@ -13,9 +13,9 @@ export interface UserResponse {
   tag: string;
   email: string;
   address: string;
-  isVerified: boolean;
-  kycStatus: string;
-  createdAt: string;
+  is_verified: boolean;
+  kyc_status: string;
+  created_at: string;
   role?: string;
 }
 
@@ -70,9 +70,9 @@ export const mapBackendUserToUser = (backendUser: UserResponse): User => {
   return {
     id: backendUser.id,
     tag: backendUser.tag,
-    walletAddress: backendUser.address,
-    isVerified: backendUser.isVerified,
-    createdAt: backendUser.createdAt,
+    address: backendUser.address,
+    is_verified: backendUser.is_verified,
+    created_at: backendUser.created_at,
     totalDeposits: 0, // These would need to be calculated from transactions
     totalWithdrawals: 0
   };

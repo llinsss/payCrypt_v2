@@ -13,7 +13,7 @@ const QRCodeGenerator: React.FC = () => {
   const userTag = `@${user.tag}`;
   const depositData = {
     tag: user.tag,
-    address: user.walletAddress,
+    address: user.address,
     chain: selectedChain,
     version: '1.0'
   };
