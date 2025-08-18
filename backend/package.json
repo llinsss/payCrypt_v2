@@ -7,7 +7,7 @@
     "scripts": {
         "dev": "nodemon server.js",
         "start": "node server.js",
-        "migrate": "knex migrate:latest",
+        "migrate": "knex migrate:latest && knex seed:run",
         "migrate:rollback": "knex migrate:rollback",
         "migrate:rollback:all": "knex migrate:rollback --all",
         "migrate:make": "knex migrate:make",
