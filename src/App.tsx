@@ -45,7 +45,7 @@ const PrivateLayout: React.FC = () => {
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/" replace />;
   }
 
   const isAdmin = user.role === "admin";
@@ -90,7 +90,7 @@ function AppRoutes() {
     <Routes>
       {/* Public route */}
       <Route
-        path="/auth"
+        path="/"
         element={
           <PublicRoute>
             <AuthPage />
