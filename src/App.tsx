@@ -35,6 +35,7 @@ import ApiTest from "./components/Test/ApiTest";
 const PrivateLayout: React.FC = () => {
   const { user, isLoading } = useAuth();
   const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
   if (isLoading) {
     return (
@@ -52,13 +53,13 @@ const PrivateLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar isAdmin={isAdmin} />
+      <Sidebar isAdmin={isAdmin} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header isAdmin={isAdmin} />
+      <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
+        <Header isAdmin={isAdmin} onMenuClick={() => setSidebarOpen(true)} />
 
         {isConnected && (
-          <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-2">
+          <div className="bg-emerald-50 border-b border-emerald-200 px-4 lg:px-6 py-2">
             <div className="flex items-center space-x-2 text-sm text-emerald-700">
               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
               <span>Live updates connected</span>
@@ -67,7 +68,7 @@ const PrivateLayout: React.FC = () => {
         )}
 
         <main className="flex-1 overflow-y-auto">
-          <div className="p-6">
+          <div className="p-4 lg:p-6">
             <Outlet />
           </div>
         </main>

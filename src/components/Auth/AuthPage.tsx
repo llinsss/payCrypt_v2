@@ -8,9 +8,9 @@ const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex flex-col lg:flex-row">
       {/* Left Side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 to-purple-700 p-12 flex-col justify-center relative overflow-hidden">
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 to-purple-700 p-8 xl:p-12 flex-col justify-center relative overflow-hidden">
         <div className="absolute inset-0 bg-black/10"></div>
         <div className="relative z-10">
           <div className="flex items-center space-x-3 mb-8">
@@ -18,12 +18,12 @@ const AuthPage: React.FC = () => {
             <span className="text-3xl font-bold text-white">PayCrypt</span>
           </div>
           
-          <h1 className="text-4xl font-bold text-white mb-6 leading-tight">
+          <h1 className="text-3xl xl:text-4xl font-bold text-white mb-6 leading-tight">
             The Future of<br />
             Crypto Payments
           </h1>
           
-          <p className="text-xl text-blue-100 mb-12 leading-relaxed">
+          <p className="text-lg xl:text-xl text-blue-100 mb-8 xl:mb-12 leading-relaxed">
             Send and receive crypto using simple tags. Convert to NGN instantly.
             Your gateway to seamless digital payments.
           </p>
@@ -67,7 +67,7 @@ const AuthPage: React.FC = () => {
       </div>
 
       {/* Right Side - Auth Forms */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         {isLogin ? (
           <LoginForm onSwitchToRegister={() => setIsLogin(false)} />
         ) : (
