@@ -3,6 +3,7 @@ export const seed = async (knex) => {
   await knex("tokens").del();
   await knex("tokens").insert([
     {
+      id: 1,
       address: null,
       symbol: "ETH",
       name: "Ethereum",
@@ -12,6 +13,7 @@ export const seed = async (knex) => {
       price: 4761.22,
     },
     {
+      id: 2,
       address: null,
       symbol: "LSK",
       name: "Lisk",
@@ -21,6 +23,7 @@ export const seed = async (knex) => {
       price: 0.42895,
     },
     {
+      id: 3,
       address: null,
       symbol: "CORE",
       name: "Core DAO Token",
@@ -30,6 +33,7 @@ export const seed = async (knex) => {
       price: 8065.6,
     },
     {
+      id: 4,
       address: null,
       symbol: "STRK",
       name: "Starknet Token",

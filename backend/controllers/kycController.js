@@ -1,4 +1,5 @@
 import Kyc from "../models/Kyc.js";
+import User from "../models/User.js";
 
 export const createKyc = async (req, res) => {
   try {
@@ -8,6 +9,10 @@ export const createKyc = async (req, res) => {
     };
 
     const kyc = await Kyc.create(kycData);
+    const update_user = await User.update(req.user.id, {
+      is_verified: 0,
+      kyc_status: "pending",
+    });
     res.status(201).json(kyc);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -51,7 +56,7 @@ export const getKycById = async (req, res) => {
     if (kyc.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
-    
+
     res.json(kyc);
   } catch (error) {
     res.status(500).json({ error: error.message });

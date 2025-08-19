@@ -3,6 +3,7 @@ export const seed = async (knex) => {
   await knex("chains").del();
   await knex("chains").insert([
     {
+      id: 1,
       symbol: "ETH",
       name: "Ethereum",
       native_currency: { name: "Ether", symbol: "ETH" },
@@ -10,6 +11,7 @@ export const seed = async (knex) => {
       block_explorer: "https://etherscan.io",
     },
     {
+      id: 2,
       symbol: "LSK",
       name: "Lisk",
       native_currency: { name: "Ether", symbol: "ETH" },
@@ -17,6 +19,7 @@ export const seed = async (knex) => {
       block_explorer: "https://blockscout.lisk.com",
     },
     {
+      id: 3,
       symbol: "CORE",
       name: "Core DAO",
       native_currency: { name: "Core DAO Token", symbol: "CORE" },
@@ -24,6 +27,7 @@ export const seed = async (knex) => {
       block_explorer: "https://scan.coredao.org",
     },
     {
+      id: 4,
       symbol: "STRK",
       name: "Starknet",
       native_currency: { name: "STRK Token", symbol: "STRK" },
