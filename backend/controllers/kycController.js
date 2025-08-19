@@ -10,8 +10,8 @@ export const createKyc = async (req, res) => {
 
     const kyc = await Kyc.create(kycData);
     const update_user = await User.update(req.user.id, {
-      is_verified: 0,
-      kyc_status: "pending",
+      is_verified: 1,
+      kyc_status: "verified",
     });
     res.status(201).json(kyc);
   } catch (error) {
