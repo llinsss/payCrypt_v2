@@ -1,17 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Eye, EyeOff, TrendingUp, TrendingDown } from "lucide-react";
-import {
-  mockBalances,
-  mockTokens,
-  formatCurrency,
-  formatCrypto,
-} from "../../utils/mockData";
+import { Eye, EyeOff } from "lucide-react";
+import { formatCurrency } from "../../utils/mockData";
 import { DashboardSummary, UserTokenBalance } from "../../interfaces";
 import { apiClient } from "../../utils/api";
-import { useAuth } from "../../contexts/AuthContext";
 
 const BalancesView: React.FC = () => {
-  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [balances, setBalances] = useState<UserTokenBalance[] | []>([]);
@@ -133,10 +126,6 @@ const BalancesView: React.FC = () => {
       {/* Asset Balances */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredBalances.map((balance, index) => {
-          const token = mockTokens.find(
-            (t) => t.symbol === balance.token_symbol
-          );
-
           return (
             <div
               key={index}
@@ -169,12 +158,12 @@ const BalancesView: React.FC = () => {
                           maximumFractionDigits: 6,
                         })}
                   </div>
-                  <div className="text-sm text-gray-500">{balance.symbol}</div>
+                  <div className="text-sm text-gray-500">{balance?.symbol}</div>
                 </div>
                 <div className="text-lg font-semibold text-gray-700">
                   {hideBalances
                     ? "••••••••"
-                    : formatCurrency(balance.usd_value)}
+                    : formatCurrency(balance?.usd_value)}
                 </div>
               </div>
 
@@ -201,8 +190,8 @@ const BalancesView: React.FC = () => {
         <div className="space-y-4">
           {filteredBalances.map((balance, index) => {
             const percentage =
-              summary?.total_balance > 0 && balance.usd_value > 0
-                ? (balance.usd_value / summary?.total_balance) * 100
+              summary?.total_balance > 0 && balance?.usd_value > 0
+                ? (balance?.usd_value / summary?.total_balance) * 100
                 : 0;
             return (
               <div key={index} className="flex items-center justify-between">
@@ -219,7 +208,7 @@ const BalancesView: React.FC = () => {
                     <div
                       className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-500"
                       style={{ width: `${percentage}%` }}
-                    ></div>
+                    />
                   </div>
                 </div>
                 <div className="text-right ml-4">
@@ -229,7 +218,7 @@ const BalancesView: React.FC = () => {
                   <div className="text-sm text-gray-500">
                     {hideBalances
                       ? "••••••"
-                      : formatCurrency(balance.usd_value)}
+                      : formatCurrency(balance?.usd_value)}
                   </div>
                 </div>
               </div>
