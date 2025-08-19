@@ -40,13 +40,83 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200">
+      <div className="px-4 lg:px-6 py-4 border-b border-gray-200">
         <h3 className="text-lg font-semibold text-gray-900">
           Recent Transactions
         </h3>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Mobile Card Layout */}
+      <div className="block lg:hidden">
+        <div className="divide-y divide-gray-200">
+          {transactions.map((tx) => (
+            <div key={tx.id} className="p-4 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-3">
+                  {getTypeIcon(tx.type)}
+                  <span className="text-sm font-medium text-gray-900">
+                    {getTypeLabel(tx.type)}
+                  </span>
+                </div>
+                <span
+                  className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getTransactionStatusColor(
+                    tx.status
+                  )}`}
+                >
+                  {tx.status}
+                </span>
+              </div>
+              
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Amount:</span>
+                  <div className="text-right">
+                    <div className="text-sm font-medium text-gray-900">
+                      {formatCrypto(tx.amount, tx.token_symbol)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {formatCurrency(tx.usd_value)}
+                    </div>
+                  </div>
+                </div>
+                
+                {showUserColumn && (
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-500">User:</span>
+                    <span className="text-sm text-blue-600 font-medium">
+                      @{tx.user_tag}
+                    </span>
+                  </div>
+                )}
+                
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Chain:</span>
+                  <span className="text-sm text-gray-900 capitalize">
+                    {tx.chain_name}
+                  </span>
+                </div>
+                
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">Date:</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-500">
+                      {new Date(tx.timestamp).toLocaleDateString()}
+                    </span>
+                    {tx.tx_hash && (
+                      <button className="text-blue-600 hover:text-blue-800 transition-colors">
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Desktop Table Layout */}
+      <div className="hidden lg:block overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
