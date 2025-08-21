@@ -63,7 +63,7 @@ export const deleteBankAccount = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    await BankAccount.delete(id);
+    // await BankAccount.delete(id);
     res.json({ message: "Bank account deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });

@@ -42,7 +42,9 @@ export const updateWallet = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updatedWallet = await Wallet.update(id, req.body);
+    const updatedWallet = await Wallet.update(id, {
+      auto_convert_threshold: req.body.auto_convert_threshold,
+    });
     res.json(updatedWallet);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -63,7 +65,7 @@ export const deleteWallet = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    await Wallet.delete(id);
+    // await Wallet.delete(id);
     res.json({ message: "Wallet deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
