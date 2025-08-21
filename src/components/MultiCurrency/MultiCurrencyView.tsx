@@ -61,7 +61,7 @@ const MultiCurrencyView: React.FC = () => {
 
     setIsSubmitting(balance.id);
     try {
-      const response = await apiClient.post(`/balances/${balance.id}`, {
+      const response = await apiClient.put(`/balances/${balance.id}`, {
         auto_convert_threshold: threshold,
       });
       console.log(response);
@@ -85,6 +85,10 @@ const MultiCurrencyView: React.FC = () => {
     }));
   };
 
+  const handleQuickSwap = (fromSymbol: string, toSymbol: string) => {
+    alert(`Swapping ${fromSymbol} to ${toSymbol}`);
+  };
+  
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -156,6 +160,18 @@ const MultiCurrencyView: React.FC = () => {
               <div className="text-lg font-semibold text-gray-700">
                 {balance.usd_value} USD
               </div>
+            </div>
+
+            {/* Quick swap */}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => handleQuickSwap(balance.token_symbol, "NGN")}
+                className="flex border border-blue-300 px-4 py-2 rounded-full items-center text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                <ArrowRightLeft className="w-4 h-4 mr-2" /> Swap all{" "}
+                {balance.token_symbol} to NGN
+              </button>
             </div>
 
             {/* Threshold form */}
