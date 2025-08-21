@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   Upload,
@@ -30,6 +30,7 @@ const KYCForm: React.FC = () => {
   const [uploadingFiles, setUploadingFiles] = useState<{
     [key: string]: boolean;
   }>({});
+  const [showModal, setShowModal] = useState(false);
 
   const {
     register,
@@ -64,6 +65,12 @@ const KYCForm: React.FC = () => {
     const data = await response.json();
     return data.secure_url;
   };
+  // Show modal on component mount
+  useEffect(() => {
+    if (user?.kyc_status !== "verified") {
+      setShowModal(true);
+    }
+  }, [user]);
 
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -156,6 +163,33 @@ const KYCForm: React.FC = () => {
     }
   };
 
+  // 🔹 Modal Component
+  const Modal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-lg p-6 max-w-md w-full">
+        <div className="flex items-center space-x-3 mb-4">
+          <AlertCircle className="w-6 h-6 text-amber-600" />
+          <h2 className="text-lg font-semibold text-gray-900">KYC Required</h2>
+        </div>
+        <p className="text-gray-700 mb-6">
+          You must complete <strong>basic KYC verification</strong> before
+          performing actions like{" "}
+          <span className="font-medium">deposits, swaps, payouts,</span>
+          and <span className="font-medium">wallet purchases</span>.
+        </p>
+        <div className="flex justify-end space-x-3">
+          <button
+            type="button"
+            onClick={() => setShowModal(false)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          >
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (user?.kyc_status === "verified") {
     return (
       <div className="bg-emerald-50 rounded-xl p-6 border border-emerald-200">
@@ -193,276 +227,304 @@ const KYCForm: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl p-6 border border-gray-200">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <FileText className="w-6 h-6 text-blue-600" />
-          </div>
-          <div>
-            <h3 className="text-xl font-semibold text-gray-900">
-              Complete KYC Verification
-            </h3>
-            <p className="text-gray-600">
-              Required for NGN withdrawals above ₦50,000
-            </p>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label htmlFor="full_name" className="block text-sm font-medium text-gray-700 mb-2">
-                Full Name *
-              </label>
-              <input
-                {...register("full_name", {
-                  required: "Full name is required",
-                })}
-                type="text"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter your full name"
-              />
-              {errors.full_name && (
-                <p className="text-red-600 text-sm mt-1">
-                  {errors.full_name.message}
-                </p>
-              )}
+    <>
+      {showModal && <Modal />}
+      <div className="space-y-6">
+        <div className="bg-white rounded-xl p-6 border border-gray-200">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <FileText className="w-6 h-6 text-blue-600" />
             </div>
-
             <div>
-              <label htmlFor="phone_number" className="block text-sm font-medium text-gray-700 mb-2">
-                Phone Number *
-              </label>
-              <input
-                {...register("phone_number", {
-                  required: "Phone number is required",
-                  pattern: {
-                    value: /^(\+234|0)[789][01]\d{8}$/,
-                    message: "Invalid Nigerian phone number",
-                  },
-                })}
-                type="tel"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="+234 or 0"
-              />
-              {errors.phone_number && (
-                <p className="text-red-600 text-sm mt-1">
-                  {errors.phone_number.message}
-                </p>
-              )}
+              <h3 className="text-xl font-semibold text-gray-900">
+                Complete KYC Verification
+              </h3>
+              <p className="text-gray-600">
+                Required for NGN withdrawals above ₦50,000
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label htmlFor="bank_name" className="block text-sm font-medium text-gray-700 mb-2">
-                Bank Name *
-              </label>
-              <select
-                {...register("bank_name", {
-                  required: "Bank name is required",
-                })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Select your bank</option>
-                <option value="gtbank">GTBank</option>
-                <option value="access">Access Bank</option>
-                <option value="zenith">Zenith Bank</option>
-                <option value="first">First Bank</option>
-                <option value="uba">UBA</option>
-                <option value="fidelity">Fidelity Bank</option>
-                <option value="union">Union Bank</option>
-                <option value="sterling">Sterling Bank</option>
-              </select>
-              {errors.bank_name && (
-                <p className="text-red-600 text-sm mt-1">
-                  {errors.bank_name.message}
-                </p>
-              )}
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label
+                  htmlFor="full_name"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Full Name *
+                </label>
+                <input
+                  {...register("full_name", {
+                    required: "Full name is required",
+                  })}
+                  type="text"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter your full name"
+                />
+                {errors.full_name && (
+                  <p className="text-red-600 text-sm mt-1">
+                    {errors.full_name.message}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="phone_number"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Phone Number *
+                </label>
+                <input
+                  {...register("phone_number", {
+                    required: "Phone number is required",
+                    pattern: {
+                      value: /^(\+234|0)[789][01]\d{8}$/,
+                      message: "Invalid Nigerian phone number",
+                    },
+                  })}
+                  type="tel"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="+234 or 0"
+                />
+                {errors.phone_number && (
+                  <p className="text-red-600 text-sm mt-1">
+                    {errors.phone_number.message}
+                  </p>
+                )}
+              </div>
             </div>
-
-            <div>
-              <label htmlFor="account_number" className="block text-sm font-medium text-gray-700 mb-2">
-                Account Number *
-              </label>
-              <input
-                {...register("account_number", {
-                  required: "Account number is required",
-                  pattern: {
-                    value: /^\d{10}$/,
-                    message: "Account number must be 10 digits",
-                  },
-                })}
-                type="text"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="10-digit account number"
-              />
-              {errors.account_number && (
-                <p className="text-red-600 text-sm mt-1">
-                  {errors.account_number.message}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="bvn" className="block text-sm font-medium text-gray-700 mb-2">
-              BVN (Optional)
-            </label>
-            <input
-              {...register("bvn", {
-                pattern: {
-                  value: /^\d{11}$/,
-                  message: "BVN must be 11 digits",
-                },
-              })}
-              type="text"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="11-digit BVN"
-            />
-            {errors.bvn && (
-              <p className="text-red-600 text-sm mt-1">{errors.bvn.message}</p>
-            )}
-          </div>
-
-          {/* File Uploads */}
-          <div className="space-y-4">
-            <h4 className="text-lg font-semibold text-gray-900">
-              Document Upload
-            </h4>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label  htmlFor="id_document" className="block text-sm font-medium text-gray-700 mb-2">
-                  ID Document (NIN, Driver's License, or Passport) *
+                <label
+                  htmlFor="bank_name"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Bank Name *
                 </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => handleFileUpload(e, "id_document")}
-                    className="hidden"
-                    id="id-document"
-                    disabled={uploadingFiles.id_document}
-                  />
-                  <label htmlFor="id-document" className="cursor-pointer">
-                    {uploadingFiles.id_document ? (
-                      <div className="flex flex-col items-center">
-                        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2" />
-                        <p className="text-sm text-blue-600">Uploading...</p>
-                      </div>
-                    ) : idDocumentUrl ? (
-                      <div className="flex flex-col items-center">
-                        <CheckCircle className="w-8 h-8 text-green-600 mb-2" />
-                        <p className="text-sm text-green-600">
-                          {uploadedFiles.id_document?.name ||
-                            "Document uploaded"}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center">
-                        <Camera className="w-8 h-8 text-gray-400 mb-2" />
-                        <p className="text-sm text-gray-600">
-                          Click to upload ID document
-                        </p>
-                      </div>
-                    )}
-                  </label>
-                </div>
-                {!idDocumentUrl && (
+                <select
+                  {...register("bank_name", {
+                    required: "Bank name is required",
+                  })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select your bank</option>
+                  <option value="gtbank">GTBank</option>
+                  <option value="access">Access Bank</option>
+                  <option value="zenith">Zenith Bank</option>
+                  <option value="first">First Bank</option>
+                  <option value="uba">UBA</option>
+                  <option value="fidelity">Fidelity Bank</option>
+                  <option value="union">Union Bank</option>
+                  <option value="sterling">Sterling Bank</option>
+                </select>
+                {errors.bank_name && (
                   <p className="text-red-600 text-sm mt-1">
-                    ID document is required
+                    {errors.bank_name.message}
                   </p>
                 )}
               </div>
 
               <div>
-                <label  htmlFor="proof_of_address" className="block text-sm font-medium text-gray-700 mb-2">
-                  Proof of Address (Utility Bill) *
+                <label
+                  htmlFor="account_number"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Account Number *
                 </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => handleFileUpload(e, "proof_of_address")}
-                    className="hidden"
-                    id="proof-address"
-                    disabled={uploadingFiles.proof_of_address}
-                  />
-                  <label htmlFor="proof-address" className="cursor-pointer">
-                    {uploadingFiles.proof_of_address ? (
-                      <div className="flex flex-col items-center">
-                        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2" />
-                        <p className="text-sm text-blue-600">Uploading...</p>
-                      </div>
-                    ) : proofOfAddressUrl ? (
-                      <div className="flex flex-col items-center">
-                        <CheckCircle className="w-8 h-8 text-green-600 mb-2" />
-                        <p className="text-sm text-green-600">
-                          {uploadedFiles.proof_of_address?.name ||
-                            "Document uploaded"}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center">
-                        <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                        <p className="text-sm text-gray-600">
-                          Click to upload utility bill
-                        </p>
-                      </div>
-                    )}
-                  </label>
-                </div>
-                {!proofOfAddressUrl && (
+                <input
+                  {...register("account_number", {
+                    required: "Account number is required",
+                    pattern: {
+                      value: /^\d{10}$/,
+                      message: "Account number must be 10 digits",
+                    },
+                  })}
+                  type="text"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="10-digit account number"
+                />
+                {errors.account_number && (
                   <p className="text-red-600 text-sm mt-1">
-                    Proof of address is required
+                    {errors.account_number.message}
                   </p>
                 )}
               </div>
             </div>
-          </div>
 
-          <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-            <div className="flex items-start space-x-3">
-              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-amber-800">
-                <p className="font-medium mb-1">Important Notes:</p>
-                <ul className="space-y-1">
-                  <li>• All documents must be clear and readable</li>
-                  <li>• ID document must be government-issued and valid</li>
-                  <li>• Utility bill must be dated within the last 3 months</li>
-                  <li>• Maximum file size: 5MB per document</li>
-                  <li>• Accepted formats: JPEG, PNG, PDF</li>
-                  <li>• Processing time is typically 24-48 hours</li>
-                </ul>
+            <div>
+              <label
+                htmlFor="bvn"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
+                BVN (Optional)
+              </label>
+              <input
+                {...register("bvn", {
+                  pattern: {
+                    value: /^\d{11}$/,
+                    message: "BVN must be 11 digits",
+                  },
+                })}
+                type="text"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="11-digit BVN"
+              />
+              {errors.bvn && (
+                <p className="text-red-600 text-sm mt-1">
+                  {errors.bvn.message}
+                </p>
+              )}
+            </div>
+
+            {/* File Uploads */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-900">
+                Document Upload
+              </h4>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label
+                    htmlFor="id_document"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    ID Document (NIN, Driver's License, or Passport) *
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => handleFileUpload(e, "id_document")}
+                      className="hidden"
+                      id="id-document"
+                      disabled={uploadingFiles.id_document}
+                    />
+                    <label htmlFor="id-document" className="cursor-pointer">
+                      {uploadingFiles.id_document ? (
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2" />
+                          <p className="text-sm text-blue-600">Uploading...</p>
+                        </div>
+                      ) : idDocumentUrl ? (
+                        <div className="flex flex-col items-center">
+                          <CheckCircle className="w-8 h-8 text-green-600 mb-2" />
+                          <p className="text-sm text-green-600">
+                            {uploadedFiles.id_document?.name ||
+                              "Document uploaded"}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center">
+                          <Camera className="w-8 h-8 text-gray-400 mb-2" />
+                          <p className="text-sm text-gray-600">
+                            Click to upload ID document
+                          </p>
+                        </div>
+                      )}
+                    </label>
+                  </div>
+                  {!idDocumentUrl && (
+                    <p className="text-red-600 text-sm mt-1">
+                      ID document is required
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="proof_of_address"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Proof of Address (Utility Bill) *
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => handleFileUpload(e, "proof_of_address")}
+                      className="hidden"
+                      id="proof-address"
+                      disabled={uploadingFiles.proof_of_address}
+                    />
+                    <label htmlFor="proof-address" className="cursor-pointer">
+                      {uploadingFiles.proof_of_address ? (
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2" />
+                          <p className="text-sm text-blue-600">Uploading...</p>
+                        </div>
+                      ) : proofOfAddressUrl ? (
+                        <div className="flex flex-col items-center">
+                          <CheckCircle className="w-8 h-8 text-green-600 mb-2" />
+                          <p className="text-sm text-green-600">
+                            {uploadedFiles.proof_of_address?.name ||
+                              "Document uploaded"}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center">
+                          <Upload className="w-8 h-8 text-gray-400 mb-2" />
+                          <p className="text-sm text-gray-600">
+                            Click to upload utility bill
+                          </p>
+                        </div>
+                      )}
+                    </label>
+                  </div>
+                  {!proofOfAddressUrl && (
+                    <p className="text-red-600 text-sm mt-1">
+                      Proof of address is required
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={
-              isSubmitting ||
-              uploadingFiles.id_document ||
-              uploadingFiles.proof_of_address ||
-              !idDocumentUrl ||
-              !proofOfAddressUrl
-            }
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-          >
-            {isSubmitting ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Submitting...</span>
-              </>
-            ) : (
-              <span>Submit KYC Information</span>
-            )}
-          </button>
-        </form>
+            <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-amber-800">
+                  <p className="font-medium mb-1">Important Notes:</p>
+                  <ul className="space-y-1">
+                    <li>• All documents must be clear and readable</li>
+                    <li>• ID document must be government-issued and valid</li>
+                    <li>
+                      • Utility bill must be dated within the last 3 months
+                    </li>
+                    <li>• Maximum file size: 5MB per document</li>
+                    <li>• Accepted formats: JPEG, PNG, PDF</li>
+                    <li>• Processing time is typically 24-48 hours</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={
+                isSubmitting ||
+                uploadingFiles.id_document ||
+                uploadingFiles.proof_of_address ||
+                !idDocumentUrl ||
+                !proofOfAddressUrl
+              }
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Submitting...</span>
+                </>
+              ) : (
+                <span>Submit KYC Information</span>
+              )}
+            </button>
+          </form>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

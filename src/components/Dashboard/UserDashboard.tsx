@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Wallet, TrendingUp, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import StatsCard from "./StatsCard";
 import TransactionTable from "./TransactionTable";
 import { apiClient } from "../../utils/api";
 import { formatCrypto, formatCurrency } from "../../utils/amount";
 import { useAuth } from "../../contexts/AuthContext";
+import { NavLink } from "react-router-dom";
 import {
   DashboardSummary,
   UserTokenBalance,
@@ -14,95 +15,80 @@ import {
 const UserDashboard: React.FC = () => {
   const { user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [balances, setBalances] = useState<UserTokenBalance[] | []>([]);
-  const [userTransactions, setUserTransactions] = useState<
-    UserTransaction[] | []
-  >([]);
+  const [balances, setBalances] = useState<UserTokenBalance[]>([]);
+  const [userTransactions, setUserTransactions] = useState<UserTransaction[]>(
+    []
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUserTokenBalance = async () => {
+    const fetchDashboardData = async () => {
       try {
-        const data = await apiClient.get<UserTokenBalance[]>("/balances");
-        setBalances(data);
+        const [balancesRes, summaryRes, transactionsRes] = await Promise.all([
+          apiClient.get<UserTokenBalance[]>("/balances"),
+          apiClient.get<DashboardSummary>("/users/dashboard-summary"),
+          apiClient.get<UserTransaction[]>("/transactions"),
+        ]);
+
+        setBalances(balancesRes || []);
+        setSummary(summaryRes || null);
+        setUserTransactions(transactionsRes || []);
       } catch (error) {
-        console.error("Error fetching balances:", error);
+        console.error("Error fetching dashboard data:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchUserTokenBalance();
+    fetchDashboardData();
   }, []);
 
-  useEffect(() => {
-    const fetchDashboardSummary = async () => {
-      try {
-        const data = await apiClient.get<DashboardSummary>(
-          "/users/dashboard-summary"
-        );
-        setSummary(data);
-      } catch (error) {
-        console.error("Error fetching dashboard summary:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardSummary();
-  }, []);
-
-  useEffect(() => {
-    const fetchUserTransaction = async () => {
-      try {
-        const data = await apiClient.get<UserTransaction[]>("/transactions");
-        setUserTransactions(data);
-      } catch (error) {
-        console.error("Error fetching transactions:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUserTransaction();
-  }, []);
+  // 🧮 Memoized computed values
+  const stats = useMemo(
+    () => [
+      {
+        title: "Total Balance",
+        value: formatCurrency(summary?.total_balance ?? 0),
+        icon: Wallet,
+        color: "text-blue-600",
+      },
+      {
+        title: "Total Deposits",
+        value: formatCurrency(summary?.total_deposit ?? 0),
+        icon: ArrowDownLeft,
+        color: "text-emerald-600",
+      },
+      {
+        title: "Total Withdrawals",
+        value: formatCurrency(summary?.total_withdrawal ?? 0),
+        icon: ArrowUpRight,
+        color: "text-red-600",
+      },
+      {
+        title: "Portfolio Growth",
+        value: `+${formatCurrency(0)}%`, // TODO: replace with real growth calc
+        icon: TrendingUp,
+        color: "text-purple-600",
+      },
+    ],
+    [summary]
+  );
 
   return (
     <div className="space-y-6">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-        <StatsCard
-          title="Total Balance"
-          value={loading ? "--" : formatCurrency(summary?.total_balance)}
-          change=""
-          changeType="positive"
-          icon={Wallet}
-          iconColor="text-blue-600"
-        />
-        <StatsCard
-          title="Total Deposits"
-          value={loading ? "--" : formatCurrency(summary?.total_deposit)}
-          change=""
-          changeType="positive"
-          icon={ArrowDownLeft}
-          iconColor="text-emerald-600"
-        />
-        <StatsCard
-          title="Total Withdrawals"
-          value={loading ? "--" : formatCurrency(summary?.total_withdrawal)}
-          change=""
-          changeType="positive"
-          icon={ArrowUpRight}
-          iconColor="text-red-600"
-        />
-        <StatsCard
-          title="Portfolio Growth"
-          value={`+${formatCurrency(0)}%`}
-          change=""
-          changeType="positive"
-          icon={TrendingUp}
-          iconColor="text-purple-600"
-        />
+        {stats.map(({ title, value, icon, color }) => (
+          <StatsCard
+            key={title}
+            title={title}
+            value={loading ? "--" : value}
+            change=""
+            changeType="positive"
+            icon={icon}
+            iconColor={color}
+          />
+        ))}
       </div>
 
       {/* Balances Overview */}
@@ -111,9 +97,9 @@ const UserDashboard: React.FC = () => {
           Asset Balances
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {balances.map((balance: UserTokenBalance, index) => (
+          {balances.map((balance) => (
             <div
-              key={index}
+              key={balance.id}
               className="p-4 bg-gray-50 rounded-lg border border-gray-200"
             >
               <div className="flex items-center justify-between">
@@ -121,13 +107,6 @@ const UserDashboard: React.FC = () => {
                   <div className="text-sm font-bold text-gray-900">
                     {formatCrypto(balance.amount, balance.token_symbol)}
                   </div>
-                  {/* <div className="text-sm text-gray-600">{balance.token_symbol}</div> */}
-                  {/* <img
-                    src={balance.token_logo_url}
-                    alt="logo"
-                    width={16}
-                    height={16}
-                  /> */}
                 </div>
                 <div className="text-right">
                   <div className="text-sm font-medium text-gray-900">
@@ -152,23 +131,30 @@ const UserDashboard: React.FC = () => {
           Quick Actions
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <button className="bg-white p-4 rounded-lg border border-gray-200 hover:shadow-md transition-shadow text-left">
+          <NavLink
+            to="/deposits"
+            className="bg-white p-4 rounded-lg border border-gray-200 hover:shadow-md transition-shadow text-left"
+          >
             <ArrowDownLeft className="w-6 h-6 text-emerald-600 mb-2" />
             <div className="font-medium text-gray-900">Receive Funds</div>
-            <div className="text-sm text-gray-600">
-              Share your @{user.tag} tag
-            </div>
-          </button>
-          <button className="bg-white p-4 rounded-lg border border-gray-200 hover:shadow-md transition-shadow text-left">
+            <div className="text-sm text-gray-600">Share your @{user?.tag}</div>
+          </NavLink>
+          <NavLink
+            to="/withdraw"
+            className="bg-white p-4 rounded-lg border border-gray-200 hover:shadow-md transition-shadow text-left"
+          >
             <ArrowUpRight className="w-6 h-6 text-red-600 mb-2" />
             <div className="font-medium text-gray-900">Withdraw</div>
             <div className="text-sm text-gray-600">To wallet or fiat</div>
-          </button>
-          <button className="bg-white p-4 rounded-lg border border-gray-200 hover:shadow-md transition-shadow text-left">
+          </NavLink>
+          <NavLink
+            to="/swap"
+            className="bg-white p-4 rounded-lg border border-gray-200 hover:shadow-md transition-shadow text-left"
+          >
             <TrendingUp className="w-6 h-6 text-blue-600 mb-2" />
             <div className="font-medium text-gray-900">Swap Tokens</div>
             <div className="text-sm text-gray-600">Exchange crypto assets</div>
-          </button>
+          </NavLink>
         </div>
       </div>
     </div>
