@@ -63,27 +63,6 @@ const MultiCurrencyView: React.FC = () => {
     STRK: false,
     CORE: false,
   });
-  const [conversionThreshold, setConversionThreshold] = useState<{
-    [key: string]: number;
-  }>({
-    ETH: 0.1,
-    USDC: 100,
-    STRK: 50,
-    CORE: 25,
-  });
-
-  // Extended balances with fiat
-  const extendedBalances = [
-    ...mockBalances,
-    {
-      token: "NGN",
-      symbol: "NGN",
-      amount: 125000,
-      usd_value: 125000 / 1600, // Assuming 1 USD = 1600 NGN
-      chain: "fiat",
-    },
-  ];
-
   const handleAutoConvertToggle = (symbol: string) => {
     setAutoConvert((prev) => ({
       ...prev,
@@ -124,14 +103,7 @@ const MultiCurrencyView: React.FC = () => {
 
       {/* Currency Balances */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {extendedBalances.map((balance, index) => {
-          const changePercent =
-            Math.random() > 0.5
-              ? +(Math.random() * 10).toFixed(2)
-              : -(Math.random() * 10).toFixed(2);
-          const isPositive = changePercent > 0;
-          const isAutoConvertEnabled = autoConvert[balance.symbol];
-
+        {balances.map((balance, index) => {
           return (
             <div
               key={index}
@@ -139,72 +111,52 @@ const MultiCurrencyView: React.FC = () => {
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      balance.chain === "fiat"
-                        ? "bg-green-100"
-                        : "bg-gradient-to-r from-blue-500 to-purple-500"
-                    }`}
-                  >
-                    <span
-                      className={`font-bold text-sm ${
-                        balance.chain === "fiat"
-                          ? "text-green-600"
-                          : "text-white"
-                      }`}
-                    >
-                      {balance.symbol.slice(0, 2)}
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-r from-blue-500 to-purple-500">
+                    <span className="font-bold text-sm text-white">
+                      {balance.token_symbol.slice(0, 2)}
                     </span>
                   </div>
                   <div>
                     <div className="font-semibold text-gray-900">
-                      {balance.symbol}
+                      {balance.token_symbol}
                     </div>
                     <div className="text-sm text-gray-500 capitalize">
-                      {balance.chain === "fiat"
-                        ? "Fiat Currency"
-                        : balance.chain}
+                      {balance.token_name}
                     </div>
                   </div>
                 </div>
-
-                {balance.chain !== "fiat" && (
-                  <button
-                    onClick={() => handleAutoConvertToggle(balance.symbol)}
-                    className={`p-2 rounded-lg transition-colors ${
-                      isAutoConvertEnabled
-                        ? "bg-emerald-100 text-emerald-600"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                    title={
-                      isAutoConvertEnabled
-                        ? "Auto-convert enabled"
-                        : "Auto-convert disabled"
-                    }
-                  >
-                    {isAutoConvertEnabled ? (
-                      <Lock className="w-4 h-4" />
-                    ) : (
-                      <Unlock className="w-4 h-4" />
-                    )}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleAutoConvertToggle(balance.token_symbol)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    balance.auto_convert_threshold
+                      ? "bg-emerald-100 text-emerald-600"
+                      : "bg-gray-100 text-gray-600"
+                  }`}
+                  title={
+                    balance.auto_convert_threshold
+                      ? "Auto-convert enabled"
+                      : "Auto-convert disabled"
+                  }
+                >
+                  {balance.auto_convert_threshold ? (
+                    <Lock className="w-4 h-4" />
+                  ) : (
+                    <Unlock className="w-4 h-4" />
+                  )}
+                </button>
               </div>
 
               <div className="space-y-2 mb-4">
                 <div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {balance.chain === "fiat"
-                      ? formatCurrency(balance.amount, "NGN")
-                      : balance.amount.toLocaleString(undefined, {
-                          maximumFractionDigits: 6,
-                        })}
+                    {balance.amount.toLocaleString(undefined, {
+                      maximumFractionDigits: 6,
+                    })}
                   </div>
-                  {balance.chain !== "fiat" && (
-                    <div className="text-sm text-gray-500">
-                      {balance.symbol}
-                    </div>
-                  )}
+                  <div className="text-sm text-gray-500">
+                    {balance.token_symbol}
+                  </div>
                 </div>
                 <div className="text-lg font-semibold text-gray-700">
                   {formatCurrency(balance.usd_value)}
@@ -212,24 +164,9 @@ const MultiCurrencyView: React.FC = () => {
               </div>
 
               <div className="flex items-center justify-between">
-                <div
-                  className={`flex items-center space-x-1 ${
-                    isPositive ? "text-emerald-600" : "text-red-600"
-                  }`}
-                >
-                  {isPositive ? (
-                    <TrendingUp className="w-4 h-4" />
-                  ) : (
-                    <TrendingDown className="w-4 h-4" />
-                  )}
-                  <span className="text-sm font-medium">
-                    {isPositive ? "+" : ""}
-                    {changePercent}%
-                  </span>
-                </div>
-
                 {balance.chain !== "fiat" && (
                   <button
+                    type="button"
                     onClick={() => handleQuickSwap(balance.symbol, "NGN")}
                     className="text-blue-600 hover:text-blue-800 transition-colors"
                   >
@@ -238,36 +175,32 @@ const MultiCurrencyView: React.FC = () => {
                 )}
               </div>
 
-              {/* Auto-convert settings */}
-              {balance.chain !== "fiat" && isAutoConvertEnabled && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="text-sm text-gray-600 mb-2">
-                    Auto-convert threshold:
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="number"
-                      value={conversionThreshold[balance.symbol] || 0}
-                      onChange={(e) =>
-                        handleThresholdChange(
-                          balance.symbol,
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                      className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
-                      step="0.1"
-                      min="0"
-                    />
-                    <span className="text-sm text-gray-500">
-                      {balance.symbol}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    Automatically convert to NGN when balance exceeds this
-                    amount
-                  </div>
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="text-sm text-gray-600 mb-2">
+                  Auto-convert threshold:
                 </div>
-              )}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    value={balance.auto_convert_threshold || 0}
+                    onChange={(e) =>
+                      handleThresholdChange(
+                        balance.token_symbol,
+                        Number.parseFloat(e.target.value) || 0
+                      )
+                    }
+                    className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                    step="0.1"
+                    min="0"
+                  />
+                  <span className="text-sm text-gray-500">
+                    {balance.token_symbol}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Automatically convert to NGN when balance exceeds this amount
+                </div>
+              </div>
             </div>
           );
         })}

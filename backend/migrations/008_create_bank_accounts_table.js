@@ -1,17 +1,12 @@
 export const up = async (knex) => {
-  return knex.schema.createTable("kyc", (table) => {
+  return knex.schema.createTable("bank_accounts", (table) => {
     table.increments("id").primary();
     table.integer("user_id").unsigned().notNullable();
-    table.string("full_name", 255);
-    table.string("phone_number", 255);
+    table.string("bank_code", 255);
     table.string("bank_name", 255);
     table.string("account_number", 255);
-    table.string("bvn", 255);
-    table.string("status", 255).defaultTo('pending');
-    table.string("id_document", 255);
-    table.string("proof_of_address", 255);
-    table.string("extra_document", 255);
-    table.text("extra_content");
+    table.string("account_name", 255);
+    table.string("account_id", 255);
     table.timestamp("created_at").defaultTo(knex.fn.now());
     table.timestamp("updated_at").defaultTo(knex.fn.now());
 
@@ -25,5 +20,5 @@ export const up = async (knex) => {
 };
 
 export const down = async (knex) => {
-  return knex.schema.dropTable("kyc");
+  return knex.schema.dropTable("bank_accounts");
 };
