@@ -1,30 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { apiClient } from "../../utils/api";
 import { formatCurrency } from "../../utils/amount";
-import {
-  ArrowRightLeft,
-  Lock,
-  Unlock,
-  TrendingUp,
-  TrendingDown,
-  Settings,
-} from "lucide-react";
-import { mockBalances, formatCrypto } from "../../utils/mockData";
+import { ArrowRightLeft, Lock, Unlock, Settings } from "lucide-react";
 import { DashboardSummary, UserTokenBalance } from "../../interfaces";
-
 const MultiCurrencyView: React.FC = () => {
+  const [isSubmitting, setIsSubmitting] = useState<number | null>(null); // which balance is submitting
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [balances, setBalances] = useState<UserTokenBalance[] | []>([]);
-  const [selectedChain, setSelectedChain] = useState("all");
+  const [balances, setBalances] = useState<UserTokenBalance[]>([]);
+  const [thresholds, setThresholds] = useState<Record<number, string>>({}); // store thresholds by ID
 
-  const filteredBalances =
-    selectedChain === "all"
-      ? balances
-      : balances.filter((balance) => balance.token_name === selectedChain);
-
-  const chains = ["all", ...new Set(balances.map((b) => b.token_name))];
-
+  // Fetch dashboard
   useEffect(() => {
     const fetchDashboardSummary = async () => {
       try {
@@ -38,47 +24,65 @@ const MultiCurrencyView: React.FC = () => {
         setLoading(false);
       }
     };
-
     fetchDashboardSummary();
   }, []);
 
+  // Fetch balances
   useEffect(() => {
     const fetchUserTokenBalance = async () => {
       try {
         const data = await apiClient.get<UserTokenBalance[]>("/balances");
         setBalances(data);
+        const init: Record<number, string> = {};
+        data.forEach((b) => {
+          init[b.id] = b.auto_convert_threshold ?? "";
+        });
+        setThresholds(init);
       } catch (error) {
         console.error("Error fetching balances:", error);
       } finally {
         setLoading(false);
       }
     };
-
     fetchUserTokenBalance();
   }, []);
 
-  const [autoConvert, setAutoConvert] = useState<{ [key: string]: boolean }>({
-    ETH: false,
-    USDC: true,
-    STRK: false,
-    CORE: false,
-  });
-  const handleAutoConvertToggle = (symbol: string) => {
-    setAutoConvert((prev) => ({
-      ...prev,
-      [symbol]: !prev[symbol],
-    }));
+  const handleSubmit = async (
+    e: React.FormEvent,
+    balance: UserTokenBalance
+  ) => {
+    e.preventDefault();
+    const threshold = thresholds[balance.id];
+
+    if (!threshold) {
+      alert("Please enter an amount to auto convert");
+      return;
+    }
+
+    setIsSubmitting(balance.id);
+    try {
+      const response = await apiClient.post(`/balances/${balance.id}`, {
+        auto_convert_threshold: threshold,
+      });
+      console.log(response);
+      alert("New threshold set.");
+    } catch (error) {
+      console.error("Set new threshold failed:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to set new threshold. Please try again."
+      );
+    } finally {
+      setIsSubmitting(null);
+    }
   };
 
-  const handleThresholdChange = (symbol: string, value: number) => {
-    setConversionThreshold((prev) => ({
+  const handleThresholdChange = (id: number, value: string) => {
+    setThresholds((prev) => ({
       ...prev,
-      [symbol]: value,
+      [id]: value,
     }));
-  };
-
-  const handleQuickSwap = (fromSymbol: string, toSymbol: string) => {
-    alert(`Swapping ${fromSymbol} to ${toSymbol}`);
   };
 
   return (
@@ -93,7 +97,7 @@ const MultiCurrencyView: React.FC = () => {
         </p>
       </div>
 
-      {/* Portfolio Overview */}
+      {/* Portfolio */}
       <div className="bg-gradient-to-br from-blue-600 to-purple-700 rounded-xl p-6 text-white">
         <h3 className="text-lg font-semibold mb-4">Total Portfolio Value</h3>
         <div className="text-3xl font-bold mb-2">
@@ -101,109 +105,100 @@ const MultiCurrencyView: React.FC = () => {
         </div>
       </div>
 
-      {/* Currency Balances */}
+      {/* Balances */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {balances.map((balance, index) => {
-          return (
-            <div
-              key={index}
-              className="bg-white rounded-xl p-6 border border-gray-200"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-r from-blue-500 to-purple-500">
-                    <span className="font-bold text-sm text-white">
-                      {balance.token_symbol.slice(0, 2)}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-900">
-                      {balance.token_symbol}
-                    </div>
-                    <div className="text-sm text-gray-500 capitalize">
-                      {balance.token_name}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAutoConvertToggle(balance.token_symbol)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    balance.auto_convert_threshold
-                      ? "bg-emerald-100 text-emerald-600"
-                      : "bg-gray-100 text-gray-600"
-                  }`}
-                  title={
-                    balance.auto_convert_threshold
-                      ? "Auto-convert enabled"
-                      : "Auto-convert disabled"
-                  }
-                >
-                  {balance.auto_convert_threshold ? (
-                    <Lock className="w-4 h-4" />
-                  ) : (
-                    <Unlock className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-
-              <div className="space-y-2 mb-4">
-                <div>
-                  <div className="text-2xl font-bold text-gray-900">
-                    {balance.amount.toLocaleString(undefined, {
-                      maximumFractionDigits: 6,
-                    })}
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    {balance.token_symbol}
-                  </div>
-                </div>
-                <div className="text-lg font-semibold text-gray-700">
-                  {formatCurrency(balance.usd_value)}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                {balance.chain !== "fiat" && (
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSwap(balance.symbol, "NGN")}
-                    className="text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    <ArrowRightLeft className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="text-sm text-gray-600 mb-2">
-                  Auto-convert threshold:
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="number"
-                    value={balance.auto_convert_threshold || 0}
-                    onChange={(e) =>
-                      handleThresholdChange(
-                        balance.token_symbol,
-                        Number.parseFloat(e.target.value) || 0
-                      )
-                    }
-                    className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
-                    step="0.1"
-                    min="0"
-                  />
-                  <span className="text-sm text-gray-500">
-                    {balance.token_symbol}
+        {balances.map((balance) => (
+          <div
+            key={balance.id}
+            className="bg-white rounded-xl p-6 border border-gray-200"
+          >
+            {/* Balance header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-r from-blue-500 to-purple-500">
+                  <span className="font-bold text-sm text-white">
+                    {balance.token_symbol.slice(0, 2)}
                   </span>
                 </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  Automatically convert to NGN when balance exceeds this amount
+                <div>
+                  <div className="font-semibold text-gray-900">
+                    {balance.token_symbol}
+                  </div>
+                  <div className="text-sm text-gray-500 capitalize">
+                    {balance.token_name}
+                  </div>
                 </div>
               </div>
+              <button
+                type="button"
+                className={`p-2 rounded-lg transition-colors ${
+                  balance.auto_convert_threshold
+                    ? "bg-emerald-100 text-emerald-600"
+                    : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                {balance.auto_convert_threshold ? (
+                  <Lock className="w-4 h-4" />
+                ) : (
+                  <Unlock className="w-4 h-4" />
+                )}
+              </button>
             </div>
-          );
-        })}
+
+            {/* Balance amount */}
+            <div className="space-y-2 mb-4">
+              <div className="text-2xl font-bold text-gray-900">
+                {balance.amount.toLocaleString(undefined, {
+                  maximumFractionDigits: 6,
+                })}{" "}
+                {balance.token_symbol}
+              </div>
+              <div className="text-lg font-semibold text-gray-700">
+                {balance.usd_value} USD
+              </div>
+            </div>
+
+            {/* Threshold form */}
+            <form
+              onSubmit={(e) => handleSubmit(e, balance)}
+              className="mt-4 pt-4 border-t border-gray-200 flex flex-col space-y-2"
+            >
+              <input type="hidden" value={balance.id} />
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={thresholds[balance.id] ?? ""}
+                onChange={(e) =>
+                  handleThresholdChange(balance.id, e.target.value)
+                }
+                className="w-full px-4 py-2 border border-gray-300 rounded text-xl"
+                placeholder="Enter threshold"
+              />
+              <div className="text-xs text-gray-500">
+                Automatically convert to NGN when balance exceeds this amount
+              </div>
+              <button
+                type="submit"
+                disabled={isSubmitting === balance.id}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                {isSubmitting === balance.id ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Submitting...</span>
+                  </>
+                ) : (
+                  <span>
+                    {balance.auto_convert_threshold
+                      ? "Update threshold"
+                      : "Set threshold"}
+                  </span>
+                )}
+              </button>
+            </form>
+          </div>
+        ))}
       </div>
 
       {/* Quick Actions */}

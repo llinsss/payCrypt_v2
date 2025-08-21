@@ -9,4 +9,5 @@ export const balanceSchema = Joi.object({
   usd_value: Joi.any().allow("", null),
   tag: Joi.any().allow("", null),
   address: Joi.any().allow("", null),
+  auto_convert_threshold: Joi.any().allow("", null),
 });
