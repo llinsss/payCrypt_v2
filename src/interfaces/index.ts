@@ -12,6 +12,7 @@ export interface UserTokenBalance {
   amount: string;
   usd_value: string;
   address: string | null;
+  auto_convert_threshold?: string | null;
   created_at: string;
   updated_at: string;
   user_email: string;
