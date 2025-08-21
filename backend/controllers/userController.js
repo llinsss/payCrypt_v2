@@ -124,10 +124,10 @@ export const deleteUser = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const deleted = await User.delete(id);
-    if (!deleted) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    // const deleted = await User.delete(id);
+    // if (!deleted) {
+    //   return res.status(404).json({ error: "User not found" });
+    // }
 
     res.json({ message: "User deleted successfully" });
   } catch (error) {

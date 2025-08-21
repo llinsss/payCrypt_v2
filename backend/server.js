@@ -12,6 +12,8 @@ import kycRoutes from "./routes/kycs.js";
 import transactionRoutes from "./routes/transactions.js";
 import tokenRoutes from "./routes/tokens.js";
 import chainRoutes from "./routes/chains.js";
+import walletRoutes from "./routes/wallets.js";
+import bankAccountRoutes from "./routes/bank-accounts.js";
 
 // Load environment variables
 dotenv.config();
@@ -58,6 +60,8 @@ app.use("/api/kycs", kycRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/tokens", tokenRoutes);
 app.use("/api/chains", chainRoutes);
+app.use("/api/wallets", walletRoutes);
+app.use("/api/bank-accounts", bankAccountRoutes);
 
 // 404 handler
 app.use("*", (req, res) => {
