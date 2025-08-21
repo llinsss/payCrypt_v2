@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { formatCurrency } from "../../utils/mockData";
+import { formatCurrency } from "../../utils/amount";
 import { DashboardSummary, UserTokenBalance } from "../../interfaces";
 import { apiClient } from "../../utils/api";
 
