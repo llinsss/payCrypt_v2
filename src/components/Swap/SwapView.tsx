@@ -1,60 +1,76 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowUpDown, Settings, RefreshCw } from 'lucide-react';
-import { mockBalances, mockTokens, formatCurrency, formatCrypto } from '../../utils/mockData';
+import React, { useState, useEffect, useMemo } from "react";
+import { ArrowUpDown, Settings, RefreshCw } from "lucide-react";
+import { formatCurrency, formatCrypto } from "../../utils/amount";
+import { UserTokenBalance } from "../../interfaces";
+import { apiClient } from "../../utils/api";
 
 const SwapView: React.FC = () => {
-  const [fromToken, setFromToken] = useState('ETH');
-  const [toToken, setToToken] = useState('USDC');
-  const [fromAmount, setFromAmount] = useState('');
-  const [toAmount, setToAmount] = useState('');
-  const [slippage, setSlippage] = useState('0.5');
+  const [fromToken, setFromToken] = useState<UserTokenBalance | null>(null);
+  const [toToken, setToToken] = useState<UserTokenBalance | null>(null);
+  const [fromAmount, setFromAmount] = useState("");
+  const [slippage, setSlippage] = useState("0.5");
   const [isLoading, setIsLoading] = useState(false);
-
-  const fromBalance = mockBalances.find(b => b.symbol === fromToken);
-  const toTokenData = mockTokens.find(t => t.symbol === toToken);
-  const fromTokenData = mockTokens.find(t => t.symbol === fromToken);
-
-  const calculateToAmount = (amount: string) => {
-    if (!amount || !fromTokenData || !toTokenData) return '';
-    const rate = fromTokenData.price / toTokenData.price;
-    return (parseFloat(amount) * rate).toFixed(6);
-  };
+  const [balances, setBalances] = useState<UserTokenBalance[]>([]);
 
   useEffect(() => {
-    if (fromAmount) {
-      setToAmount(calculateToAmount(fromAmount));
-    }
+    const fetchBalances = async () => {
+      try {
+        const data = await apiClient.get<UserTokenBalance[]>("/balances");
+        setBalances(data);
+      } catch (error) {
+        console.error("Error fetching balances:", error);
+      }
+    };
+    fetchBalances();
+  }, []);
+
+  // 🔹 Compute exchange rate (safe)
+  const exchangeRate = useMemo(() => {
+    if (!fromToken || !toToken) return null;
+    return fromToken.token_price / toToken.token_price;
+  }, [fromToken, toToken]);
+
+  // 🔹 Derived toAmount
+  const toAmount = useMemo(() => {
+    if (!exchangeRate || !fromAmount) return "";
+    return (Number(fromAmount) * exchangeRate).toFixed(6);
+  }, [fromAmount, exchangeRate]);
+
+  // 🔹 Validation
+  const isValidSwap = useMemo(() => {
+    const amount = Number(fromAmount);
+    return (
+      amount > 0 &&
+      fromToken &&
+      toToken &&
+      fromToken.id !== toToken.id &&
+      amount <= Number(fromToken.amount) // ✅ ensure user has enough balance
+    );
   }, [fromAmount, fromToken, toToken]);
 
+  const priceImpact = useMemo(() => (Math.random() * 0.5).toFixed(2), []);
+  const estimatedGas = 15.5; // Mock
+
   const handleSwapTokens = () => {
-    const tempToken = fromToken;
-    const tempAmount = fromAmount;
     setFromToken(toToken);
-    setToToken(tempToken);
+    setToToken(fromToken);
     setFromAmount(toAmount);
-    setToAmount(tempAmount);
   };
 
   const handleMaxClick = () => {
-    if (fromBalance) {
-      setFromAmount(fromBalance.amount.toString());
-    }
+    if (fromToken) setFromAmount(fromToken.amount.toString());
   };
 
   const handleSwap = () => {
+    if (!isValidSwap) return;
     setIsLoading(true);
-    // Simulate swap process
+
     setTimeout(() => {
       setIsLoading(false);
-      alert('Swap completed successfully!');
-      setFromAmount('');
-      setToAmount('');
-    }, 3000);
+      alert("Swap completed successfully!");
+      setFromAmount("");
+    }, 2000);
   };
-
-  const isValidSwap = fromAmount && parseFloat(fromAmount) > 0 && parseFloat(fromAmount) <= (fromBalance?.amount || 0);
-  const priceImpact = Math.random() * 0.5; // Mock price impact
-  const estimatedGas = 15.50; // Mock gas fee
 
   return (
     <div className="space-y-6">
@@ -73,18 +89,30 @@ const SwapView: React.FC = () => {
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-600">From</span>
               <span className="text-sm text-gray-600">
-                Balance: {fromBalance ? formatCrypto(fromBalance.amount, fromBalance.symbol) : '0'}
+                Balance:{" "}
+                {fromToken
+                  ? formatCrypto(
+                      Number(fromToken.amount),
+                      fromToken.token_symbol
+                    )
+                  : "0"}
               </span>
             </div>
             <div className="flex items-center space-x-3">
               <select
-                value={fromToken}
-                onChange={(e) => setFromToken(e.target.value)}
-                className="bg-white border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={fromToken?.id || ""}
+                onChange={(e) =>
+                  setFromToken(
+                    balances.find((b) => b.id.toString() === e.target.value) ||
+                      null
+                  )
+                }
+                className="bg-white border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
               >
-                {mockBalances.map(balance => (
-                  <option key={balance.symbol} value={balance.symbol}>
-                    {balance.symbol}
+                <option value="">Select token</option>
+                {balances.map((balance) => (
+                  <option key={balance.id} value={balance.id}>
+                    {balance.token_symbol}
                   </option>
                 ))}
               </select>
@@ -96,15 +124,16 @@ const SwapView: React.FC = () => {
                 className="flex-1 bg-transparent text-2xl font-semibold focus:outline-none"
               />
               <button
+                type="button"
                 onClick={handleMaxClick}
                 className="text-blue-600 font-medium text-sm hover:text-blue-800"
               >
                 MAX
               </button>
             </div>
-            {fromAmount && fromTokenData && (
+            {fromAmount && fromToken && (
               <div className="text-sm text-gray-500 mt-1">
-                ≈ {formatCurrency(parseFloat(fromAmount) * fromTokenData.price)}
+                ≈ {formatCurrency(Number(fromAmount) * fromToken.token_price)}
               </div>
             )}
           </div>
@@ -112,6 +141,7 @@ const SwapView: React.FC = () => {
           {/* Swap Button */}
           <div className="flex justify-center">
             <button
+              type="button"
               onClick={handleSwapTokens}
               className="p-3 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
             >
@@ -124,18 +154,27 @@ const SwapView: React.FC = () => {
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-600">To</span>
               <span className="text-sm text-gray-600">
-                Balance: {mockBalances.find(b => b.symbol === toToken)?.amount.toFixed(4) || '0'} {toToken}
+                Balance:{" "}
+                {toToken
+                  ? formatCrypto(Number(toToken.amount), toToken.token_symbol)
+                  : "0"}
               </span>
             </div>
             <div className="flex items-center space-x-3">
               <select
-                value={toToken}
-                onChange={(e) => setToToken(e.target.value)}
-                className="bg-white border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={toToken?.id || ""}
+                onChange={(e) =>
+                  setToToken(
+                    balances.find((b) => b.id.toString() === e.target.value) ||
+                      null
+                  )
+                }
+                className="bg-white border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
               >
-                {mockTokens.filter(token => token.symbol !== fromToken).map(token => (
-                  <option key={token.symbol} value={token.symbol}>
-                    {token.symbol}
+                <option value="">Select token</option>
+                {balances.map((balance) => (
+                  <option key={balance.id} value={balance.id}>
+                    {balance.token_symbol}
                   </option>
                 ))}
               </select>
@@ -144,12 +183,12 @@ const SwapView: React.FC = () => {
                 value={toAmount}
                 readOnly
                 placeholder="0.0"
-                className="flex-1 bg-transparent text-2xl font-semibold focus:outline-none text-gray-600"
+                className="flex-1 bg-transparent text-2xl font-semibold text-gray-600"
               />
             </div>
-            {toAmount && toTokenData && (
+            {toAmount && toToken && (
               <div className="text-sm text-gray-500 mt-1">
-                ≈ {formatCurrency(parseFloat(toAmount) * toTokenData.price)}
+                ≈ {formatCurrency(Number(toAmount) * toToken.token_price)}
               </div>
             )}
           </div>
@@ -157,20 +196,27 @@ const SwapView: React.FC = () => {
       </div>
 
       {/* Swap Details */}
-      {fromAmount && toAmount && (
+      {isValidSwap && (
         <div className="bg-white rounded-xl p-6 border border-gray-200">
-          <h4 className="text-lg font-semibold text-gray-900 mb-4">Swap Details</h4>
+          <h4 className="text-lg font-semibold text-gray-900 mb-4">
+            Swap Details
+          </h4>
           <div className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-600">Exchange Rate:</span>
               <span className="font-medium">
-                1 {fromToken} = {calculateToAmount('1')} {toToken}
+                1 {fromToken?.token_symbol} = {exchangeRate?.toFixed(6)}{" "}
+                {toToken?.token_symbol}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">Price Impact:</span>
-              <span className={`font-medium ${priceImpact > 1 ? 'text-red-600' : 'text-emerald-600'}`}>
-                {priceImpact.toFixed(2)}%
+              <span
+                className={`font-medium ${
+                  Number(priceImpact) > 1 ? "text-red-600" : "text-emerald-600"
+                }`}
+              >
+                {priceImpact}%
               </span>
             </div>
             <div className="flex justify-between">
@@ -185,7 +231,8 @@ const SwapView: React.FC = () => {
               <div className="flex justify-between">
                 <span className="text-gray-600">Minimum Received:</span>
                 <span className="font-medium">
-                  {(parseFloat(toAmount) * (1 - parseFloat(slippage) / 100)).toFixed(6)} {toToken}
+                  {(Number(toAmount) * (1 - Number(slippage) / 100)).toFixed(6)}{" "}
+                  {toToken?.token_symbol}
                 </span>
               </div>
             </div>
@@ -195,16 +242,18 @@ const SwapView: React.FC = () => {
 
       {/* Slippage Settings */}
       <div className="bg-white rounded-xl p-6 border border-gray-200">
-        <h4 className="text-lg font-semibold text-gray-900 mb-4">Slippage Tolerance</h4>
+        <h4 className="text-lg font-semibold text-gray-900 mb-4">
+          Slippage Tolerance
+        </h4>
         <div className="flex space-x-2">
-          {['0.1', '0.5', '1.0'].map(value => (
+          {["0.1", "0.5", "1.0"].map((value) => (
             <button
               key={value}
               onClick={() => setSlippage(value)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 slippage === value
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
               {value}%
@@ -214,7 +263,7 @@ const SwapView: React.FC = () => {
             type="number"
             value={slippage}
             onChange={(e) => setSlippage(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm w-20 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm w-20 focus:ring-2 focus:ring-blue-500"
             step="0.1"
             min="0.1"
             max="50"
@@ -229,8 +278,8 @@ const SwapView: React.FC = () => {
         disabled={!isValidSwap || isLoading}
         className={`w-full py-4 px-6 rounded-lg font-semibold transition-all ${
           isValidSwap && !isLoading
-            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            ? "bg-blue-600 hover:bg-blue-700 text-white"
+            : "bg-gray-300 text-gray-500 cursor-not-allowed"
         }`}
       >
         {isLoading ? (
@@ -239,7 +288,9 @@ const SwapView: React.FC = () => {
             <span>Swapping...</span>
           </div>
         ) : (
-          `Swap ${fromToken} for ${toToken}`
+          `Swap ${fromToken?.token_symbol || "?"} → ${
+            toToken?.token_symbol || "?"
+          }`
         )}
       </button>
 

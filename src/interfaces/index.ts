@@ -20,7 +20,7 @@ export interface UserTokenBalance {
   token_name: string;
   token_symbol: string;
   token_logo_url: string;
-  token_price: string;
+  token_price: string | number;
 }
 
 export interface UserTransaction {
