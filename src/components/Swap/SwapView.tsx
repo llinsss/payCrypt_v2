@@ -274,6 +274,7 @@ const SwapView: React.FC = () => {
 
       {/* Swap Button */}
       <button
+      type="button"
         onClick={handleSwap}
         disabled={!isValidSwap || isLoading}
         className={`w-full py-4 px-6 rounded-lg font-semibold transition-all ${

@@ -23,6 +23,10 @@ const Balance = {
       .first();
   },
 
+  async findByAddress(address) {
+    return await db("balances").where({ address }).first();
+  },
+
   async getAll(limit = 10, offset = 0) {
     return await db("balances")
       .select(
@@ -71,12 +75,12 @@ const Balance = {
   },
 
   async credit(id, amount) {
-    await db("balances").where({ id }).increment("balance", amount);
+    await db("balances").where({ id }).increment("amount", amount);
     return this.findById(id);
   },
 
   async debit(id, amount) {
-    await db("balances").where({ id }).decrement("balance", amount);
+    await db("balances").where({ id }).decrement("amount", amount);
     return this.findById(id);
   },
 

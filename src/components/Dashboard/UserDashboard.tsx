@@ -1,15 +1,27 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { Wallet, TrendingUp, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import {
+  Wallet,
+  TrendingUp,
+  ArrowDownLeft,
+  ArrowUpRight,
+  CastIcon,
+  TrendingUpIcon,
+} from "lucide-react";
 import StatsCard from "./StatsCard";
 import TransactionTable from "./TransactionTable";
 import { apiClient } from "../../utils/api";
-import { formatCrypto, formatCurrency } from "../../utils/amount";
+import {
+  formatCrypto,
+  formatCurrency,
+  formatCurrencyToNGN,
+} from "../../utils/amount";
 import { useAuth } from "../../contexts/AuthContext";
 import { NavLink } from "react-router-dom";
 import {
   DashboardSummary,
   UserTokenBalance,
   UserTransaction,
+  WalletData,
 } from "../../interfaces";
 
 const UserDashboard: React.FC = () => {
@@ -19,20 +31,24 @@ const UserDashboard: React.FC = () => {
   const [userTransactions, setUserTransactions] = useState<UserTransaction[]>(
     []
   );
+  const [wallet, setWallet] = useState<WalletData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [balancesRes, summaryRes, transactionsRes] = await Promise.all([
-          apiClient.get<UserTokenBalance[]>("/balances"),
-          apiClient.get<DashboardSummary>("/users/dashboard-summary"),
-          apiClient.get<UserTransaction[]>("/transactions"),
-        ]);
+        const [balancesRes, summaryRes, transactionsRes, walletRes] =
+          await Promise.all([
+            apiClient.get<UserTokenBalance[]>("/balances"),
+            apiClient.get<DashboardSummary>("/users/dashboard-summary"),
+            apiClient.get<UserTransaction[]>("/transactions"),
+            apiClient.get<WalletData>("/wallets"),
+          ]);
 
         setBalances(balancesRes || []);
         setSummary(summaryRes || null);
         setUserTransactions(transactionsRes || []);
+        setWallet(walletRes || null);
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
       } finally {
@@ -46,6 +62,12 @@ const UserDashboard: React.FC = () => {
   // 🧮 Memoized computed values
   const stats = useMemo(
     () => [
+      {
+        title: "Available NGN Balance",
+        value: `${formatCurrencyToNGN(wallet?.available_balance ?? 0)}`,
+        icon: TrendingUpIcon,
+        color: "text-purple-600",
+      },
       {
         title: "Total Balance",
         value: formatCurrency(summary?.total_balance ?? 0),
@@ -63,12 +85,6 @@ const UserDashboard: React.FC = () => {
         value: formatCurrency(summary?.total_withdrawal ?? 0),
         icon: ArrowUpRight,
         color: "text-red-600",
-      },
-      {
-        title: "Portfolio Growth",
-        value: `+${formatCurrency(0)}%`, // TODO: replace with real growth calc
-        icon: TrendingUp,
-        color: "text-purple-600",
       },
     ],
     [summary]

@@ -14,6 +14,9 @@ import tokenRoutes from "./routes/tokens.js";
 import chainRoutes from "./routes/chains.js";
 import walletRoutes from "./routes/wallets.js";
 import bankAccountRoutes from "./routes/bank-accounts.js";
+import starknet from "./starknet-contract.js";
+import { shortString } from "starknet";
+import listenForDeposits from "./services/starknetListener.js";
 
 // Load environment variables
 dotenv.config();
@@ -63,6 +66,72 @@ app.use("/api/chains", chainRoutes);
 app.use("/api/wallets", walletRoutes);
 app.use("/api/bank-accounts", bankAccountRoutes);
 
+app.get("/create-tag-wallet-address/:tag", async (req, res) => {
+  try {
+    const { tag } = req.params;
+
+    const contract = await starknet.getContract();
+    // convert string -> felt
+    const feltTag = shortString.encodeShortString(tag);
+
+    console.log(tag, feltTag);
+    const tx = await contract.register_tag(feltTag);
+    console.log(tx);
+    await starknet.provider.waitForTransaction(tx.transaction_hash);
+
+    console.log("Raw contract response:", tx);
+
+    return res.json({ tag, tx });
+  } catch (error) {
+    console.error("Error creating wallet address:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/get-tag-wallet-address/:tag", async (req, res) => {
+  try {
+    const { tag } = req.params;
+
+    const contract = await starknet.getContract();
+
+    // Encode tag (felt252 from string)
+    const feltTag = shortString.encodeShortString(tag);
+
+    // Call the view function
+    const raw = await contract.get_tag_wallet_address(feltTag);
+
+    // Handle Starknet.js return shape
+    let walletAddress;
+    if (Array.isArray(raw)) {
+      walletAddress = raw[0];
+    } else if (raw?.wallet_address) {
+      walletAddress = raw.wallet_address;
+    } else if (typeof raw === "bigint") {
+      walletAddress = raw;
+    } else {
+      throw new Error("Unexpected contract return format");
+    }
+
+    // Convert BigInt → hex string
+    const address = `0x${walletAddress.toString(16)}`;
+
+    return res.json({ tag, address });
+  } catch (error) {
+    console.error("❌ Error fetching wallet address:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/fetch-transactions/:block_number", async (req, res) => {
+  try {
+    const { block_number } = req.params;
+    const data = await listenForDeposits(block_number);
+    return res.json(data);
+  } catch (error) {
+    console.error("❌ Error fetching transactions:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
 // 404 handler
 app.use("*", (req, res) => {
   res.status(404).json({ error: "Page not found" });
@@ -84,6 +153,7 @@ app.use((error, req, res, next) => {
   });
 });
 
+setInterval(listenForDeposits, 2000);
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);

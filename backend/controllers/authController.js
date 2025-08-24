@@ -1,6 +1,5 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import knex from "knex";
 import { createUserBalance } from "./balanceController.js";
 import Wallet from "../models/Wallet.js";
 import BankAccount from "../models/BankAccount.js";
@@ -38,11 +37,11 @@ export const register = async (req, res) => {
 
     user.password = undefined;
 
-    const create_balances = await createUserBalance(user.id);
-
     const create_wallet = await Wallet.create({ user_id: user.id });
 
     const create_bank_account = await BankAccount.create({ user_id: user.id });
+
+    const create_balances = await createUserBalance(user.id, tag);
 
     res.status(201).json({
       message: "User registered successfully",

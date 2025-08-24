@@ -145,6 +145,7 @@ const QRCodeGenerator: React.FC = () => {
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-lg">
               <div className="text-sm text-blue-100 mb-1">Send crypto to:</div>
               <div className="text-2xl font-bold">{userTag}</div>
+              <div className="text-sm font-medium">Wallet Address: {selectedToken?.address ?? "not set"}</div>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -187,7 +188,9 @@ const QRCodeGenerator: React.FC = () => {
       <div className="bg-blue-50 rounded-xl p-6 border border-blue-200">
         <h4 className="text-lg font-semibold text-gray-900 mb-3">How to Use</h4>
         <div className="space-y-2 text-sm text-gray-700">
-          <p>• Share your QR code or tag with anyone who wants to send you crypto</p>
+          <p>
+            • Share your QR code or tag with anyone who wants to send you crypto
+          </p>
           <p>• They can scan the QR code with their wallet app</p>
           <p>
             • Or they can send directly to your tag:{" "}

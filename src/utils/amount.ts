@@ -13,3 +13,13 @@ export const formatCrypto = (amount: number, symbol: string) => {
     maximumFractionDigits: 6,
   })} ${symbol}`;
 };
+
+
+export const formatCurrencyToNGN = (amount: number, currency = "NGN") => {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+};

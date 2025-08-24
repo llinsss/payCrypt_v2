@@ -50,3 +50,13 @@ export interface UserTransaction {
   chain_name: string;
   chain_symbol: string;
 }
+
+
+export interface WalletData {
+  id: number;
+  user_id: number;
+  available_balance: number;
+  locked_balance: number;
+  created_at: string;
+  updated_at: string;
+}
