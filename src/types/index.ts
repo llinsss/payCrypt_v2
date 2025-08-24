@@ -12,8 +12,8 @@ export interface Balance {
   user_id: string;
   token: string;
   symbol: string;
-  amount: number;
-  usd_value: number;
+  amount: number | string;
+  usd_value: number | string;
   address: string;
   tag: string;
   user_email?: string;
@@ -27,8 +27,8 @@ export interface Transaction {
   balance_id: number;
   chain_id: number;
   type: "deposit" | "withdrawal" | "swap" | "transfer";
-  amount: number;
-  usd_value: number;
+  amount: number | string;
+  usd_value: number | string;
   status: "pending" | "completed" | "failed";
   tx_hash?: string;
   timestamp?: string;

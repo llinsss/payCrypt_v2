@@ -151,11 +151,11 @@ const BalancesView: React.FC = () => {
                   )}
                 </div>
                 <div className="text-sm text-gray-500">
-                  {balance?.symbol || balance?.token_symbol}
+                  {balance?.token_symbol}
                 </div>
               </div>
               <div className="text-lg font-semibold text-gray-700">
-                {masked(formatCurrency(balance?.usd_value), "••••••••")}
+                {masked(formatCurrency(Number(balance?.usd_value)), "••••••••")}
               </div>
             </div>
 
