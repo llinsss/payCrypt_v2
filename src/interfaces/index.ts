@@ -9,8 +9,8 @@ export interface UserTokenBalance {
   id: number;
   user_id: number;
   token_id: number;
-  amount: string;
-  usd_value: string;
+  amount: string | number;
+  usd_value: string | number;
   address: string | null;
   auto_convert_threshold?: string | null;
   created_at: string;
@@ -32,8 +32,8 @@ export interface UserTransaction {
   type: string;
   status: string;
   tx_hash: string;
-  usd_value: string;
-  amount: string;
+  usd_value: string | number;
+  amount: string | number;
   timestamp: string;
   from_address: string;
   to_address: string;

@@ -27,6 +27,10 @@ const Balance = {
     return await db("balances").where({ address }).first();
   },
 
+  async findByUserIdAndTokenId(user_id, token_id) {
+    return await db("balances").where({ user_id, token_id }).first();
+  },
+
   async getAll(limit = 10, offset = 0) {
     return await db("balances")
       .select(
