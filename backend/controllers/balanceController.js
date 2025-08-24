@@ -1,5 +1,6 @@
 import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
+import starknet from "../starknet-contract.js";
 
 export const createBalance = async (req, res) => {
   try {
@@ -101,18 +102,43 @@ export const deleteBalance = async (req, res) => {
   }
 };
 
-export const createUserBalance = async (user_id) => {
+export const createUserBalance = async (user_id, tag) => {
   try {
     const tokens = await Token.getAll();
-    tokens.forEach(async (token) => {
-      await Balance.create({
+    const balances = [];
+
+    // Get contract only once
+    const contract = tokens.some((t) => t.symbol === "STRK")
+      ? await starknet.getContract()
+      : null;
+
+    for (const token of tokens) {
+      let address = null;
+
+      if (token.symbol === "STRK" && contract) {
+        // Write tx (register tag)
+        const tx = await contract.register_tag(tag);
+        await starknet.provider.waitForTransaction(tx.transaction_hash);
+
+        // Read wallet address
+        const feltAddress = await contract.get_tag_wallet_address(tag);
+
+        address = `0x${feltAddress.toString(16)}`;
+        console.log("Wallet address:", address);
+      }
+
+      const balance = await Balance.create({
         user_id,
         token_id: token.id,
-        address: null,
+        address,
       });
-    });
-    return true;
+
+      balances.push(balance);
+    }
+
+    return balances;
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("❌ createUserBalance failed:", error);
+    throw error; // let the controller handle the HTTP response
   }
 };

@@ -94,7 +94,7 @@ const DepositsView: React.FC = () => {
       </div>
 
       {/* Token Selection */}
-      <div className="bg-white rounded-xl p-6 border border-gray-200">
+      {/* <div className="bg-white rounded-xl p-6 border border-gray-200">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           Select Token
         </h3>
@@ -125,7 +125,7 @@ const DepositsView: React.FC = () => {
             ))}
           </div>
         )}
-      </div>
+      </div> */}
 
       {/* Security Notice */}
       <InfoCard
