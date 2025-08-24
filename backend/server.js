@@ -17,6 +17,7 @@ import bankAccountRoutes from "./routes/bank-accounts.js";
 import starknet from "./starknet-contract.js";
 import { shortString } from "starknet";
 import listenForDeposits from "./services/starknetListener.js";
+import { cryptoToFiat } from "./utils/amount.js";
 
 // Load environment variables
 dotenv.config();
@@ -132,6 +133,17 @@ app.get("/fetch-transactions/:block_number", async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 });
+
+app.post("/api/usd-equivalent", async (req, res) => {
+  try {
+    const { token, amount } = req.body;
+    const data = await cryptoToFiat(token, amount);
+    return res.json(data);
+  } catch (error) {
+    console.error("❌ Error fetching usd equivalent:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
 // 404 handler
 app.use("*", (req, res) => {
   res.status(404).json({ error: "Page not found" });
@@ -153,7 +165,7 @@ app.use((error, req, res, next) => {
   });
 });
 
-setInterval(listenForDeposits, 2000);
+// setInterval(listenForDeposits, 2000);
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);

@@ -126,10 +126,15 @@ const listenForDeposits = async (block_number = null) => {
 
               const balance = await Balance.findByAddress(decoded.recipient);
               if (balance) {
+                const token = await Token.findById(balance.token_id);
                 const user = await User.findById(balance.user_id);
-                if (user) {
+                if (user && token) {
+                  const getUSDValue = await cryptoPrice(token.symbol);
                   const update_bal = await Balance.update(balance.id, {
-                    amount: Number(amount) + Number(decoded.amount),
+                    amount: Number(decoded.amount) + Number(balance.amount),
+                    usd_value:
+                      Number(decoded.amount * (getUSDValue ?? 1)) +
+                      Number(decoded.usd_value),
                   });
                   const create_tx = await Transaction.create({
                     user_id: user.id,
@@ -139,7 +144,7 @@ const listenForDeposits = async (block_number = null) => {
                     reference: secureRandomString(16),
                     type: "credit",
                     tx_hash: tx.transaction_hash,
-                    usd_value: Number(decoded.amount),
+                    usd_value: Number(decoded.amount * getUSDValue ?? 1),
                     amount: Number(decoded.amount),
                     timestamp: new Date(),
                     from_address: decoded.sender,
