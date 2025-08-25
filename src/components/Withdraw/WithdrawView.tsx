@@ -5,18 +5,20 @@ import {
   CreditCard,
   Wallet,
   ChevronDown,
+  Tag,
 } from "lucide-react";
 import { formatCurrency, formatCrypto } from "../../utils/amount";
 import { UserTokenBalance } from "../../interfaces";
 import { apiClient } from "../../utils/api";
 
-type WithdrawType = "wallet" | "fiat";
+type WithdrawType = "wallet" | "fiat" | "tag";
 
 const WithdrawView: React.FC = () => {
   const [withdrawType, setWithdrawType] = useState<WithdrawType>("wallet");
   const [selectedBalance, setSelectedBalance] =
     useState<UserTokenBalance | null>(null);
   const [recipientAddress, setRecipientAddress] = useState("");
+  const [recipientTag, setRecipientTag] = useState(""); // 🔹 new state
   const [bankAccount, setBankAccount] = useState("");
   const [amount, setAmount] = useState<string>("0");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -50,21 +52,40 @@ const WithdrawView: React.FC = () => {
   const isValidRecipient =
     withdrawType === "wallet"
       ? recipientAddress.trim().length > 0
+      : withdrawType === "tag"
+      ? recipientTag.trim().length > 0
       : bankAccount.trim().length > 0;
 
-  const handleWithdraw = () => {
+  const handleWithdraw = async () => {
     setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      alert("Withdrawal initiated successfully!");
-    }, 2000);
+    if (withdrawType === "tag") {
+      const response = await apiClient.post('/wallets/deposit', {
+        balance_id: selectedBalance?.id,
+        amount: amount,
+        receiver_tag: recipientTag
+      })
+      console.log(response);
+    } else {
+      setTimeout(() => {
+        setIsProcessing(false);
+        alert("Withdrawal initiated successfully!");
+      }, 2000);
+    }
   };
 
   return (
     <div className="space-y-6">
       {/* Withdraw Type */}
       <FormSection title="Withdrawal Method">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <WithdrawMethodCard
+            type="tag"
+            label="Withdraw to Tag"
+            description="Send to internal tag"
+            active={withdrawType === "tag"}
+            onClick={() => setWithdrawType("tag")}
+            Icon={Tag}
+          />
           <WithdrawMethodCard
             type="wallet"
             label="Crypto Wallet"
@@ -148,10 +169,12 @@ const WithdrawView: React.FC = () => {
         title={
           withdrawType === "wallet"
             ? "Recipient Wallet Address"
+            : withdrawType === "tag"
+            ? "Recipient Tag"
             : "Bank Account Details"
         }
       >
-        {withdrawType === "wallet" ? (
+        {withdrawType === "wallet" && (
           <input
             type="text"
             value={recipientAddress}
@@ -159,7 +182,19 @@ const WithdrawView: React.FC = () => {
             placeholder="Enter wallet address (0x...)"
             className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
-        ) : (
+        )}
+
+        {withdrawType === "tag" && (
+          <input
+            type="text"
+            value={recipientTag}
+            onChange={(e) => setRecipientTag(e.target.value)}
+            placeholder="Enter recipient tag (e.g. @username)"
+            className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+        )}
+
+        {withdrawType === "fiat" && (
           <div className="space-y-4">
             <input
               type="text"
@@ -209,6 +244,8 @@ const WithdrawView: React.FC = () => {
               •{" "}
               {withdrawType === "wallet"
                 ? "Double-check the recipient address"
+                : withdrawType === "tag"
+                ? "Make sure you entered the correct tag"
                 : "Bank transfers may take 1-3 business days"}
             </li>
             <li>• Contact support if you encounter any issues</li>
@@ -238,6 +275,8 @@ const WithdrawView: React.FC = () => {
             <span>
               {withdrawType === "wallet"
                 ? "Withdraw to Wallet"
+                : withdrawType === "tag"
+                ? "Send to Tag"
                 : "Withdraw to Bank Account"}
             </span>
           </div>
