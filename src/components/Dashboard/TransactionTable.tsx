@@ -66,7 +66,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                   {tx.status}
                 </span>
               </div>
-              
+
               <div className="space-y-1">
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Amount:</span>
@@ -79,7 +79,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                     </div>
                   </div>
                 </div>
-                
+
                 {showUserColumn && (
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-500">User:</span>
@@ -88,14 +88,14 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                     </span>
                   </div>
                 )}
-                
+
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Chain:</span>
                   <span className="text-sm text-gray-900 capitalize">
                     {tx.chain_name}
                   </span>
                 </div>
-                
+
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-500">Date:</span>
                   <div className="flex items-center space-x-2">
@@ -132,7 +132,10 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                 Amount
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Chain
+                Sender
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Recipient
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
@@ -175,7 +178,12 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className="text-sm text-gray-900 capitalize">
-                    {tx.chain_name}
+                    {tx.from_address}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className="text-sm text-gray-900 capitalize">
+                    {tx.to_address}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -192,9 +200,14 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {tx.tx_hash && (
-                    <button className="text-blue-600 hover:text-blue-800 transition-colors">
+                    <a
+                      href={`https://sepolia.voyager.online/tx/${tx.tx_hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 transition-colors"
+                    >
                       <ExternalLink className="w-4 h-4" />
-                    </button>
+                    </a>
                   )}
                 </td>
               </tr>
