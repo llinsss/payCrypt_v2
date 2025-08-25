@@ -1,4 +1,6 @@
 import axios from "axios";
+import { parseUnits, formatUnits } from "ethers";
+
 export const cryptoPrice = async (token) => {
   const { data } = await axios.get(
     `https://crypto-market-prices.p.rapidapi.com/tokens/${token}`,
@@ -25,14 +27,9 @@ export const cryptoToFiat = async (token, amount) => {
 };
 
 export const from18Decimals = (value) => {
-  const [whole, fraction = ""] = value.toString().split(".");
-  const fractionPadded = (fraction + "0".repeat(18)).slice(0, 18); // pad/truncate
-  return BigInt(whole + fractionPadded).toString();
+  return formatUnits(value, 18);
 };
 
 export const to18Decimals = (value) => {
-  const s = value.toString().padStart(19, "0"); // ensure at least 19 digits
-  const whole = s.slice(0, -18);
-  const fraction = s.slice(-18).replace(/0+$/, ""); // trim trailing zeros
-  return fraction ? `${whole}.${fraction}` : whole;
+  return parseUnits(value, 18).toString();
 };
