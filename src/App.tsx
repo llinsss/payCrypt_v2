@@ -30,6 +30,7 @@ import AdminUsers from "./components/Admin/AdminUsers";
 import AdminPayouts from "./components/Admin/AdminPayouts";
 import KYCForm from "./components/KYC/KYCForm";
 import ApiTest from "./components/Test/ApiTest";
+import { useIntervalApi } from "./hooks/useIntervalApi";
 
 // Private app layout with auth guard
 const PrivateLayout: React.FC = () => {
@@ -37,6 +38,7 @@ const PrivateLayout: React.FC = () => {
   const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
+  useIntervalApi("/wallets/balance", 120000);
   if (isLoading) {
     return (
       <div className="min-h-screen grid place-items-center">
@@ -53,7 +55,11 @@ const PrivateLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar isAdmin={isAdmin} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        isAdmin={isAdmin}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
         <Header isAdmin={isAdmin} onMenuClick={() => setSidebarOpen(true)} />
