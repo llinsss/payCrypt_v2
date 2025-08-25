@@ -6,6 +6,7 @@ import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
 import User from "../models/User.js";
 import Transaction from "../models/Transaction.js";
+import secureRandomString from "../utils/random-string.js";
 
 export const getWalletByUserId = async (req, res) => {
   try {
