@@ -97,7 +97,6 @@ export const deposit = async (req, res) => {
     if (!token) {
       return res.status(404).json({ error: "Token not found" });
     }
-
     // Only allow balance owner to delete
     if (balance.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
