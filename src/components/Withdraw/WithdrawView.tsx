@@ -12,6 +12,12 @@ import { UserTokenBalance } from "../../interfaces";
 import { apiClient } from "../../utils/api";
 
 type WithdrawType = "wallet" | "fiat" | "tag";
+interface DepositResponse {
+  data: "success";
+  tx: {
+    transaction_hash: string;
+  };
+}
 
 const WithdrawView: React.FC = () => {
   const [withdrawType, setWithdrawType] = useState<WithdrawType>("wallet");
@@ -57,15 +63,37 @@ const WithdrawView: React.FC = () => {
       : bankAccount.trim().length > 0;
 
   const handleWithdraw = async () => {
-    setIsProcessing(true);
     if (withdrawType === "tag") {
-      const response = await apiClient.post('/wallets/deposit', {
-        balance_id: selectedBalance?.id,
-        amount: amount,
-        receiver_tag: recipientTag
-      })
-      console.log(response);
+      try {
+        setIsProcessing(true);
+
+        const response = await apiClient.post<DepositResponse>("/wallets/deposit", {
+          balance_id: selectedBalance?.id,
+          amount: amount,
+          receiver_tag: recipientTag,
+        });
+
+        setIsProcessing(false);
+
+        if (response.data === "success" && response.tx) {
+          const txHash = response.tx.transaction_hash;
+          alert(`Deposit successful!\nTransaction Hash: ${txHash}`);
+          console.log("Deposit successful, tx hash:", txHash);
+        } else {
+          alert("Deposit failed. Please try again.");
+          console.error("Unexpected API response:", response.data);
+        }
+      } catch (error) {
+        setIsProcessing(false);
+        console.error("Deposit error:", error);
+        alert(
+          error instanceof Error
+            ? error.message
+            : "Failed to submit deposit. Please try again."
+        );
+      }
     } else {
+      setIsProcessing(true);
       setTimeout(() => {
         setIsProcessing(false);
         alert("Withdrawal initiated successfully!");
