@@ -145,12 +145,11 @@ const KYCForm: React.FC = () => {
         id_document: data.id_document_url,
         proof_of_address: data.proof_of_address_url,
       });
-
-      console.log(response);
-
       alert(
         "KYC information submitted successfully! We will review your documents within 24-48 hours."
       );
+
+      window.location.reload();
     } catch (error) {
       console.error("KYC submission failed:", error);
       alert(
