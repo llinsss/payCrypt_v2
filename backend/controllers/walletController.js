@@ -129,10 +129,12 @@ export const getWalletBalance = async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
+
     const balance = await Balance.findByUserIdAndTokenId(user.id, 4);
     if (!balance) {
       return res.status(404).json({ error: "Balance not found" });
     }
+
     const token = await Token.findById(balance.token_id);
     if (!token) {
       return res.status(404).json({ error: "Token not found" });
@@ -141,25 +143,37 @@ export const getWalletBalance = async (req, res) => {
     if (balance.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
+
     if (token.symbol === "STRK") {
       const contract = await starknet.getContract();
       const userTag = shortString.encodeShortString(user.tag);
+
+      // bal will likely be a BigInt
       const bal = await contract.get_tag_wallet_balance(
         userTag,
         "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
       );
-      if (bal && bal !== balance.amount) {
-        const getUSDValue = await cryptoPrice(token.symbol);
-        const update_bal = await Balance.update(balance.id, {
-          amount: bal,
-          usd_value: Number(bal * (getUSDValue ?? 1)),
+
+      const balStr = bal.toString(); // Safe for DB storage
+      const balBig = BigInt(bal);
+
+      if (balBig !== BigInt(balance.amount)) {
+        const usdPrice = await cryptoPrice(token.symbol);
+
+        await Balance.update(balance.id, {
+          amount: balStr,
+          usd_value: Number(balBig) * (usdPrice ?? 1),
         });
       }
-      res.json({ data: "success" });
-    } else {
-      return res.status(422).json({ error: "Channel inactive" });
+
+      return res.json({
+        success: true,
+        balance: balStr,
+      });
     }
+    return res.status(422).json({ error: "Channel inactive" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Wallet balance error:", error);
+    return res.status(500).json({ error: error.message });
   }
 };
