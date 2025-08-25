@@ -11,6 +11,11 @@
   
   body {
     overscroll-behavior: none;
+    background-color: #f9fafb;
+  }
+  
+  .dark body {
+    background-color: #111827;
   }
 }
 
