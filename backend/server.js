@@ -165,7 +165,7 @@ app.use((error, req, res, next) => {
   });
 });
 
-// setInterval(listenForDeposits, 2000);
+setInterval(listenForDeposits, 3000);
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
