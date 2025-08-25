@@ -90,9 +90,16 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                 )}
 
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Chain:</span>
+                  <span className="text-sm text-gray-500">Sender:</span>
                   <span className="text-sm text-gray-900 capitalize">
-                    {tx.chain_name}
+                    {tx.from_address}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Recipient:</span>
+                  <span className="text-sm text-gray-900 capitalize">
+                    {tx.to_address}
                   </span>
                 </div>
 
@@ -103,9 +110,14 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                       {new Date(tx.timestamp).toLocaleDateString()}
                     </span>
                     {tx.tx_hash && (
-                      <button className="text-blue-600 hover:text-blue-800 transition-colors">
+                      <a
+                        href={`https://sepolia.voyager.online/tx/${tx.tx_hash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 transition-colors"
+                      >
                         <ExternalLink className="w-4 h-4" />
-                      </button>
+                      </a>
                     )}
                   </div>
                 </div>
