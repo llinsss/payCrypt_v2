@@ -132,8 +132,8 @@ export const deposit = async (req, res) => {
           usd_value: Number(amount * getUSDValue ?? 1),
           amount: Number(amount),
           timestamp: new Date(),
-          from_address: user.address,
-          to_address: recipient.address,
+          from_address: user.tag,
+          to_address: receiver_tag,
           description: "Fund transfer",
           extra: null,
         });
@@ -148,8 +148,8 @@ export const deposit = async (req, res) => {
           usd_value: Number(amount * getUSDValue ?? 1),
           amount: Number(amount),
           timestamp: new Date(),
-          from_address: user.address,
-          to_address: recipient.address,
+          from_address: user.tag,
+          to_address: receiver_tag,
           description: "Fund received",
           extra: null,
         });
