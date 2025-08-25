@@ -158,7 +158,7 @@ export const getWalletBalance = async (req, res) => {
       const balStr = from18Decimals(bal.toString());
       const balBig = from18Decimals(BigInt(bal));
 
-      if (balBig !== BigInt(balance.amount)) {
+      if (balStr !== (balance.amount)) {
         const usdPrice = await cryptoPrice(token.symbol);
 
         await Balance.update(balance.id, {
