@@ -5,6 +5,7 @@ import { cryptoPrice, from18Decimals, to18Decimals } from "../utils/amount.js";
 import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
 import User from "../models/User.js";
+import Transaction from "../models/Transaction.js";
 
 export const getWalletByUserId = async (req, res) => {
   try {
@@ -86,6 +87,10 @@ export const deposit = async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
+    const recipient = await User.findByTag(receiver_tag);
+    if (!recipient) {
+      return res.status(404).json({ error: "Recipient not found" });
+    }
     const balance = await Balance.findById(balance_id);
     if (!balance) {
       return res.status(404).json({ error: "Balance not found" });
@@ -113,10 +118,45 @@ export const deposit = async (req, res) => {
         "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
       );
       await starknet.provider.waitForTransaction(tx.transaction_hash);
-      res.json({ data: "success", tx });
-    } else {
-      return res.status(422).json({ error: "Channel inactive" });
+      if (tx.transaction_hash) {
+        const getUSDValue = await cryptoPrice(token.symbol);
+        const create_debit_tx = await Transaction.create({
+          user_id: user.id,
+          status: "completed",
+          token_id: balance.token_id,
+          chain_id: null,
+          reference: secureRandomString(16),
+          type: "debit",
+          tx_hash: tx.transaction_hash,
+          usd_value: Number(amount * getUSDValue ?? 1),
+          amount: Number(amount),
+          timestamp: new Date(),
+          from_address: user.address,
+          to_address: recipient.address,
+          description: "Fund transfer",
+          extra: null,
+        });
+        const create_credit_tx = await Transaction.create({
+          user_id: recipient.id,
+          status: "completed",
+          token_id: balance.token_id,
+          chain_id: null,
+          reference: secureRandomString(16),
+          type: "credit",
+          tx_hash: tx.transaction_hash,
+          usd_value: Number(amount * getUSDValue ?? 1),
+          amount: Number(amount),
+          timestamp: new Date(),
+          from_address: user.address,
+          to_address: recipient.address,
+          description: "Fund received",
+          extra: null,
+        });
+        res.json({ data: "success", tx });
+      }
+      return res.status(422).json({ error: "failed to transfer" });
     }
+    return res.status(422).json({ error: "Channel inactive" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
