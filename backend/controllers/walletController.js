@@ -90,14 +90,13 @@ export const deposit = async (req, res) => {
     if (!balance) {
       return res.status(404).json({ error: "Balance not found" });
     }
-    if (Number(amount) > Number(balance.amount)) {
-      return res.status(422).json({ error: "Insufficient wallet balance" });
-    }
+    // if (Number(amount) > Number(balance.amount)) {
+    //   return res.status(422).json({ error: "Insufficient wallet balance" });
+    // }
     const token = await Token.findById(balance.token_id);
     if (!token) {
       return res.status(404).json({ error: "Token not found" });
     }
-
     // Only allow balance owner to delete
     if (balance.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
