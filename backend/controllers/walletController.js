@@ -120,7 +120,8 @@ export const deposit = async (req, res) => {
       );
       await starknet.provider.waitForTransaction(tx.transaction_hash);
       if (tx.transaction_hash) {
-        const getUSDValue = await cryptoPrice(token.symbol);
+        const getUSDValue = 0.1345;
+        // await cryptoPrice(token.symbol);
         const create_debit_tx = await Transaction.create({
           user_id: user.id,
           status: "completed",
