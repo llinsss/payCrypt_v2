@@ -151,6 +151,8 @@ const KYCForm: React.FC = () => {
       alert(
         "KYC information submitted successfully! We will review your documents within 24-48 hours."
       );
+      window.location.reload();
+      
     } catch (error) {
       console.error("KYC submission failed:", error);
       alert(
