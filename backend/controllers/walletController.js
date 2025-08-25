@@ -90,7 +90,7 @@ export const deposit = async (req, res) => {
     if (!balance) {
       return res.status(404).json({ error: "Balance not found" });
     }
-    if (balance.amount < amount) {
+    if (Number(amount) > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
     }
     const token = await Token.findById(balance.token_id);
@@ -114,7 +114,7 @@ export const deposit = async (req, res) => {
         "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
       );
       await starknet.provider.waitForTransaction(tx.transaction_hash);
-      res.json(tx);
+      res.json({ data: "success", tx });
     } else {
       return res.status(422).json({ error: "Channel inactive" });
     }
@@ -158,7 +158,7 @@ export const getWalletBalance = async (req, res) => {
       const balStr = from18Decimals(bal.toString());
       const balBig = from18Decimals(BigInt(bal));
 
-      if (balStr !== (balance.amount)) {
+      if (balStr !== balance.amount) {
         const usdPrice = await cryptoPrice(token.symbol);
 
         await Balance.update(balance.id, {
