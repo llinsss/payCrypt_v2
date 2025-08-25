@@ -1,7 +1,7 @@
 import Wallet from "../models/Wallet.js";
 import starknet from "../starknet-contract.js";
 import { shortString } from "starknet";
-import { cryptoPrice } from "../utils/amount.js";
+import { cryptoPrice, from18Decimals, to18Decimals } from "../utils/amount.js";
 import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
 import User from "../models/User.js";
@@ -106,10 +106,11 @@ export const deposit = async (req, res) => {
       const contract = await starknet.getContract();
       const senderTag = shortString.encodeShortString(user.tag);
       const receiverTag = shortString.encodeShortString(receiver_tag);
+      const _amount = to18Decimals(amount);
       const tx = await contract.deposit_to_tag(
         receiverTag,
         senderTag,
-        amount,
+        _amount,
         "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
       );
       await starknet.provider.waitForTransaction(tx.transaction_hash);
@@ -154,8 +155,8 @@ export const getWalletBalance = async (req, res) => {
         "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
       );
 
-      const balStr = bal.toString(); // Safe for DB storage
-      const balBig = BigInt(bal);
+      const balStr = from18Decimals(bal.toString());
+      const balBig = from18Decimals(BigInt(bal));
 
       if (balBig !== BigInt(balance.amount)) {
         const usdPrice = await cryptoPrice(token.symbol);

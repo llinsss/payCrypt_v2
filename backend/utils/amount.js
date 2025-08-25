@@ -24,3 +24,12 @@ export const cryptoToFiat = async (token, amount) => {
   return null;
 };
 
+export const from18Decimals = (value) => {
+  const divisor = BigInt("1000000000000000000");
+  return Number(BigInt(value) / divisor);
+};
+
+export const to18Decimals = (value) => {
+  const multiplier = BigInt("1000000000000000000");
+  return (BigInt(value) * multiplier).toString();
+};
