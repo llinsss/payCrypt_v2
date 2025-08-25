@@ -6,6 +6,9 @@ import secureRandomString from "../utils/random-string.js";
 import { hash } from "starknet";
 import { BigNumber } from "bignumber.js";
 import db from "../config/database.js";
+import { AutoSwappr, TOKEN_ADDRESSES } from "autoswap-sdk";
+import Token from "../models/Token.js";
+import { cryptoPrice } from "../utils/amount.js";
 
 function normalizeHex(addr) {
   return new BigNumber(addr).toString(16);
@@ -38,10 +41,10 @@ const listenForDeposits = async (block_number = null) => {
       const receipt = await starknet.provider.getTransactionReceipt(
         tx.transaction_hash
       );
-      const exist_in_db = await db("transactions")
-        .where("tx_hash", tx.transaction_hash)
-        .first();
-      if (exist_in_db) continue;
+      // const exist_in_db = await db("transactions")
+      //   .where("tx_hash", tx.transaction_hash)
+      //   .first();
+      // if (exist_in_db) continue;
 
       if (!receipt.events) continue;
 
@@ -58,13 +61,16 @@ const listenForDeposits = async (block_number = null) => {
           // === persist into DB ===
           const balance = await Balance.findByAddress(decoded.recipient);
           if (balance) {
+            const token = await Token.findById(balance.token_id);
             const user = await User.findById(balance.user_id);
-            if (user) {
-              const update_bal = await db("balances")
-                .where({ id: balance.id })
-                .increment("amount", Number(decoded.amount))
-                .update({ updated_at: db.fn.now() });
-
+            if (user && token) {
+              const getUSDValue = await cryptoPrice(token.symbol);
+              const update_bal = await Balance.update(balance.id, {
+                amount: Number(decoded.amount) + Number(balance.amount),
+                usd_value:
+                  Number(decoded.amount * (getUSDValue ?? 1)) +
+                  Number(balance.usd_value),
+              });
               const create_tx = await Transaction.create({
                 user_id: user.id,
                 status: "completed",
@@ -73,14 +79,34 @@ const listenForDeposits = async (block_number = null) => {
                 reference: secureRandomString(16),
                 type: "credit",
                 tx_hash: tx.transaction_hash,
-                usd_value: decoded.amount,
-                amount: decoded.amount,
+                usd_value: Number(decoded.amount * getUSDValue ?? 1),
+                amount: Number(decoded.amount),
                 timestamp: new Date(),
                 from_address: decoded.sender,
                 to_address: decoded.recipient,
                 description: "Deposit received",
                 extra: decoded.token,
               });
+              if (balance.auto_convert_threshold > 0) {
+                const user_bal = await Balance.findById(balance.id);
+                if (user_bal.amount >= user_bal.auto_convert_threshold) {
+                  const autoswappr = new AutoSwappr({
+                    contractAddress: process.env.AUTOSWAPPR_CONTRACT_ADDRESS,
+                    rpcUrl: "https://starknet-mainnet.public.blastapi.io",
+                    accountAddress: starknet.STARKNET_CONFIG.accountAddress,
+                    privateKey: starknet.STARKNET_CONFIG.privateKey,
+                  });
+                  const result = await autoswappr.executeSwap(
+                    TOKEN_ADDRESSES.STRK,
+                    TOKEN_ADDRESSES.USDC,
+                    {
+                      amount: Number(user_bal.amount),
+                    }
+                  );
+
+                  console.log("Swap result:", result);
+                }
+              }
             }
           }
         }
