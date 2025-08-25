@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { apiClient } from "../utils/api";
 
-export function useIntervalApi(endpoint: string, intervalMs = 120000) {
+export function useIntervalApi(endpoint: string, intervalMs = 10000) {
   useEffect(() => {
     let isMounted = true;
 

@@ -25,11 +25,14 @@ export const cryptoToFiat = async (token, amount) => {
 };
 
 export const from18Decimals = (value) => {
-  const divisor = BigInt("1000000000000000000");
-  return Number(BigInt(value) / divisor);
+  const [whole, fraction = ""] = value.toString().split(".");
+  const fractionPadded = (fraction + "0".repeat(18)).slice(0, 18); // pad/truncate
+  return BigInt(whole + fractionPadded).toString();
 };
 
 export const to18Decimals = (value) => {
-  const multiplier = BigInt("1000000000000000000");
-  return (BigInt(value) * multiplier).toString();
+  const s = value.toString().padStart(19, "0"); // ensure at least 19 digits
+  const whole = s.slice(0, -18);
+  const fraction = s.slice(-18).replace(/0+$/, ""); // trim trailing zeros
+  return fraction ? `${whole}.${fraction}` : whole;
 };
