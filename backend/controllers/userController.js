@@ -8,7 +8,7 @@ export const profile = async (req, res) => {
     const user = await User.findById(id);
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(400).json({ error: "User not found" });
     }
 
     // Remove password from response
@@ -28,7 +28,7 @@ export const dashboard_summary = async (req, res) => {
     const user = await User.findById(id);
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(400).json({ error: "User not found" });
     }
     const total_balance = await Balance.totalBalanceByUser(user.id);
     const total_deposit = await Transaction.totalDepositByUser(user.id);
@@ -52,7 +52,7 @@ export const edit_profile = async (req, res) => {
 
     const user = await User.update(id, req.body);
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(400).json({ error: "User not found" });
     }
 
     const { password, ...userWithoutPassword } = user;
@@ -83,7 +83,7 @@ export const getUserById = async (req, res) => {
     const user = await User.findById(id);
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(400).json({ error: "User not found" });
     }
 
     // Remove password from response
@@ -105,7 +105,7 @@ export const updateUser = async (req, res) => {
 
     const user = await User.update(id, req.body);
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(400).json({ error: "User not found" });
     }
 
     const { password, ...userWithoutPassword } = user;
@@ -126,7 +126,7 @@ export const deleteUser = async (req, res) => {
 
     // const deleted = await User.delete(id);
     // if (!deleted) {
-    //   return res.status(404).json({ error: "User not found" });
+    //   return res.status(400).json({ error: "User not found" });
     // }
 
     res.json({ message: "User deleted successfully" });

@@ -33,6 +33,9 @@ export const getTransactionByUser = async (req, res) => {
   try {
     const { id } = req.user;
     const transactions = await Transaction.getByUser(id);
+    if (transactions.length === 0) {
+      return res.status(400).json({ error: "Transaction not found" });
+    }
     res.json(transactions);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -45,7 +48,7 @@ export const getTransactionById = async (req, res) => {
     const transaction = await Transaction.findById(id);
 
     if (!transaction) {
-      return res.status(404).json({ error: "Transaction not found" });
+      return res.status(400).json({ error: "Transaction not found" });
     }
     // Only allow ttransaction owner to view
     if (transaction.user_id !== req.user.id) {
@@ -64,7 +67,7 @@ export const updateTransaction = async (req, res) => {
     const transaction = await Transaction.findById(id);
 
     if (!transaction) {
-      return res.status(404).json({ error: "Transaction not found" });
+      return res.status(400).json({ error: "Transaction not found" });
     }
 
     // Only allow transaction owner to update
@@ -85,7 +88,7 @@ export const deleteTransaction = async (req, res) => {
     const transaction = await Transaction.findById(id);
 
     if (!transaction) {
-      return res.status(404).json({ error: "Transaction not found" });
+      return res.status(400).json({ error: "Transaction not found" });
     }
 
     // Only allow transaction owner to delete

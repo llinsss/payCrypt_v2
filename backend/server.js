@@ -146,7 +146,7 @@ app.post("/api/usd-equivalent", async (req, res) => {
 });
 // 404 handler
 app.use("*", (req, res) => {
-  res.status(404).json({ error: "Page not found" });
+  res.status(400).json({ error: "Page not found" });
 });
 
 // Global error handler

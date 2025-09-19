@@ -5,7 +5,7 @@ export const getBankAccountByUserId = async (req, res) => {
     const { id } = req.user;
     const bank_account = await BankAccount.getByUserId(id);
     if (!bank_account) {
-      return res.status(404).json({ error: "Bank account not found" });
+      return res.status(400).json({ error: "Bank account not found" });
     }
     res.json(bank_account);
   } catch (error) {
@@ -19,7 +19,7 @@ export const getBankAccountById = async (req, res) => {
     const bank_account = await BankAccount.findById(id);
 
     if (!bank_account) {
-      return res.status(404).json({ error: "Bank account not found" });
+      return res.status(400).json({ error: "Bank account not found" });
     }
 
     res.json(bank_account);
@@ -34,7 +34,7 @@ export const updateBankAccount = async (req, res) => {
     const bank_account = await BankAccount.findById(id);
 
     if (!bank_account) {
-      return res.status(404).json({ error: "Bank account not found" });
+      return res.status(400).json({ error: "Bank account not found" });
     }
 
     // Only allow bank_account owner to update
@@ -55,7 +55,7 @@ export const deleteBankAccount = async (req, res) => {
     const bank_account = await BankAccount.findById(id);
 
     if (!bank_account) {
-      return res.status(404).json({ error: "Bank account not found" });
+      return res.status(400).json({ error: "Bank account not found" });
     }
 
     // Only allow bank_account owner to delete

@@ -31,7 +31,7 @@ export const getChainById = async (req, res) => {
     const chain = await Chain.findById(id);
 
     if (!chain) {
-      return res.status(404).json({ error: "Chain not found" });
+      return res.status(400).json({ error: "Chain not found" });
     }
 
     res.json(chain);
@@ -46,7 +46,7 @@ export const updateChain = async (req, res) => {
     const chain = await Chain.findById(id);
 
     if (!chain) {
-      return res.status(404).json({ error: "Chain not found" });
+      return res.status(400).json({ error: "Chain not found" });
     }
 
     const updatedChain = await Chain.update(id, req.body);
@@ -62,7 +62,7 @@ export const deleteChain = async (req, res) => {
     const chain = await Chain.findById(id);
 
     if (!chain) {
-      return res.status(404).json({ error: "Chain not found" });
+      return res.status(400).json({ error: "Chain not found" });
     }
 
     await Chain.delete(id);

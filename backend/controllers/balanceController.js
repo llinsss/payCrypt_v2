@@ -47,7 +47,7 @@ export const getBalanceById = async (req, res) => {
     const balance = await Balance.findById(id);
 
     if (!balance) {
-      return res.status(404).json({ error: "Balance not found" });
+      return res.status(400).json({ error: "Balance not found" });
     }
     // Only allow balance owner to view
     if (balance.user_id !== req.user.id) {
@@ -66,7 +66,7 @@ export const updateBalance = async (req, res) => {
     const balance = await Balance.findById(id);
 
     if (!balance) {
-      return res.status(404).json({ error: "Balance not found" });
+      return res.status(400).json({ error: "Balance not found" });
     }
 
     // Only allow balance owner to update
@@ -87,7 +87,7 @@ export const deleteBalance = async (req, res) => {
     const balance = await Balance.findById(id);
 
     if (!balance) {
-      return res.status(404).json({ error: "Balance not found" });
+      return res.status(400).json({ error: "Balance not found" });
     }
 
     // Only allow balance owner to delete

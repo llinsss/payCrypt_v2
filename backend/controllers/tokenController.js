@@ -31,7 +31,7 @@ export const getTokenById = async (req, res) => {
     const token = await Token.findById(id);
 
     if (!token) {
-      return res.status(404).json({ error: "Token not found" });
+      return res.status(400).json({ error: "Token not found" });
     }
 
     res.json(token);
@@ -46,7 +46,7 @@ export const updateToken = async (req, res) => {
     const token = await Token.findById(id);
 
     if (!token) {
-      return res.status(404).json({ error: "Token not found" });
+      return res.status(400).json({ error: "Token not found" });
     }
 
     const updatedToken = await Token.update(id, req.body);
@@ -62,7 +62,7 @@ export const deleteToken = async (req, res) => {
     const token = await Token.findById(id);
 
     if (!token) {
-      return res.status(404).json({ error: "Token not found" });
+      return res.status(400).json({ error: "Token not found" });
     }
 
     await Token.delete(id);
