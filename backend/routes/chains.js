@@ -6,7 +6,6 @@ import {
   updateChain,
   deleteChain,
 } from "../controllers/chainController.js";
-import { authenticate } from "../middleware/auth.js";
 const router = express.Router();
 
 router.post("/", createChain);
