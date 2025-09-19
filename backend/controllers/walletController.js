@@ -13,7 +13,7 @@ export const getWalletByUserId = async (req, res) => {
     const { id } = req.user;
     const wallet = await Wallet.getByUserId(id);
     if (!wallet) {
-      return res.status(404).json({ error: "Wallet not found" });
+      return res.status(400).json({ error: "Wallet not found" });
     }
     res.json(wallet);
   } catch (error) {
@@ -27,7 +27,7 @@ export const getWalletById = async (req, res) => {
     const wallet = await Wallet.findById(id);
 
     if (!wallet) {
-      return res.status(404).json({ error: "Wallet not found" });
+      return res.status(400).json({ error: "Wallet not found" });
     }
 
     res.json(wallet);
@@ -42,7 +42,7 @@ export const updateWallet = async (req, res) => {
     const wallet = await Wallet.findById(id);
 
     if (!wallet) {
-      return res.status(404).json({ error: "Wallet not found" });
+      return res.status(400).json({ error: "Wallet not found" });
     }
 
     // Only allow wallet owner to update
@@ -65,7 +65,7 @@ export const deleteWallet = async (req, res) => {
     const wallet = await Wallet.findById(id);
 
     if (!wallet) {
-      return res.status(404).json({ error: "Wallet not found" });
+      return res.status(400).json({ error: "Wallet not found" });
     }
 
     // Only allow wallet owner to delete
@@ -86,22 +86,22 @@ export const deposit = async (req, res) => {
     const { receiver_tag, amount, balance_id } = req.body;
     const user = await User.findById(id);
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(400).json({ error: "User not found" });
     }
     const recipient = await User.findByTag(receiver_tag);
     if (!recipient) {
-      return res.status(404).json({ error: "Recipient not found" });
+      return res.status(400).json({ error: "Recipient not found" });
     }
     const balance = await Balance.findById(balance_id);
     if (!balance) {
-      return res.status(404).json({ error: "Balance not found" });
+      return res.status(400).json({ error: "Balance not found" });
     }
     if (Number(amount) > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
     }
     const token = await Token.findById(balance.token_id);
     if (!token) {
-      return res.status(404).json({ error: "Token not found" });
+      return res.status(400).json({ error: "Token not found" });
     }
     // Only allow balance owner to delete
     if (balance.user_id !== req.user.id) {
@@ -169,17 +169,17 @@ export const getWalletBalance = async (req, res) => {
     const { id } = req.user;
     const user = await User.findById(id);
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(400).json({ error: "User not found" });
     }
 
     const balance = await Balance.findByUserIdAndTokenId(user.id, 4);
     if (!balance) {
-      return res.status(404).json({ error: "Balance not found" });
+      return res.status(400).json({ error: "Balance not found" });
     }
 
     const token = await Token.findById(balance.token_id);
     if (!token) {
-      return res.status(404).json({ error: "Token not found" });
+      return res.status(400).json({ error: "Token not found" });
     }
 
     if (balance.user_id !== req.user.id) {
