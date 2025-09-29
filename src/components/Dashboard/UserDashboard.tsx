@@ -401,7 +401,7 @@ const UserDashboard: React.FC = () => {
         <h3 className="text-lg font-semibold text-gray-900 mb-6">
           Quick Access
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <NavLink
             to="/deposits"
             className="bg-white p-5 rounded-xl border border-gray-200 hover:border-purple-300 hover:shadow-lg transition-all duration-300 group"
