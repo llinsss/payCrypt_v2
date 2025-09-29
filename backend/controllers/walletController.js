@@ -177,13 +177,6 @@ export const getWalletBalance = async (req, res) => {
     let response = [];
     for (const balance of balances) {
       const token = await Token.findById(balance.token_id);
-      // if (!token) {
-      //   return res.status(400).json({ error: "Token not found" });
-      // }
-
-      // if (balance.user_id !== req.user.id) {
-      //   return res.status(403).json({ error: "Unauthorized" });
-      // }
 
       if (token.symbol === "STRK") {
         const contract = await starknet.getContract();
