@@ -34,14 +34,6 @@ const redis = createClient({
   url: process.env.REDIS_URL,
 });
 
-const isProduction = process.env.NODE_ENV === "production";
-
-if (isProduction) {
-  app.set("trust proxy", true);
-} else {
-  app.set("trust proxy", false);
-}
-
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -175,26 +167,6 @@ app.post("/api/usd-equivalent", async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 });
-// 404 handler
-app.use("*", (req, res) => {
-  res.status(400).json({ error: "Page not found" });
-});
-
-// Global error handler
-app.use((error, req, res, next) => {
-  console.error(error.stack);
-
-  if (error.type === "entity.parse.failed") {
-    return res.status(400).json({ error: "Invalid JSON" });
-  }
-
-  res.status(500).json({
-    error:
-      process.env.NODE_ENV === "production"
-        ? "Internal server error"
-        : error.message,
-  });
-});
 const limit = pLimit(5);
 const updateTokenPrices = async () => {
   try {
@@ -305,6 +277,27 @@ app.get("/api/rates/ngn", async (req, res) => {
     console.error("❌ Error fetching NGN from Redis:", err.message);
     return res.status(500).json({ error: "Failed to fetch NGN rate" });
   }
+});
+
+// 404 handler
+app.use("*", (req, res) => {
+  res.status(400).json({ error: "Page not found" });
+});
+
+// Global error handler
+app.use((error, req, res, next) => {
+  console.error(error.stack);
+
+  if (error.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "Invalid JSON" });
+  }
+
+  res.status(500).json({
+    error:
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : error.message,
+  });
 });
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
