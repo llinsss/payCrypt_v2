@@ -195,7 +195,7 @@ export const getWalletBalance = async (req, res) => {
           const crypto_value = balStr;
           const usdPrice = token.price;
           const usd_value = Number(balBig) * (usdPrice ?? 1);
-          const ngnPrice = redis.get(NGN_KEY) ?? 1600;
+          const ngnPrice = await redis.get(NGN_KEY) ?? 1600;
           const ngn_value = usd_value * ngnPrice;
           console.log("NGN price: ", ngnPrice);
           console.log("NGN value: ", ngn_value);

@@ -36,7 +36,7 @@ export const getBalances = async (req, res) => {
 export const getBalanceByUser = async (req, res) => {
   try {
     const { id } = req.user;
-    const ngnPrice = Number(redis.get(NGN_KEY) ?? 1600);
+    const ngnPrice = Number(await redis.get(NGN_KEY) ?? 1600);
     const balances = await Balance.getByUser(id);
     let response = [];
     for (const balance of balances) {
