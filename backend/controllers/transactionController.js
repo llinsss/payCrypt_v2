@@ -33,9 +33,6 @@ export const getTransactionByUser = async (req, res) => {
   try {
     const { id } = req.user;
     const transactions = await Transaction.getByUser(id);
-    if (transactions.length === 0) {
-      return res.status(400).json({ error: "Transaction not found" });
-    }
     res.json(transactions);
   } catch (error) {
     res.status(500).json({ error: error.message });

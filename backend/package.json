@@ -2,7 +2,7 @@
     "name": "paycrypt-backend",
     "version": "1.0.0",
     "type": "module",
-    "description": "PayCrypt Backend",
+    "description": "TaggedPay Backend",
     "main": "server.js",
     "scripts": {
         "dev": "nodemon server.js",
@@ -33,6 +33,8 @@
         "jsonwebtoken": "^9.0.1",
         "knex": "^2.5.1",
         "mysql2": "^3.6.0",
+        "p-limit": "^7.1.1",
+        "redis": "^5.8.2",
         "starknet": "^7.6.4"
     },
     "devDependencies": {

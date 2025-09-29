@@ -1,20 +1,19 @@
 export const seed = async (knex) => {
-  // Deletes ALL existing entries
   await knex("tokens").del();
   await knex("tokens").insert([
     {
       id: 1,
-      address: null,
-      symbol: "ETH",
-      name: "Ethereum",
-      decimals: 18,
-      logo_url: "https://cryptologos.cc/logos/ethereum-eth-logo.png?v=040",
-      chain: "Ethereum",
-      price: 4761.22,
+      address: "native",
+      symbol: "XLM",
+      name: "Stellar",
+      decimals: 7,
+      logo_url: "https://cryptologos.cc/logos/stellar-xlm-logo.png?v=040",
+      chain: "Stellar",
+      price: 0.112,
     },
     {
       id: 2,
-      address: null,
+      address: "native",
       symbol: "LSK",
       name: "Lisk",
       decimals: 8,
@@ -24,17 +23,17 @@ export const seed = async (knex) => {
     },
     {
       id: 3,
-      address: null,
-      symbol: "CORE",
-      name: "Core DAO Token",
+      address: "0x4200000000000000000000000000000000000006",
+      symbol: "BASE",
+      name: "Base",
       decimals: 18,
-      logo_url: "https://cryptologos.cc/logos/core-dao-core-logo.png?v=040",
-      chain: "Core (EVM-compatible)",
-      price: 8065.6,
+      logo_url: "https://cryptologos.cc/logos/base-base-logo.png?v=040",
+      chain: "Base (Ethereum L2)",
+      price: 1.0,
     },
     {
       id: 4,
-      address: null,
+      address: "0xCa14007Eff0dB1f8135f4C25B34De49AB0d42766",
       symbol: "STRK",
       name: "Starknet Token",
       decimals: 18,
