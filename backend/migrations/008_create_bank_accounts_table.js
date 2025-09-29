@@ -1,5 +1,5 @@
 export const up = async (knex) => {
-  return knex.schema.createTable("bank_accounts", (table) => {
+  return knex.schema.createTable("bank_accounts", { ifNotExists: true }, (table) => {
     table.increments("id").primary();
     table.integer("user_id").unsigned().notNullable();
     table.string("bank_code", 255);
@@ -20,5 +20,5 @@ export const up = async (knex) => {
 };
 
 export const down = async (knex) => {
-  return knex.schema.dropTable("bank_accounts");
+  return knex.schema.dropTableIfExists("bank_accounts");
 };
