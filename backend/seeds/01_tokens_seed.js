@@ -17,7 +17,7 @@ export const seed = async (knex) => {
       symbol: "LSK",
       name: "Lisk",
       decimals: 8,
-      logo_url: "lisk.svg",
+      logo_url: "lsk.svg",
       chain: "Lisk",
       price: 0.42895,
     },

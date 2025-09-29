@@ -128,7 +128,7 @@ function AppRoutes() {
         <Route
           path="balances"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireKyc={true}>
               <BalancesView />
             </ProtectedRoute>
           }
@@ -136,7 +136,7 @@ function AppRoutes() {
         <Route
           path="multi-currency"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireKyc={true}>
               <MultiCurrencyView />
             </ProtectedRoute>
           }

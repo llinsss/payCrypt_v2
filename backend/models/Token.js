@@ -6,6 +6,10 @@ const Token = {
     return this.findById(id);
   },
 
+  async findBySymbol(symbol) {
+    return await db("tokens").where({ symbol }).first();
+  },
+
   async findById(id) {
     return await db("tokens").where({ id }).first();
   },

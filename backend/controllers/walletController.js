@@ -173,50 +173,61 @@ export const getWalletBalance = async (req, res) => {
     if (!user) {
       return res.status(400).json({ error: "User not found" });
     }
+    const balances = await Balance.getByUser(user.id);
+    let response = [];
+    for (const balance of balances) {
+      const token = await Token.findById(balance.token_id);
+      // if (!token) {
+      //   return res.status(400).json({ error: "Token not found" });
+      // }
 
-    const balance = await Balance.findByUserIdAndTokenId(user.id, 4);
-    if (!balance) {
-      return res.status(400).json({ error: "Balance not found" });
-    }
+      // if (balance.user_id !== req.user.id) {
+      //   return res.status(403).json({ error: "Unauthorized" });
+      // }
 
-    const token = await Token.findById(balance.token_id);
-    if (!token) {
-      return res.status(400).json({ error: "Token not found" });
-    }
+      if (token.symbol === "STRK") {
+        const contract = await starknet.getContract();
+        const userTag = shortString.encodeShortString(user.tag);
 
-    if (balance.user_id !== req.user.id) {
-      return res.status(403).json({ error: "Unauthorized" });
-    }
+        // bal will likely be a BigInt
+        const bal = await contract.get_tag_wallet_balance(
+          userTag,
+          "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+        );
 
-    if (token.symbol === "STRK") {
-      const contract = await starknet.getContract();
-      const userTag = shortString.encodeShortString(user.tag);
+        const balStr = from18Decimals(bal.toString());
+        const balBig = from18Decimals(BigInt(bal));
 
-      // bal will likely be a BigInt
-      const bal = await contract.get_tag_wallet_balance(
-        userTag,
-        "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
-      );
+        if (balStr !== balance.amount) {
+          const crypto_value = balStr;
+          const usdPrice = token.price;
+          const usd_value = Number(balBig) * (usdPrice ?? 1);
+          const ngnPrice = redis.get(NGN_KEY) ?? 1600;
+          const ngn_value = usd_value * ngnPrice;
 
-      const balStr = from18Decimals(bal.toString());
-      const balBig = from18Decimals(BigInt(bal));
-
-      if (balStr !== balance.amount) {
-        const usdPrice = token.price;
-        const ngnPrice = redis.get(NGN_KEY) ?? 1600;
-
-        await Balance.update(balance.id, {
-          amount: balStr,
-          usd_value: Number(balBig) * (usdPrice ?? 1),
-        });
+          await Balance.update(balance.id, {
+            amount: crypto_value,
+            usd_value,
+          });
+          response.push({
+            symbol: token.symbol,
+            name: token.name,
+            crypto_value,
+            usd_value,
+            ngn_value,
+          });
+        }
       }
 
-      return res.json({
-        success: true,
-        balance: balStr,
+      response.push({
+        symbol: token.symbol,
+        name: token.name,
+        crypto_value: 0,
+        usd_value: 0,
+        ngn_value: 0,
       });
     }
-    return res.status(422).json({ error: "Channel inactive" });
+    return res.json(response);
   } catch (error) {
     console.error("Wallet balance error:", error);
     return res.status(500).json({ error: error.message });
