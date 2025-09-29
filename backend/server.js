@@ -23,6 +23,7 @@ import * as freecryptoapi from "./services/free-crypto-api.js";
 import * as exchangerateapi from "./services/exchange-rate-api.js";
 import db from "./config/database.js";
 import pLimit from "p-limit";
+import { createClient } from "redis";
 
 // Load environment variables
 dotenv.config();
