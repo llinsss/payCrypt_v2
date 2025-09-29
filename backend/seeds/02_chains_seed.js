@@ -4,11 +4,11 @@ export const seed = async (knex) => {
   await knex("chains").insert([
     {
       id: 1,
-      symbol: "XLM",
-      name: "Stellar",
-      native_currency: { name: "Lumen", symbol: "XLM" },
-      rpc_url: "https://horizon.stellar.org",
-      block_explorer: "https://stellar.expert/explorer/public",
+      symbol: "STRK",
+      name: "Starknet",
+      native_currency: { name: "Starknet Token", symbol: "STRK" },
+      rpc_url: "https://starknet-mainnet.g.alchemy.com/public",
+      block_explorer: "https://starkscan.co",
     },
     {
       id: 2,
@@ -28,11 +28,11 @@ export const seed = async (knex) => {
     },
     {
       id: 4,
-      symbol: "STRK",
-      name: "Starknet",
-      native_currency: { name: "Starknet Token", symbol: "STRK" },
-      rpc_url: "https://starknet-mainnet.g.alchemy.com/public",
-      block_explorer: "https://starkscan.co",
+      symbol: "XLM",
+      name: "Stellar",
+      native_currency: { name: "Lumen", symbol: "XLM" },
+      rpc_url: "https://horizon.stellar.org",
+      block_explorer: "https://stellar.expert/explorer/public",
     },
   ]);
 };
