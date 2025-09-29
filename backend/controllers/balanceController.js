@@ -1,8 +1,6 @@
 import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
 import starknet from "../starknet-contract.js";
-import { shortString } from "starknet";
-import { from18Decimals } from "../utils/amount.js";
 import redis from "../config/redis.js";
 
 export const createBalance = async (req, res) => {
@@ -37,35 +35,6 @@ export const getBalances = async (req, res) => {
 export const getBalanceByUser = async (req, res) => {
   try {
     const { id } = req.user;
-    const _balances = await Balance.getByUser(user.id);
-    for (const balance of _balances) {
-      const token = await Token.findById(balance.token_id);
-
-      if (token.symbol === "STRK") {
-        const contract = await starknet.getContract();
-        const userTag = shortString.encodeShortString(user.tag);
-
-        // bal will likely be a BigInt
-        const bal = await contract.get_tag_wallet_balance(
-          userTag,
-          "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
-        );
-
-        const balStr = from18Decimals(bal.toString());
-        const balBig = from18Decimals(BigInt(bal));
-
-        if (balStr !== balance.amount) {
-          const crypto_value = balStr;
-          const usdPrice = token.price;
-          const usd_value = Number(balBig) * (usdPrice ?? 1);
-
-          await Balance.update(balance.id, {
-            amount: crypto_value,
-            usd_value,
-          });
-        }
-      }
-    }
     const ngnPrice = redis.get(NGN_KEY) ?? 1600;
     const balances = await Balance.getByUser(id);
     for (const balance of balances) {
