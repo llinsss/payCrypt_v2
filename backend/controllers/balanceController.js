@@ -36,12 +36,14 @@ export const getBalances = async (req, res) => {
 export const getBalanceByUser = async (req, res) => {
   try {
     const { id } = req.user;
-    const ngnPrice = redis.get(NGN_KEY) ?? 1600;
+    const ngnPrice = Number(redis.get(NGN_KEY) ?? 1600);
     const balances = await Balance.getByUser(id);
+    let response = [];
     for (const balance of balances) {
-      balance.ngn_value = (balance.usd_value || 0) * ngnPrice;
+      const ngn_value = Number(balance.usd_value) * ngnPrice;
+      response.push({ ...balance, ngn_value });
     }
-    res.json(balances);
+    res.json(response);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

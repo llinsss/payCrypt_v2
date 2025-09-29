@@ -21,6 +21,7 @@ export interface UserTokenBalance {
   token_symbol: string;
   token_logo_url: string;
   token_price: string | number;
+  ngn_value?: string | number;
 }
 
 export interface UserTransaction {
@@ -50,7 +51,6 @@ export interface UserTransaction {
   chain_name: string;
   chain_symbol: string;
 }
-
 
 export interface WalletData {
   id: number;

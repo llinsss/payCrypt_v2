@@ -61,12 +61,23 @@ const UserDashboard: React.FC = () => {
     fetchDashboardData();
   }, []);
 
+  const totalCryptoValue = balances.reduce(
+    (sum, balance) => Number(sum) + Number(balance.usd_value),
+    0
+  );
+
+  const totalNgnValue = balances.reduce(
+    (sum, balance) => Number(sum) + Number(balance.ngn_value),
+    0
+  );
   // 🧮 Memoized computed values
   const stats = useMemo(
     () => [
       {
         title: "Available Balance",
-        value: `${formatCurrencyToNGN(summary?.total_balance ?? 0)}`,
+        value: `${formatCurrencyToNGN(
+          (totalNgnValue || summary?.total_balance) ?? 0
+        )}`,
         icon: Wallet,
         color: "text-white",
         gradient: "from-purple-500 to-pink-500",
@@ -97,12 +108,7 @@ const UserDashboard: React.FC = () => {
         subtitle: "Lifetime",
       },
     ],
-    [summary]
-  );
-
-  const totalCryptoValue = balances.reduce(
-    (sum, balance) => Number(sum) + Number(balance.usd_value),
-    0
+    [summary, totalNgnValue]
   );
 
   return (
@@ -127,7 +133,7 @@ const UserDashboard: React.FC = () => {
               <h1 className="text-2xl font-bold">
                 {showBalance
                   ? formatCurrency(
-                      totalCryptoValue + (summary?.total_balance || 0)
+                      totalCryptoValue ?? (summary?.total_balance || 0)
                     )
                   : "••••••"}
               </h1>
@@ -401,7 +407,7 @@ const UserDashboard: React.FC = () => {
         <h3 className="text-lg font-semibold text-gray-900 mb-6">
           Quick Access
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <NavLink
             to="/deposits"
             className="bg-white p-5 rounded-xl border border-gray-200 hover:border-purple-300 hover:shadow-lg transition-all duration-300 group"
