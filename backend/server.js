@@ -34,14 +34,6 @@ const redis = createClient({
   url: process.env.REDIS_URL,
 });
 
-const isProduction = process.env.NODE_ENV === "production";
-
-if (isProduction) {
-  app.set("trust proxy", true);
-} else {
-  app.set("trust proxy", false);
-}
-
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
