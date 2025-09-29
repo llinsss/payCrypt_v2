@@ -70,7 +70,7 @@ const PayCryptLogo: React.FC<{ className?: string; showText?: boolean }> = ({
       {showText && (
         <div className="flex flex-col">
           <span className="text-xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-cyan-600 bg-clip-text text-transparent">
-            PayCrypt
+            TaggedPay
           </span>
           <span className="text-xs text-gray-500 -mt-1">Smart Payments</span>
         </div>
