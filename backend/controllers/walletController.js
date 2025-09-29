@@ -197,8 +197,6 @@ export const getWalletBalance = async (req, res) => {
           const usd_value = Number(balBig) * (usdPrice ?? 1);
           const ngnPrice = await redis.get(NGN_KEY) ?? 1600;
           const ngn_value = usd_value * ngnPrice;
-          console.log("NGN price: ", ngnPrice);
-          console.log("NGN value: ", ngn_value);
 
           await Balance.update(balance.id, {
             amount: crypto_value,
