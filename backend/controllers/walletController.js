@@ -1,12 +1,14 @@
 import Wallet from "../models/Wallet.js";
 import starknet from "../starknet-contract.js";
 import { shortString } from "starknet";
-import { cryptoPrice, from18Decimals, to18Decimals } from "../utils/amount.js";
+import { from18Decimals, to18Decimals } from "../utils/amount.js";
 import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
 import User from "../models/User.js";
 import Transaction from "../models/Transaction.js";
 import secureRandomString from "../utils/random-string.js";
+import redis from "../config/redis.js";
+import { NGN_KEY } from "../config/initials.js";
 
 export const getWalletByUserId = async (req, res) => {
   try {
@@ -200,8 +202,8 @@ export const getWalletBalance = async (req, res) => {
       const balBig = from18Decimals(BigInt(bal));
 
       if (balStr !== balance.amount) {
-        const usdPrice = 0.1345;
-        // await cryptoPrice(token.symbol);
+        const usdPrice = token.price;
+        const ngnPrice = redis.get(NGN_KEY) ?? 1600;
 
         await Balance.update(balance.id, {
           amount: balStr,

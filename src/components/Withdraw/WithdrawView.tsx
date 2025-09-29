@@ -6,6 +6,13 @@ import {
   Wallet,
   ChevronDown,
   Tag,
+  Send,
+  Banknote,
+  Coins,
+  Zap,
+  Shield,
+  CheckCircle2,
+  Info,
 } from "lucide-react";
 import { formatCurrency, formatCrypto } from "../../utils/amount";
 import { UserTokenBalance } from "../../interfaces";
@@ -24,9 +31,9 @@ const WithdrawView: React.FC = () => {
   const [selectedBalance, setSelectedBalance] =
     useState<UserTokenBalance | null>(null);
   const [recipientAddress, setRecipientAddress] = useState("");
-  const [recipientTag, setRecipientTag] = useState(""); // 🔹 new state
+  const [recipientTag, setRecipientTag] = useState("");
   const [bankAccount, setBankAccount] = useState("");
-  const [amount, setAmount] = useState<string>("0");
+  const [amount, setAmount] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [balances, setBalances] = useState<UserTokenBalance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,26 +73,23 @@ const WithdrawView: React.FC = () => {
     if (withdrawType === "tag") {
       try {
         setIsProcessing(true);
-
-        const response = await apiClient.post<DepositResponse>("/wallets/deposit", {
-          balance_id: selectedBalance?.id,
-          amount: amount,
-          receiver_tag: recipientTag,
-        });
-
+        const response = await apiClient.post<DepositResponse>(
+          "/wallets/deposit",
+          {
+            balance_id: selectedBalance?.id,
+            amount: amount,
+            receiver_tag: recipientTag,
+          }
+        );
         setIsProcessing(false);
-
         if (response.data === "success" && response.tx) {
           const txHash = response.tx.transaction_hash;
           alert(`Deposit successful!\nTransaction Hash: ${txHash}`);
-          console.log("Deposit successful, tx hash:", txHash);
         } else {
           alert("Deposit failed. Please try again.");
-          console.error("Unexpected API response:", response.data);
         }
       } catch (error) {
         setIsProcessing(false);
-        console.error("Deposit error:", error);
         alert(
           error instanceof Error
             ? error.message
@@ -102,270 +106,288 @@ const WithdrawView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Withdraw Type */}
-      <FormSection title="Withdrawal Method">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <WithdrawMethodCard
-            type="tag"
-            label="Withdraw to Tag"
-            description="Send to internal tag"
-            active={withdrawType === "tag"}
-            onClick={() => setWithdrawType("tag")}
-            Icon={Tag}
-          />
-          <WithdrawMethodCard
+    <div className="max-w-2xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="text-center mb-2">
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+          Send Funds
+        </h1>
+        <p className="text-gray-500 mt-2">Transfer crypto or cash instantly</p>
+      </div>
+
+      {/* Withdraw Type Selection */}
+      <div className="bg-white rounded-2xl p-1 border border-gray-200 shadow-sm">
+        <div className="flex space-x-1">
+          <WithdrawMethodTab
             type="wallet"
-            label="Crypto Wallet"
-            description="Send to external wallet"
+            label="Wallet"
             active={withdrawType === "wallet"}
             onClick={() => setWithdrawType("wallet")}
-            Icon={Wallet}
+            icon={<Send className="w-4 h-4" />}
           />
-          <WithdrawMethodCard
+          <WithdrawMethodTab
+            type="tag"
+            label="Tag"
+            active={withdrawType === "tag"}
+            onClick={() => setWithdrawType("tag")}
+            icon={<Tag className="w-4 h-4" />}
+          />
+          <WithdrawMethodTab
             type="fiat"
-            label="Bank Account (NGN)"
-            description="Convert to Naira via Paystack"
+            label="Bank"
             active={withdrawType === "fiat"}
             onClick={() => setWithdrawType("fiat")}
-            Icon={CreditCard}
+            icon={<Banknote className="w-4 h-4" />}
           />
-        </div>
-      </FormSection>
-
-      {/* Asset Selection */}
-      <FormSection title="Select Asset">
-        <div className="relative">
-          <select
-            value={selectedBalance?.id ?? ""}
-            onChange={(e) =>
-              setSelectedBalance(
-                balances.find((b) => b.id.toString() === e.target.value) || null
-              )
-            }
-            className="w-full p-4 border border-gray-300 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select One</option>
-            {balances.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.token_symbol} -{" "}
-                {formatCrypto(Number(b.amount), b.token_symbol)} (
-                {formatCurrency(Number(b.usd_value))})
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        </div>
-      </FormSection>
-
-      {/* Amount Input */}
-      <FormSection title="Amount">
-        <div className="space-y-4">
-          <div className="relative">
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={`Enter ${
-                selectedBalance?.token_symbol ?? ""
-              } amount`}
-              className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              type="button"
-              onClick={() => setAmount(maxAmount.toString())}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-600 font-medium text-sm hover:text-blue-800"
-            >
-              MAX
-            </button>
-          </div>
-          <div className="flex justify-between text-sm text-gray-600">
-            <span>
-              Available:{" "}
-              {selectedBalance &&
-                formatCrypto(maxAmount, selectedBalance.token_symbol)}
-            </span>
-            {amount && selectedBalance && (
-              <span>≈ {formatCurrency(Number(selectedBalance.usd_value))}</span>
-            )}
-          </div>
-        </div>
-      </FormSection>
-
-      {/* Recipient */}
-      <FormSection
-        title={
-          withdrawType === "wallet"
-            ? "Recipient Wallet Address"
-            : withdrawType === "tag"
-            ? "Recipient Tag"
-            : "Bank Account Details"
-        }
-      >
-        {withdrawType === "wallet" && (
-          <input
-            type="text"
-            value={recipientAddress}
-            onChange={(e) => setRecipientAddress(e.target.value)}
-            placeholder="Enter wallet address (0x...)"
-            className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          />
-        )}
-
-        {withdrawType === "tag" && (
-          <input
-            type="text"
-            value={recipientTag}
-            onChange={(e) => setRecipientTag(e.target.value)}
-            placeholder="Enter recipient tag (e.g. @username)"
-            className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          />
-        )}
-
-        {withdrawType === "fiat" && (
-          <div className="space-y-4">
-            <input
-              type="text"
-              value={bankAccount}
-              onChange={(e) => setBankAccount(e.target.value)}
-              placeholder="Account Number"
-              className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            <select className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-              <option value="">Select Bank</option>
-              <option value="gtbank">GTBank</option>
-              <option value="access">Access Bank</option>
-              <option value="zenith">Zenith Bank</option>
-              <option value="first">First Bank</option>
-              <option value="uba">UBA</option>
-            </select>
-          </div>
-        )}
-      </FormSection>
-
-      {/* Fees */}
-      <FormSection title="Fee Breakdown">
-        <div className="space-y-2 text-sm">
-          <FeeRow label="Network Fee:" value="$2.50" />
-          <FeeRow
-            label="Platform Fee (1%):"
-            value={formatCurrency(fees.platformFee)}
-          />
-          {withdrawType === "fiat" && (
-            <FeeRow label="Fiat Conversion Fee:" value="$5.00" />
-          )}
-          <div className="border-t border-gray-300 pt-2 mt-2 flex justify-between text-base font-semibold">
-            <span>Total Fees:</span>
-            <span>${fees.total.toFixed(2)}</span>
-          </div>
-        </div>
-      </FormSection>
-
-      {/* Warning */}
-      <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex space-x-3">
-        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-amber-800">
-          <p className="font-medium mb-1">Important:</p>
-          <ul className="space-y-1">
-            <li>• Withdrawals are irreversible once processed</li>
-            <li>
-              •{" "}
-              {withdrawType === "wallet"
-                ? "Double-check the recipient address"
-                : withdrawType === "tag"
-                ? "Make sure you entered the correct tag"
-                : "Bank transfers may take 1-3 business days"}
-            </li>
-            <li>• Contact support if you encounter any issues</li>
-          </ul>
         </div>
       </div>
 
-      {/* Submit */}
-      <button
-        type="button"
-        onClick={handleWithdraw}
-        disabled={!isValidAmount || !isValidRecipient || isProcessing}
-        className={`w-full py-4 px-6 rounded-lg font-semibold transition-all ${
-          isValidAmount && isValidRecipient && !isProcessing
-            ? "bg-blue-600 hover:bg-blue-700 text-white"
-            : "bg-gray-300 text-gray-500 cursor-not-allowed"
-        }`}
-      >
-        {isProcessing ? (
-          <div className="flex items-center justify-center space-x-2">
-            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            <span>Processing...</span>
+      <div className="space-y-4">
+        {/* Asset Selection */}
+        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+          <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+            <Coins className="w-4 h-4 text-blue-500" />
+            <span>Select Asset</span>
+          </label>
+          <div className="relative">
+            <select
+              value={selectedBalance?.id ?? ""}
+              onChange={(e) =>
+                setSelectedBalance(
+                  balances.find((b) => b.id.toString() === e.target.value) ||
+                    null
+                )
+              }
+              className="w-full p-3 border border-gray-300 rounded-xl appearance-none bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Choose cryptocurrency</option>
+              {balances.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.token_name} ({b.token_symbol}) -{" "}
+                  {formatCrypto(Number(b.amount), b.token_symbol)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           </div>
-        ) : (
-          <div className="flex items-center justify-center space-x-2">
-            <ArrowUpRight className="w-5 h-5" />
-            <span>
-              {withdrawType === "wallet"
-                ? "Withdraw to Wallet"
-                : withdrawType === "tag"
-                ? "Send to Tag"
-                : "Withdraw to Bank Account"}
-            </span>
+        </div>
+
+        {/* Amount Input */}
+        {selectedBalance && (
+          <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+            <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+              <Zap className="w-4 h-4 text-green-500" />
+              <span>Amount</span>
+            </label>
+            <div className="space-y-3">
+              <div className="relative">
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full p-4 text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+                  <span className="text-sm text-gray-500 font-medium">
+                    {selectedBalance.token_symbol}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAmount(maxAmount.toString())}
+                    className="px-3 py-1 text-xs bg-blue-100 text-blue-600 rounded-lg font-medium hover:bg-blue-200 transition-colors"
+                  >
+                    MAX
+                  </button>
+                </div>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">
+                  Available:{" "}
+                  {formatCrypto(maxAmount, selectedBalance.token_symbol)}
+                </span>
+                {amount && (
+                  <span className="text-gray-600">
+                    ≈{" "}
+                    {formatCurrency(
+                      (inputAmount / maxAmount) *
+                        Number(selectedBalance.usd_value)
+                    )}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         )}
-      </button>
+
+        {/* Recipient Details */}
+        {selectedBalance && (
+          <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+            <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+              <Send className="w-4 h-4 text-purple-500" />
+              <span>
+                {withdrawType === "wallet"
+                  ? "Recipient Address"
+                  : withdrawType === "tag"
+                  ? "Recipient Tag"
+                  : "Bank Details"}
+              </span>
+            </label>
+
+            {withdrawType === "wallet" && (
+              <input
+                type="text"
+                value={recipientAddress}
+                onChange={(e) => setRecipientAddress(e.target.value)}
+                placeholder="Enter wallet address (0x...)"
+                className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+              />
+            )}
+
+            {withdrawType === "tag" && (
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  @
+                </div>
+                <input
+                  type="text"
+                  value={recipientTag}
+                  onChange={(e) => setRecipientTag(e.target.value)}
+                  placeholder="username"
+                  className="w-full p-4 pl-8 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            )}
+
+            {withdrawType === "fiat" && (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={bankAccount}
+                  onChange={(e) => setBankAccount(e.target.value)}
+                  placeholder="Account Number"
+                  className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <select className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                  <option value="">Select Bank</option>
+                  <option value="gtbank">GTBank</option>
+                  <option value="access">Access Bank</option>
+                  <option value="zenith">Zenith Bank</option>
+                  <option value="first">First Bank</option>
+                  <option value="uba">UBA</option>
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Fee Breakdown */}
+        {selectedBalance && amount && (
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-5 border border-blue-200">
+            <div className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+              <Info className="w-4 h-4 text-blue-500" />
+              <span>Fee Breakdown</span>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between py-2 border-b border-blue-100">
+                <span className="text-gray-600">Network Fee</span>
+                <span className="font-semibold">
+                  ${fees.baseFee.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-blue-100">
+                <span className="text-gray-600">Platform Fee (1%)</span>
+                <span className="font-semibold">
+                  {formatCurrency(fees.platformFee)}
+                </span>
+              </div>
+              {withdrawType === "fiat" && (
+                <div className="flex justify-between py-2 border-b border-blue-100">
+                  <span className="text-gray-600">Fiat Conversion</span>
+                  <span className="font-semibold">
+                    ${fees.fiatFee.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between pt-2 text-base font-bold text-gray-900">
+                <span>Total Fees</span>
+                <span>${fees.total.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Security Alert */}
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-4 border border-amber-200">
+          <div className="flex items-start space-x-3">
+            <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <div className="font-semibold text-amber-800 mb-1">
+                Security Notice
+              </div>
+              <ul className="text-amber-700 space-y-1">
+                <li>• Transactions are irreversible once confirmed</li>
+                <li>• Double-check all recipient details</li>
+                <li>• Contact support for any issues</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Submit Button */}
+        <button
+          type="button"
+          onClick={handleWithdraw}
+          disabled={!isValidAmount || !isValidRecipient || isProcessing}
+          className={`w-full py-4 px-6 rounded-xl font-semibold transition-all duration-300 ${
+            isValidAmount && isValidRecipient && !isProcessing
+              ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              : "bg-gray-200 text-gray-500 cursor-not-allowed"
+          }`}
+        >
+          {isProcessing ? (
+            <div className="flex items-center justify-center space-x-2">
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <span>Processing Transaction...</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center space-x-2">
+              <ArrowUpRight className="w-5 h-5" />
+              <span>
+                {withdrawType === "wallet"
+                  ? "Send to Wallet"
+                  : withdrawType === "tag"
+                  ? "Send to Tag"
+                  : "Withdraw to Bank"}
+              </span>
+            </div>
+          )}
+        </button>
+      </div>
     </div>
   );
 };
 
-/* 🔹 Reusable small components */
-const FormSection: React.FC<{ title: string; children: React.ReactNode }> = ({
-  title,
-  children,
-}) => (
-  <div className="bg-white rounded-xl p-6 border border-gray-200">
-    <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
-    {children}
-  </div>
-);
-
-const WithdrawMethodCard: React.FC<{
+// Enhanced Withdraw Method Tab
+const WithdrawMethodTab: React.FC<{
   type: WithdrawType;
   label: string;
-  description: string;
   active: boolean;
   onClick: () => void;
-  Icon: React.ElementType;
-}> = ({ label, description, active, onClick, Icon }) => (
+  icon: React.ReactNode;
+}> = ({ label, active, onClick, icon }) => (
   <button
     type="button"
     onClick={onClick}
-    className={`p-4 rounded-lg border-2 transition-all ${
+    className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl font-medium transition-all duration-300 ${
       active
-        ? "border-blue-500 bg-blue-50"
-        : "border-gray-200 hover:border-gray-300"
+        ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-sm"
+        : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
     }`}
   >
-    <div className="flex items-center space-x-3">
-      <div
-        className={`p-2 rounded-lg ${active ? "bg-blue-100" : "bg-gray-100"}`}
-      >
-        <Icon
-          className={`w-5 h-5 ${active ? "text-blue-600" : "text-gray-600"}`}
-        />
-      </div>
-      <div className="text-left">
-        <div className="font-semibold text-gray-900">{label}</div>
-        <div className="text-sm text-gray-500">{description}</div>
-      </div>
-    </div>
+    {icon}
+    <span>{label}</span>
   </button>
-);
-
-const FeeRow: React.FC<{ label: string; value: string }> = ({
-  label,
-  value,
-}) => (
-  <div className="flex justify-between">
-    <span className="text-gray-600">{label}</span>
-    <span className="font-medium">{value}</span>
-  </div>
 );
 
 export default WithdrawView;

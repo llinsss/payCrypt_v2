@@ -76,14 +76,14 @@ const QRCodeGenerator: React.FC = () => {
       try {
         await navigator.share({
           title: "Send me crypto!",
-          text: `Send crypto to my PayCrypt tag: ${userTag}`,
+          text: `Send crypto to my TaggedPay tag: ${userTag}`,
           url: window.location.origin,
         });
       } catch (error) {
         console.error("Error sharing:", error);
       }
     } else {
-      copyToClipboard(`Send crypto to my PayCrypt tag: ${userTag}`, "share");
+      copyToClipboard(`Send crypto to my TaggedPay tag: ${userTag}`, "share");
     }
   }, [userTag, copyToClipboard]);
 

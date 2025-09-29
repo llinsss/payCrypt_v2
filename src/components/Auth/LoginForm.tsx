@@ -98,12 +98,12 @@ const Login: React.FC = () => {
             )}
           </div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {isLogin ? "Welcome to PayCrypt" : "Join PayCrypt"}
+            {isLogin ? "Welcome to TaggedPay" : "Join TaggedPay"}
           </h2>
           <p className="text-gray-600 mt-2">
             {isLogin
-              ? "Sign in to your PayCrypt account"
-              : "Create your PayCrypt account"}
+              ? "Sign in to your TaggedPay account"
+              : "Create your TaggedPay account"}
           </p>
         </div>
 

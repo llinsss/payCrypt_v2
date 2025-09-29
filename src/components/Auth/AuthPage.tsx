@@ -15,7 +15,7 @@ const AuthPage: React.FC = () => {
         <div className="relative z-10">
           <div className="flex items-center space-x-3 mb-8">
             <PayCryptLogo className="w-12 h-12" showText={false} />
-            <span className="text-3xl font-bold text-white">PayCrypt</span>
+            <span className="text-3xl font-bold text-white">TaggedPay</span>
           </div>
           
           <h1 className="text-3xl xl:text-4xl font-bold text-white mb-6 leading-tight">

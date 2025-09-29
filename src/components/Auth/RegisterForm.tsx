@@ -55,7 +55,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
           </div>
           <h2 className="text-2xl font-bold text-gray-900">Create Account</h2>
           <p className="text-gray-600 mt-2">
-            Join PayCrypt and start receiving crypto
+            Join TaggedPay and start receiving crypto
           </p>
         </div>
 
