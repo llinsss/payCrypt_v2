@@ -50,8 +50,8 @@ const WithdrawView: React.FC = () => {
   const inputAmount = Number(amount) || 0;
 
   const fees = useMemo(() => {
-    const baseFee = 2.5;
-    const platformFee = inputAmount * 0.01;
+    const baseFee = 0.05;
+    const platformFee = inputAmount * 0.001;
     const fiatFee = withdrawType === "fiat" ? 5 : 0;
     return {
       baseFee,
@@ -106,7 +106,7 @@ const WithdrawView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="text-center mb-2">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
