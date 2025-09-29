@@ -210,15 +210,15 @@ export const getWalletBalance = async (req, res) => {
             ngn_value,
           });
         }
+      } else {
+        response.push({
+          symbol: token.symbol,
+          name: token.name,
+          crypto_value: 0,
+          usd_value: 0,
+          ngn_value: 0,
+        });
       }
-
-      response.push({
-        symbol: token.symbol,
-        name: token.name,
-        crypto_value: 0,
-        usd_value: 0,
-        ngn_value: 0,
-      });
     }
     return res.json(response);
   } catch (error) {
