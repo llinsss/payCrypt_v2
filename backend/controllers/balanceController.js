@@ -42,9 +42,9 @@ export const getBalanceByUser = async (req, res) => {
     for (const balance of balances) {
       const ngn_value = Number(balance.usd_value) * ngnPrice;
       response.push({ ...balance, ngn_value });
-    }
     console.log("NGN price1: ", ngnPrice);
     console.log("NGN value1: ", ngn_value);
+    }
     res.json(response);
   } catch (error) {
     res.status(500).json({ error: error.message });
