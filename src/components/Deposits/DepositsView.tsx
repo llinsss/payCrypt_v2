@@ -105,7 +105,7 @@ const DepositsView: React.FC = () => {
   });
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Enhanced Header Tabs */}
       <div className="bg-gradient-to-r from-white to-gray-50 rounded-2xl p-2 border border-gray-200/50 shadow-sm">
         <div className="flex space-x-2">

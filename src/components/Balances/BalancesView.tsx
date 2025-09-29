@@ -67,7 +67,7 @@ const BalancesView: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Portfolio Overview */}
       <div className="relative overflow-hidden bg-gradient-to-br from-purple-600 via-blue-600 to-cyan-500 rounded-3xl p-8 text-white shadow-2xl">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32" />
@@ -240,7 +240,7 @@ const BalancesView: React.FC = () => {
 
 // Loading Skeleton Component
 const LoadingSkeleton: React.FC = () => (
-  <div className="space-y-6 max-w-7xl mx-auto animate-pulse">
+  <div className="space-y-6 max-w-6xl mx-auto animate-pulse">
     <div className="bg-gray-300 rounded-3xl h-48" />
     <div className="bg-gray-200 rounded-2xl h-20" />
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

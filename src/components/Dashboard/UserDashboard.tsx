@@ -112,10 +112,10 @@ const UserDashboard: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Main Wallet Card */}
-      <div className="w-full flex flex-col space-y-4 space-x-0 items-start justify-start lg:items-stretch lg:flex-row lg:space-x-4 lg:space-y-0 lg:justify-between">
-        <div className="w-full lg:w-1/2 bg-gradient-to-br from-purple-600 via-blue-600 to-cyan-500 rounded-3xl p-6 text-white shadow-2xl flex flex-col">
+      <div className="w-full flex flex-col space-y-4 space-x-0 items-start justify-start xl:items-stretch xl:flex-row xl:space-x-4 xl:space-y-0 xl:justify-between">
+        <div className="w-full xl:w-1/2 bg-gradient-to-br from-purple-600 via-blue-600 to-cyan-500 rounded-3xl p-6 text-white shadow-2xl flex flex-col">
           <div className="flex items-center justify-between mb-8">
             <div>
               <div className="flex items-center space-x-2">
@@ -186,7 +186,7 @@ const UserDashboard: React.FC = () => {
         </div>
 
         {/* Stats Grid */}
-        <div className="w-full lg:w-1/2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-2 gap-4">
+        <div className="w-full xl:w-1/2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-2 gap-4">
           {stats.map(({ title, value, icon: Icon, gradient, subtitle }) => (
             <div
               key={title}

@@ -160,7 +160,7 @@ const SettingsView: React.FC = () => {
             gradient="from-purple-500 to-pink-500"
           />
 
-          <div className="lg:col-span-2">
+          {/* <div className="lg:col-span-2">
             <InfoField
               icon={<MapPin className="w-4 h-4" />}
               label="Wallet Address"
@@ -168,7 +168,7 @@ const SettingsView: React.FC = () => {
               gradient="from-green-500 to-emerald-500"
               isMonospace
             />
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
@@ -300,7 +300,7 @@ const SettingsView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center space-x-4">
@@ -433,7 +433,10 @@ const InfoField: React.FC<{
   isMonospace?: boolean;
 }> = ({ icon, label, value, gradient, isMonospace = false }) => (
   <div className="space-y-2">
-    <label htmlFor="d" className="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+    <label
+      htmlFor="d"
+      className="flex items-center space-x-2 text-sm font-semibold text-gray-700"
+    >
       <div
         className={`p-1.5 bg-gradient-to-r ${gradient} rounded-lg text-white`}
       >
