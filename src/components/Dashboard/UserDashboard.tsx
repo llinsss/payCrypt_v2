@@ -133,7 +133,7 @@ const UserDashboard: React.FC = () => {
               <h1 className="text-2xl font-bold">
                 {showBalance
                   ? formatCurrency(
-                      totalCryptoValue + (summary?.total_balance || 0)
+                      totalCryptoValue ?? (summary?.total_balance || 0)
                     )
                   : "••••••"}
               </h1>
