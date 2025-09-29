@@ -1,5 +1,5 @@
 export const up = async (knex) => {
-  return knex.schema.createTable("users", (table) => {
+  return knex.schema.createTable("users", { ifNotExists: true }, (table) => {
     table.increments("id").primary();
     table.string("tag", 100).unique().notNullable();
     table.string("email", 100).unique().notNullable();
@@ -17,5 +17,5 @@ export const up = async (knex) => {
 };
 
 export const down = async (knex) => {
-  return knex.schema.dropTable("users");
+  return knex.schema.dropTableIfExists("users");
 };

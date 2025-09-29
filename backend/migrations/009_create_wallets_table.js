@@ -1,5 +1,5 @@
 export const up = async (knex) => {
-  return knex.schema.createTable("wallets", (table) => {
+  return knex.schema.createTable("wallets", { ifNotExists: true }, (table) => {
     table.increments("id").primary();
     table.integer("user_id").unsigned();
     table.decimal("available_balance", 18, 2).defaultTo(0);
@@ -16,5 +16,5 @@ export const up = async (knex) => {
 };
 
 export const down = async (knex) => {
-  return knex.schema.dropTable("wallets");
+  return knex.schema.dropTableIfExists("wallets");
 };
