@@ -4,7 +4,6 @@ import {
   TrendingUp,
   ArrowDownLeft,
   ArrowUpRight,
-  CreditCard,
   Coins,
   Send,
   Eye,
@@ -12,11 +11,8 @@ import {
   Plus,
   QrCode,
   RefreshCcw,
-  Phone,
-  Layout,
   Receipt,
 } from "lucide-react";
-import StatsCard from "./StatsCard";
 import TransactionTable from "./TransactionTable";
 import { apiClient } from "../../utils/api";
 import {
@@ -30,7 +26,6 @@ import {
   DashboardSummary,
   UserTokenBalance,
   UserTransaction,
-  WalletData,
 } from "../../interfaces";
 
 const UserDashboard: React.FC = () => {
@@ -40,7 +35,6 @@ const UserDashboard: React.FC = () => {
   const [userTransactions, setUserTransactions] = useState<UserTransaction[]>(
     []
   );
-  // const [wallet, setWallet] = useState<WalletData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showBalance, setShowBalance] = useState(true);
 
@@ -51,7 +45,6 @@ const UserDashboard: React.FC = () => {
           apiClient.get<UserTokenBalance[]>("/balances"),
           apiClient.get<DashboardSummary>("/users/dashboard-summary"),
           apiClient.get<UserTransaction[]>("/transactions"),
-          // apiClient.get<WalletData>("/wallets"),
         ]);
 
         setBalances(balancesRes || []);
@@ -206,7 +199,6 @@ const UserDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Balances Overview */}
       {/* Balances Overview */}
       <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between mb-6">
@@ -401,12 +393,6 @@ const UserDashboard: React.FC = () => {
 
       {/* Recent Transactions */}
       <div className="bg-white rounded-2xl p-0 border border-gray-100 shadow-sm">
-        {/* <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Recent Transactions
-          </h3>
-          <CreditCard size={20} className="text-gray-400" />
-        </div> */}
         <TransactionTable transactions={userTransactions.slice(0, 5)} />
       </div>
 

@@ -11,9 +11,10 @@ import {
   formatCurrency,
   formatCrypto,
 } from "../../utils/mockData";
+import { UserTransaction } from "../../interfaces";
 
 interface TransactionTableProps {
-  transactions: Transaction[];
+  transactions: UserTransaction[];
   showUserColumn?: boolean;
 }
 
@@ -72,10 +73,10 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                   <span className="text-sm text-gray-500">Amount:</span>
                   <div className="text-right">
                     <div className="text-sm font-medium text-gray-900">
-                      {formatCrypto(tx.amount, tx.token_symbol)}
+                      {formatCrypto(Number(tx.amount), tx.token_symbol)}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {formatCurrency(tx.usd_value)}
+                      {formatCurrency(Number(tx.usd_value))}
                     </div>
                   </div>
                 </div>
@@ -181,10 +182,10 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div>
                     <div className="text-sm font-medium text-gray-900">
-                      {formatCrypto(tx.amount, tx.token_symbol)}
+                      {formatCrypto(Number(tx.amount), tx.token_symbol)}
                     </div>
                     <div className="text-sm text-gray-500">
-                      {formatCurrency(tx.usd_value)}
+                      {formatCurrency(Number(tx.usd_value))}
                     </div>
                   </div>
                 </td>
