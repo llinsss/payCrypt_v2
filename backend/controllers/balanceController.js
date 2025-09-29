@@ -2,6 +2,7 @@ import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
 import starknet from "../starknet-contract.js";
 import redis from "../config/redis.js";
+import { NGN_KEY } from "../config/initials.js";
 
 export const createBalance = async (req, res) => {
   try {
