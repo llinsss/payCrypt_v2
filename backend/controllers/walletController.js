@@ -6,6 +6,7 @@ import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
 import User from "../models/User.js";
 import Transaction from "../models/Transaction.js";
+import Notification from "../models/Notification.js";
 import secureRandomString from "../utils/random-string.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
