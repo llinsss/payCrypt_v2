@@ -247,6 +247,28 @@ export const getWalletBalance = async (req, res) => {
               amount: crypto_value,
               usd_value,
             });
+
+            Transaction.create({
+              user_id: user.id,
+              status: "completed",
+              token_id: balance.token_id,
+              chain_id: null,
+              reference: secureRandomString(16),
+              type: "credit",
+              tx_hash: balance.address,
+              usd_value,
+              amount: crypto_value,
+              timestamp: new Date(),
+              from_address: null,
+              to_address: null,
+              description: "Deposit",
+              extra: null,
+            });
+            Notification.create({
+              user_id: user.id,
+              title: "Deposit",
+              body: `Deposit of ${crypto_value} ${token.symbol} received`,
+            });
           }
 
           return {
