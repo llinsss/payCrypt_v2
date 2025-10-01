@@ -74,7 +74,7 @@ const WithdrawView: React.FC = () => {
       try {
         setIsProcessing(true);
         const response = await apiClient.post<DepositResponse>(
-          "/wallets/deposit",
+          "/wallets/send-to-tag",
           {
             balance_id: selectedBalance?.id,
             amount: amount,
