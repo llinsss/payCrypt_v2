@@ -8,7 +8,6 @@ import { BigNumber } from "bignumber.js";
 import db from "../config/database.js";
 import { AutoSwappr, TOKEN_ADDRESSES } from "autoswap-sdk";
 import Token from "../models/Token.js";
-import { cryptoPrice } from "../utils/amount.js";
 
 function normalizeHex(addr) {
   return new BigNumber(addr).toString(16);
@@ -64,7 +63,7 @@ const listenForDeposits = async (block_number = null) => {
             const token = await Token.findById(balance.token_id);
             const user = await User.findById(balance.user_id);
             if (user && token) {
-              const getUSDValue = await cryptoPrice(token.symbol);
+              const getUSDValue = token.price;
               const update_bal = await Balance.update(balance.id, {
                 amount: Number(decoded.amount) + Number(balance.amount),
                 usd_value:
@@ -155,7 +154,7 @@ const listenForDeposits = async (block_number = null) => {
                 const token = await Token.findById(balance.token_id);
                 const user = await User.findById(balance.user_id);
                 if (user && token) {
-                  const getUSDValue = await cryptoPrice(token.symbol);
+                  const getUSDValue = token.price;
                   // const update_bal = await Balance.update(balance.id, {
                   //   amount: Number(decoded.amount) + Number(balance.amount),
                   //   usd_value:

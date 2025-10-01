@@ -5,7 +5,6 @@ import * as exchangerateapi from "../services/exchange-rate-api.js";
 import starknet from "../starknet-contract.js";
 import { shortString } from "starknet";
 import listenForDeposits from "../services/starknetListener.js";
-import { cryptoToFiat } from "../utils/amount.js";
 import { NGN_KEY } from "../config/initials.js";
 
 const router = express.Router();
@@ -120,14 +119,5 @@ router.get("/fetch-transactions/:block_number", async (req, res) => {
   }
 });
 
-router.post("/api/usd-equivalent", async (req, res) => {
-  try {
-    const { token, amount } = req.body;
-    const data = await cryptoToFiat(token, amount);
-    return res.json(data);
-  } catch (error) {
-    console.error("❌ Error fetching usd equivalent:", error);
-    return res.status(500).json({ error: error.message });
-  }
-});
+
 export default router;

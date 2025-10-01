@@ -125,13 +125,13 @@ export const send_to_tag = async (req, res) => {
     const contract = await starknet.getContract();
     const senderTag = shortString.encodeShortString(user.tag);
     const receiverTag = shortString.encodeShortString(receiver_tag);
-    const transferValue = to18Decimals(transferAmount);
+    const transferValue = to18Decimals(transferAmount).toString();
 
     const tx = await contract.deposit_to_tag(
       receiverTag,
       senderTag,
       transferValue,
-      process.env.STARKNET_TOKEN_ADDRESS
+      String(process.env.STARKNET_TOKEN_ADDRESS)
     );
 
     await starknet.provider.waitForTransaction(tx.transaction_hash);
