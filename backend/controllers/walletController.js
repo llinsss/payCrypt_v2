@@ -250,6 +250,9 @@ export const getWalletBalance = async (req, res) => {
             });
 
             if (Number(crypto_value) > Number(balance.amount)) {
+              const depositAmount =
+                Number(crypto_value) - Number(balance.amount);
+              const depositUsdValue = token.price * depositAmount;
               Transaction.create({
                 user_id: user.id,
                 status: "completed",
@@ -258,8 +261,8 @@ export const getWalletBalance = async (req, res) => {
                 reference: secureRandomString(16),
                 type: "credit",
                 tx_hash: balance.address,
-                usd_value,
-                amount: crypto_value,
+                usd_value: depositUsdValue,
+                amount: depositAmount,
                 timestamp: new Date(),
                 from_address: null,
                 to_address: null,
@@ -269,7 +272,7 @@ export const getWalletBalance = async (req, res) => {
               Notification.create({
                 user_id: user.id,
                 title: "Deposit",
-                body: `Deposit of ${crypto_value} ${token.symbol} received`,
+                body: `Deposit of ${depositAmount} ${token.symbol} received`,
               });
             }
           }
