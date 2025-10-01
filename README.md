@@ -34,4 +34,6 @@ Deployer: 0x09c5096AD92A3eb3b83165a4d177a53D3D754197
 Deployed to: 0xEc38bc9Be954b1b95501167A443b5cc81E6e3975
 Transaction hash: 0xbb7dad98a7ab7d3d7af0bdebe5d642e11513dc049b5ddaf71d53220784df6a9e
 
+STARKNET: 0x028add5d29f4aa3e4144ba1a85d509de6719e58cabe42cc72f58f46c6a84a785
+
 currently testing on these chains and will be going on mainnet soon
