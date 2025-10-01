@@ -201,58 +201,76 @@ export const send_to_tag = async (req, res) => {
 export const getWalletBalance = async (req, res) => {
   try {
     const { id } = req.user;
+
+    // Fetch user
     const user = await User.findById(id);
     if (!user) {
       return res.status(400).json({ error: "User not found" });
     }
+
+    // Fetch balances
     const balances = await Balance.getByUser(user.id);
-    const response = [];
-    for (const balance of balances) {
-      const token = await Token.findById(balance.token_id);
+    if (!balances?.length) {
+      return res.json([]); // no balances
+    }
 
-      if (token.symbol === "STRK") {
-        const contract = await starknet.getContract();
-        const userTag = shortString.encodeShortString(user.tag);
+    // Fetch tokens for all balances in parallel
+    const tokenIds = balances.map((b) => b.token_id);
+    const tokens = await Promise.all(tokenIds.map((id) => Token.findById(id)));
+    const tokenMap = new Map(tokens.map((t) => [t.id, t])); // quick lookup
 
-        // bal will likely be a BigInt
-        const bal = await contract.get_tag_wallet_balance(
-          userTag,
-          process.env.STARKNET_TOKEN_ADDRESS
-        );
+    // Fetch NGN rate once
+    const ngnPrice = Number((await redis.get(NGN_KEY)) ?? 1600);
 
-        const balStr = from18Decimals(bal.toString());
-        const balBig = from18Decimals(BigInt(bal).toString());
+    const contract = await starknet.getContract();
+    const userTag = shortString.encodeShortString(user.tag).toString();
 
-        if (balStr !== balance.amount) {
-          const crypto_value = balStr;
-          const usdPrice = token.price;
-          const usd_value = Number(balBig) * (usdPrice ?? 1);
-          const ngnPrice = (await redis.get(NGN_KEY)) ?? 1600;
+    // Process balances in parallel
+    const response = await Promise.all(
+      balances.map(async (balance) => {
+        const token = tokenMap.get(balance.token_id);
+        if (!token) return null;
+
+        // Handle STRK token
+        if (token.symbol === "STRK") {
+          const bal = await contract.get_tag_wallet_balance(
+            userTag,
+            String(process.env.STARKNET_TOKEN_ADDRESS)
+          );
+
+          const crypto_value = from18Decimals(bal.toString());
+          const usd_value = Number(crypto_value) * (token.price ?? 1);
           const ngn_value = usd_value * ngnPrice;
 
-          await Balance.update(balance.id, {
-            amount: crypto_value,
-            usd_value,
-          });
-          response.push({
+          if (crypto_value !== balance.amount) {
+            await Balance.update(balance.id, {
+              amount: crypto_value,
+              usd_value,
+            });
+          }
+
+          return {
             symbol: token.symbol,
             name: token.name,
             crypto_value,
             usd_value,
             ngn_value,
-          });
+          };
         }
-      } else {
-        response.push({
+
+        // Non-STRK tokens
+        return {
           symbol: token.symbol,
           name: token.name,
           crypto_value: 0,
           usd_value: 0,
           ngn_value: 0,
-        });
-      }
-    }
-    return res.json(response);
+        };
+      })
+    );
+
+    // Filter out nulls (in case of missing tokens)
+    return res.json(response.filter(Boolean));
   } catch (error) {
     console.error("Wallet balance error:", error);
     return res.status(500).json({ error: error.message });
