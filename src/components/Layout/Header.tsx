@@ -26,9 +26,10 @@ const Header: React.FC<HeaderProps> = ({ isAdmin = false, onMenuClick }) => {
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const res = await apiClient.get("/notifications/unread");
-        console.log(res)
-        setNotifications(res.data || []);
+        const res = await apiClient.get<Notification[] | []>(
+          "/notifications/unread"
+        );
+        setNotifications(res);
       } catch (err) {
         console.error("Failed to load notifications:", err);
       }
