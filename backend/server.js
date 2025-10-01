@@ -15,6 +15,7 @@ import chainRoutes from "./routes/chains.js";
 import walletRoutes from "./routes/wallets.js";
 import bankAccountRoutes from "./routes/bank-accounts.js";
 import generalRoutes from "./routes/general.js";
+import notificationRoutes from "./routes/notifications.js";
 
 import { SIX_HOURS, updateNgnRate, updateTokenPrices } from "./config/initials.js";
 
@@ -56,6 +57,7 @@ app.use("/api/tokens", tokenRoutes);
 app.use("/api/chains", chainRoutes);
 app.use("/api/wallets", walletRoutes);
 app.use("/api/bank-accounts", bankAccountRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 updateTokenPrices();
 
