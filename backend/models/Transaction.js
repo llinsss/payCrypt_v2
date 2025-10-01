@@ -69,21 +69,21 @@ const Transaction = {
   async totalDeposit() {
     return await db("transactions")
       .where("status", "completed")
-      .where("type", "deposit")
+      .where("type", "credit")
       .sum("usd_value as amount");
   },
 
   async totalDepositByUser(userId) {
     return await db("transactions")
       .where("status", "completed")
-      .where("type", "deposit")
+      .where("type", "credit")
       .where("user_id", userId)
       .sum("usd_value as amount");
   },
   async totalWithdrawal() {
     return await db("transactions")
       .where("status", "completed")
-      .where("type", "withdrawal")
+      .where("type", "debit")
       .sum("usd_value as amount");
   },
 
@@ -91,7 +91,7 @@ const Transaction = {
     return await db("transactions")
       .where("user_id", userId)
       .where("status", "completed")
-      .where("type", "withdrawal")
+      .where("type", "debit")
       .sum("usd_value as amount");
   },
 
