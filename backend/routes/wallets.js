@@ -4,15 +4,15 @@ import {
   updateWallet,
   deleteWallet,
   getWalletByUserId,
-  deposit,
-  getWalletBalance
+  getWalletBalance,
+  send_to_tag,
 } from "../controllers/walletController.js";
 import { authenticate } from "../middleware/auth.js";
 
 const router = express.Router();
 
 router.get("/", authenticate, getWalletByUserId);
-router.post("/deposit", authenticate, deposit);
+router.post("/send-to-tag", authenticate, send_to_tag);
 router.get("/balance", authenticate, getWalletBalance);
 router.get("/:id", authenticate, getWalletById);
 router.put("/:id", authenticate, updateWallet);

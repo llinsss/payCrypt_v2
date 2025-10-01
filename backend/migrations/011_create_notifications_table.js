@@ -1,14 +1,13 @@
 export const up = async (knex) => {
-  const exists = await knex.schema.hasTable("balances");
+  const exists = await knex.schema.hasTable("notifications");
 
   if (!exists) {
-    return knex.schema.createTable("balances", (table) => {
+    return knex.schema.createTable("notifications", (table) => {
       table.increments("id").primary();
       table.integer("user_id").unsigned().notNullable();
-      table.integer("token_id").unsigned().notNullable();
-      table.decimal("amount", 18, 3).defaultTo(0);
-      table.decimal("usd_value", 18, 8).defaultTo(0);
-      table.string("address", 255);
+      table.string("title", 255);
+      table.string("body", 255);
+      table.boolean("read").defaultTo(false);
       table.timestamp("created_at").defaultTo(knex.fn.now());
       table.timestamp("updated_at").defaultTo(knex.fn.now());
 
@@ -23,5 +22,5 @@ export const up = async (knex) => {
 };
 
 export const down = async (knex) => {
-  return knex.schema.dropTableIfExists("balances");
+  return knex.schema.dropTableIfExists("notifications");
 };

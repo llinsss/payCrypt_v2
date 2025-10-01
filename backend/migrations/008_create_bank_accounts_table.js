@@ -1,5 +1,5 @@
 export const up = async (knex) => {
-  const exists = await knex.schema.hasTable("users");
+  const exists = await knex.schema.hasTable("bank_accounts");
 
   if (!exists) {
     return knex.schema.createTable("bank_accounts", (table) => {

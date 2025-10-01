@@ -9,6 +9,8 @@ import Transaction from "../models/Transaction.js";
 import secureRandomString from "../utils/random-string.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
+import dotenv from "dotenv";
+dotenv.config();
 
 export const getWalletByUserId = async (req, res) => {
   try {
@@ -82,87 +84,117 @@ export const deleteWallet = async (req, res) => {
   }
 };
 
-export const deposit = async (req, res) => {
+export const send_to_tag = async (req, res) => {
   try {
     const { id } = req.user;
     const { receiver_tag, amount, balance_id } = req.body;
-    const user = await User.findById(id);
-    if (!user) {
-      return res.status(400).json({ error: "User not found" });
+
+    // Fail fast: validate input
+    if (!receiver_tag || !amount || !balance_id) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
-    const recipient = await User.findByTag(receiver_tag);
-    if (!recipient) {
+
+    // Parallel fetches (user, recipient, balance)
+    const [user, recipient, balance] = await Promise.all([
+      User.findById(id),
+      User.findByTag(receiver_tag),
+      Balance.findById(balance_id),
+    ]);
+
+    if (!user) return res.status(400).json({ error: "User not found" });
+    if (!recipient)
       return res.status(400).json({ error: "Recipient not found" });
-    }
-    const balance = await Balance.findById(balance_id);
-    if (!balance) {
-      return res.status(400).json({ error: "Balance not found" });
-    }
-    if (Number(amount) > Number(balance.amount)) {
-      return res.status(422).json({ error: "Insufficient wallet balance" });
-    }
-    const token = await Token.findById(balance.token_id);
-    if (!token) {
-      return res.status(400).json({ error: "Token not found" });
-    }
-    // Only allow balance owner to delete
-    if (balance.user_id !== req.user.id) {
+    if (recipient.id === user.id)
+      return res.status(400).json({ error: "Cannot send to self" });
+    if (!balance) return res.status(400).json({ error: "Balance not found" });
+    if (balance.user_id !== id)
       return res.status(403).json({ error: "Unauthorized" });
+
+    const transferAmount = Number(amount);
+    if (transferAmount > Number(balance.amount))
+      return res.status(422).json({ error: "Insufficient wallet balance" });
+
+    const token = await Token.findById(balance.token_id);
+    if (!token) return res.status(400).json({ error: "Token not found" });
+
+    if (token.symbol !== "STRK") {
+      return res.status(422).json({ error: "Channel inactive" });
     }
-    if (token.symbol === "STRK") {
-      const contract = await starknet.getContract();
-      const senderTag = shortString.encodeShortString(user.tag);
-      const receiverTag = shortString.encodeShortString(receiver_tag);
-      const _amount = to18Decimals(amount);
-      const tx = await contract.deposit_to_tag(
-        receiverTag,
-        senderTag,
-        _amount,
-        "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
-      );
-      await starknet.provider.waitForTransaction(tx.transaction_hash);
-      if (tx.transaction_hash) {
-        const getUSDValue = 0.1345;
-        // await cryptoPrice(token.symbol);
-        const create_debit_tx = await Transaction.create({
-          user_id: user.id,
-          status: "completed",
-          token_id: balance.token_id,
-          chain_id: null,
-          reference: secureRandomString(16),
-          type: "debit",
-          tx_hash: tx.transaction_hash,
-          usd_value: Number(amount * getUSDValue ?? 1),
-          amount: Number(amount),
-          timestamp: new Date(),
-          from_address: user.tag,
-          to_address: receiver_tag,
-          description: "Fund transfer",
-          extra: null,
-        });
-        const create_credit_tx = await Transaction.create({
-          user_id: recipient.id,
-          status: "completed",
-          token_id: balance.token_id,
-          chain_id: null,
-          reference: secureRandomString(16),
-          type: "credit",
-          tx_hash: tx.transaction_hash,
-          usd_value: Number(amount * getUSDValue ?? 1),
-          amount: Number(amount),
-          timestamp: new Date(),
-          from_address: user.tag,
-          to_address: receiver_tag,
-          description: "Fund received",
-          extra: null,
-        });
-        res.json({ data: "success", tx });
-      }
-      return res.status(422).json({ error: "failed to transfer" });
+
+    // Blockchain interaction
+    const contract = await starknet.getContract();
+    const senderTag = shortString.encodeShortString(user.tag);
+    const receiverTag = shortString.encodeShortString(receiver_tag);
+    const transferValue = to18Decimals(transferAmount);
+
+    const tx = await contract.deposit_to_tag(
+      receiverTag,
+      senderTag,
+      transferValue,
+      process.env.STARKNET_TOKEN_ADDRESS
+    );
+
+    await starknet.provider.waitForTransaction(tx.transaction_hash);
+
+    if (!tx.transaction_hash) {
+      return res.status(422).json({ error: "Failed to transfer" });
     }
-    return res.status(422).json({ error: "Channel inactive" });
+
+    // Prepare common metadata
+    const timestamp = new Date();
+    const usdPrice = token.price ?? 1;
+    const usdValue = transferAmount * usdPrice;
+    const reference = secureRandomString(16);
+
+    // Write debit/credit transactions + notifications in parallel
+    await Promise.all([
+      Transaction.create({
+        user_id: user.id,
+        status: "completed",
+        token_id: balance.token_id,
+        chain_id: null,
+        reference,
+        type: "debit",
+        tx_hash: tx.transaction_hash,
+        usd_value: usdValue,
+        amount: transferAmount,
+        timestamp,
+        from_address: user.tag,
+        to_address: receiver_tag,
+        description: "Fund transfer",
+        extra: null,
+      }),
+      Notification.create({
+        user_id: user.id,
+        title: "Fund transfer",
+        body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_tag}`,
+      }),
+      Transaction.create({
+        user_id: recipient.id,
+        status: "completed",
+        token_id: balance.token_id,
+        chain_id: null,
+        reference: secureRandomString(16),
+        type: "credit",
+        tx_hash: tx.transaction_hash,
+        usd_value: usdValue,
+        amount: transferAmount,
+        timestamp,
+        from_address: user.tag,
+        to_address: receiver_tag,
+        description: "Fund received",
+        extra: null,
+      }),
+      Notification.create({
+        user_id: recipient.id,
+        title: "Fund received",
+        body: `You received ${transferAmount} ${token.symbol} from ${user.tag}`,
+      }),
+    ]);
+
+    return res.json({ data: "success", tx });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 };
 
@@ -174,7 +206,7 @@ export const getWalletBalance = async (req, res) => {
       return res.status(400).json({ error: "User not found" });
     }
     const balances = await Balance.getByUser(user.id);
-    let response = [];
+    const response = [];
     for (const balance of balances) {
       const token = await Token.findById(balance.token_id);
 
@@ -185,7 +217,7 @@ export const getWalletBalance = async (req, res) => {
         // bal will likely be a BigInt
         const bal = await contract.get_tag_wallet_balance(
           userTag,
-          "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+          process.env.STARKNET_TOKEN_ADDRESS
         );
 
         const balStr = from18Decimals(bal.toString());
@@ -195,7 +227,7 @@ export const getWalletBalance = async (req, res) => {
           const crypto_value = balStr;
           const usdPrice = token.price;
           const usd_value = Number(balBig) * (usdPrice ?? 1);
-          const ngnPrice = await redis.get(NGN_KEY) ?? 1600;
+          const ngnPrice = (await redis.get(NGN_KEY)) ?? 1600;
           const ngn_value = usd_value * ngnPrice;
 
           await Balance.update(balance.id, {
