@@ -27,6 +27,7 @@ const Header: React.FC<HeaderProps> = ({ isAdmin = false, onMenuClick }) => {
     const fetchNotifications = async () => {
       try {
         const res = await apiClient.get("/notifications/unread");
+        console.log(res)
         setNotifications(res.data || []);
       } catch (err) {
         console.error("Failed to load notifications:", err);
@@ -108,6 +109,7 @@ const Header: React.FC<HeaderProps> = ({ isAdmin = false, onMenuClick }) => {
                   ) : (
                     notifications.map((n) => (
                       <button
+                        type="button"
                         key={n.id}
                         onClick={() => markAsRead(n.id)}
                         className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
