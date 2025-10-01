@@ -125,7 +125,7 @@ export const send_to_tag = async (req, res) => {
     const contract = await starknet.getContract();
     const senderTag = shortString.encodeShortString(user.tag);
     const receiverTag = shortString.encodeShortString(receiver_tag);
-    const transferValue = to18Decimals(transferAmount).toString();
+    const transferValue = to18Decimals(transferAmount.toString());
 
     const tx = await contract.deposit_to_tag(
       receiverTag,
@@ -221,7 +221,7 @@ export const getWalletBalance = async (req, res) => {
         );
 
         const balStr = from18Decimals(bal.toString());
-        const balBig = from18Decimals(BigInt(bal));
+        const balBig = from18Decimals(BigInt(bal).toString());
 
         if (balStr !== balance.amount) {
           const crypto_value = balStr;
