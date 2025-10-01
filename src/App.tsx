@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { Toaster } from "react-hot-toast";
 
 // Layout
 import Sidebar from "./components/Layout/Sidebar";
@@ -55,6 +56,7 @@ const PrivateLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
+     <Toaster position="top-center" reverseOrder={false} />
       <Sidebar
         isAdmin={isAdmin}
         isOpen={sidebarOpen}

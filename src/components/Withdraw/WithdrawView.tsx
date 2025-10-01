@@ -17,6 +17,7 @@ import {
 import { formatCurrency, formatCrypto } from "../../utils/amount";
 import { UserTokenBalance } from "../../interfaces";
 import { apiClient } from "../../utils/api";
+import toast from "react-hot-toast";
 
 type WithdrawType = "wallet" | "fiat" | "tag";
 interface DepositResponse {
@@ -84,13 +85,13 @@ const WithdrawView: React.FC = () => {
         setIsProcessing(false);
         if (response.data === "success" && response.tx) {
           const txHash = response.tx.transaction_hash;
-          alert(`Deposit successful!\nTransaction Hash: ${txHash}`);
+          toast.success(`Deposit successful!\nTransaction Hash: ${txHash}`);
         } else {
-          alert("Deposit failed. Please try again.");
+          toast.error("Deposit failed. Please try again.");
         }
       } catch (error) {
         setIsProcessing(false);
-        alert(
+        toast.error(
           error instanceof Error
             ? error.message
             : "Failed to submit deposit. Please try again."
@@ -100,7 +101,7 @@ const WithdrawView: React.FC = () => {
       setIsProcessing(true);
       setTimeout(() => {
         setIsProcessing(false);
-        alert("Withdrawal initiated successfully!");
+        toast.success("Withdrawal initiated successfully!");
       }, 2000);
     }
   };

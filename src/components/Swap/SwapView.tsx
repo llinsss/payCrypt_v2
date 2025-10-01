@@ -13,6 +13,7 @@ import {
 import { formatCurrency, formatCrypto } from "../../utils/amount";
 import { UserTokenBalance } from "../../interfaces";
 import { apiClient } from "../../utils/api";
+import toast from "react-hot-toast";
 
 const SwapView: React.FC = () => {
   const [fromToken, setFromToken] = useState<UserTokenBalance | null>(null);
@@ -78,7 +79,7 @@ const SwapView: React.FC = () => {
 
     setTimeout(() => {
       setIsLoading(false);
-      alert("Swap completed successfully!");
+      toast.success("Swap completed successfully!");
       setFromAmount("");
     }, 2000);
   };
@@ -143,6 +144,7 @@ const SwapView: React.FC = () => {
             <span className="font-semibold text-gray-900">Quick Swap</span>
           </div>
           <button
+            type="button"
             onClick={() => setShowSettings(!showSettings)}
             className={`p-2 rounded-xl transition-all duration-300 ${
               showSettings
@@ -166,6 +168,7 @@ const SwapView: React.FC = () => {
             <div className="flex space-x-2">
               {["0.1", "0.5", "1.0"].map((value) => (
                 <button
+                  type="button"
                   key={value}
                   onClick={() => setSlippage(value)}
                   className={`px-3 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${

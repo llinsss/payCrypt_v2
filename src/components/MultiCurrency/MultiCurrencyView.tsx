@@ -18,6 +18,7 @@ import {
   PieChart,
 } from "lucide-react";
 import { DashboardSummary, UserTokenBalance } from "../../interfaces";
+import toast from "react-hot-toast";
 
 // Mock conversion history
 const CONVERSIONS = [
@@ -96,7 +97,7 @@ const MultiCurrencyView: React.FC = () => {
     const threshold = thresholds[balance.id];
 
     if (!threshold) {
-      alert("Please enter an amount to auto convert");
+      toast.error("Please enter an amount to auto convert");
       return;
     }
 
@@ -105,10 +106,10 @@ const MultiCurrencyView: React.FC = () => {
       await apiClient.put(`/balances/${balance.id}`, {
         auto_convert_threshold: threshold,
       });
-      alert("New threshold set.");
+      toast.success("New threshold set.");
     } catch (error) {
       console.error("Set new threshold failed:", error);
-      alert(
+      toast.error(
         error instanceof Error ? error.message : "Failed to set threshold."
       );
     } finally {
@@ -117,7 +118,7 @@ const MultiCurrencyView: React.FC = () => {
   };
 
   const handleQuickSwap = (fromSymbol: string, toSymbol: string) => {
-    alert(`Swapping ${fromSymbol} to ${toSymbol}`);
+    toast.success(`Swapping ${fromSymbol} to ${toSymbol}`);
   };
 
   if (loading) {
@@ -143,8 +144,8 @@ const MultiCurrencyView: React.FC = () => {
 
       {/* Portfolio Overview */}
       <div className="relative overflow-hidden bg-gradient-to-br from-purple-600 via-blue-600 to-cyan-500 rounded-3xl p-8 text-white shadow-2xl">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -translate-x-24 translate-y-24"></div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -translate-x-24 translate-y-24" />
 
         <div className="relative z-10">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between">

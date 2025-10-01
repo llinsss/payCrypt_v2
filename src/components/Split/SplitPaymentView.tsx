@@ -18,6 +18,7 @@ import {
   Clock,
 } from "lucide-react";
 import { formatCurrency } from "../../utils/mockData";
+import toast from "react-hot-toast";
 
 interface Recipient {
   id: string;
@@ -106,7 +107,7 @@ const SplitPaymentView: React.FC = () => {
     // Simulate payment processing
     setTimeout(() => {
       setIsProcessing(false);
-      alert("Split payment sent successfully!");
+      toast.success("Split payment sent successfully!");
     }, 2000);
   };
 
@@ -115,7 +116,7 @@ const SplitPaymentView: React.FC = () => {
   const isValid =
     recipients.every((r) => r.tag.trim() !== "") &&
     totalAmount &&
-    parseFloat(totalAmount) > 0 &&
+    Number.parseFloat(totalAmount) > 0 &&
     (splitType !== "percentage" || Math.abs(totalPercentage - 100) < 0.01);
 
   return (

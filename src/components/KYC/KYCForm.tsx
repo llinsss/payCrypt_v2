@@ -22,6 +22,7 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 import { KYCData } from "../../types";
 import { apiClient } from "../../utils/api";
+import toast from "react-hot-toast";
 
 // Cloudinary configuration
 const CLOUDINARY_UPLOAD_PRESET = "default";
@@ -104,12 +105,12 @@ const KYCForm: React.FC = () => {
       "application/pdf",
     ];
     if (!validTypes.includes(file.type)) {
-      alert("Please upload only JPEG, PNG, or PDF files");
+      toast.error("Please upload only JPEG, PNG, or PDF files");
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("File size must be less than 5MB");
+      toast.error("File size must be less than 5MB");
       return;
     }
 
@@ -126,7 +127,7 @@ const KYCForm: React.FC = () => {
       }
     } catch (error) {
       console.error("Upload failed:", error);
-      alert("Failed to upload file. Please try again.");
+      toast.error("Failed to upload file. Please try again.");
       setUploadedFiles((prev) => {
         const newFiles = { ...prev };
         delete newFiles[fieldName];
@@ -139,7 +140,7 @@ const KYCForm: React.FC = () => {
 
   const onSubmit = async (data: KYCFormData) => {
     if (!data.id_document_url || !data.proof_of_address_url) {
-      alert("Please upload all required documents");
+      toast.error("Please upload all required documents");
       return;
     }
 
@@ -154,13 +155,13 @@ const KYCForm: React.FC = () => {
         id_document: data.id_document_url,
         proof_of_address: data.proof_of_address_url,
       });
-      alert(
+      toast.success(
         "KYC information submitted successfully! We will review your documents within 24-48 hours."
       );
       window.location.reload();
     } catch (error) {
       console.error("KYC submission failed:", error);
-      alert(
+      toast.error(
         error instanceof Error
           ? error.message
           : "Failed to submit KYC information. Please try again."
@@ -206,6 +207,7 @@ const KYCForm: React.FC = () => {
             </h2>
           </div>
           <button
+            type="button"
             onClick={() => setShowModal(false)}
             className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
           >
@@ -235,7 +237,7 @@ const KYCForm: React.FC = () => {
               "Higher Limits",
             ].map((feature, index) => (
               <div key={index} className="flex items-center space-x-3">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <div className="w-2 h-2 bg-green-500 rounded-full" />
                 <span className="text-sm text-gray-600">{feature}</span>
               </div>
             ))}
@@ -244,6 +246,7 @@ const KYCForm: React.FC = () => {
 
         <div className="flex justify-end mt-6">
           <button
+            type="button"
             onClick={() => setShowModal(false)}
             className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all duration-300"
           >
@@ -481,27 +484,27 @@ const KYCForm: React.FC = () => {
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-amber-800">
                           <div className="flex items-center space-x-2">
-                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
+                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
                             <span>Clear and readable documents</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
+                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
                             <span>Government-issued ID</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
+                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
                             <span>Recent utility bill (3 months)</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
+                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
                             <span>Max 5MB per file</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
+                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
                             <span>JPEG, PNG, or PDF formats</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
+                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
                             <span>24-48 hour processing</span>
                           </div>
                         </div>
@@ -569,7 +572,7 @@ const KYCForm: React.FC = () => {
                     Back
                   </button>
                 ) : (
-                  <div></div>
+                  <div />
                 )}
 
                 {currentStep < 3 ? (
@@ -624,7 +627,10 @@ const FormField: React.FC<any> = ({
   ...props
 }) => (
   <div className="space-y-2">
-    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+    <label
+      htmlFor=""
+      className="flex items-center space-x-2 text-sm font-semibold text-gray-700"
+    >
       <div
         className={`p-1.5 bg-gradient-to-r ${gradient} rounded-lg text-white`}
       >
@@ -676,7 +682,10 @@ const DocumentUpload: React.FC<any> = ({
   error,
 }) => (
   <div className="space-y-3">
-    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+    <label
+      htmlFor=""
+      className="flex items-center space-x-2 text-sm font-semibold text-gray-700"
+    >
       <div
         className={`p-1.5 bg-gradient-to-r ${gradient} rounded-lg text-white`}
       >

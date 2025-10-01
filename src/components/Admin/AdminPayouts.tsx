@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, Filter, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react';
 import { FiatPayout } from '../../types';
 import { formatCurrency } from '../../utils/mockData';
+import toast from 'react-hot-toast';
 
 const AdminPayouts: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -94,13 +95,13 @@ const AdminPayouts: React.FC = () => {
   const handleApprove = (payoutId: string) => {
     console.log('Approving payout:', payoutId);
     // In a real app, this would make an API call
-    alert('Payout approved successfully!');
+    toast.success('Payout approved successfully!');
   };
 
   const handleReject = (payoutId: string) => {
     console.log('Rejecting payout:', payoutId);
     // In a real app, this would make an API call
-    alert('Payout rejected.');
+    toast.error('Payout rejected.');
   };
 
   const filteredPayouts = mockPayouts.filter(payout => {
