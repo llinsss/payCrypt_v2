@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark background version -->
+  <rect width="200" height="60" fill="#1A1A1A" rx="8"/>
+  
+  <g id="logo-mark">
+    <circle cx="30" cy="30" r="25" stroke="#00D084" stroke-width="4" fill="none"/>
+    <circle cx="30" cy="30" r="12" fill="#00D084"/>
+    <path d="M42 30 Q50 25 55 30 Q50 35 42 30" stroke="#00D084" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+  
+  <g id="wordmark">
+    <text x="70" y="40" font-family="Inter, sans-serif" font-size="28" font-weight="700" fill="white">Tagged</text>
+  </g>
+</svg>

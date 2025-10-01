@@ -1,0 +1,64 @@
+<svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Logo Icon -->
+  <g transform="translate(10, 10)">
+    <!-- Outer ring - represents security/blockchain -->
+    <circle
+      cx="20"
+      cy="20"
+      r="18"
+      stroke="url(#gradient1)"
+      strokeWidth="2"
+      fill="none"
+    />
+    
+    <!-- Inner hexagon - represents crypto/blockchain structure -->
+    <path
+      d="M20 6L30 12V28L20 34L10 28V12L20 6Z"
+      fill="url(#gradient2)"
+      stroke="url(#gradient1)"
+      strokeWidth="1"
+    />
+    
+    <!-- Central P symbol -->
+    <path
+      d="M16 14H22C24 14 25 15 25 17C25 19 24 20 22 20H16V26M16 14V20M16 20H22"
+      stroke="white"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+    
+    <!-- Crypto dots - representing digital currency -->
+    <circle cx="28" cy="12" r="2" fill="url(#gradient3)" />
+    <circle cx="32" cy="20" r="1.5" fill="url(#gradient3)" />
+    <circle cx="28" cy="28" r="1.5" fill="url(#gradient3)" />
+  </g>
+  
+  <!-- Text -->
+  <text x="60" y="25" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="url(#textGradient)">TaggedPay</text>
+  <text x="60" y="40" font-family="Arial, sans-serif" font-size="10" fill="#6B7280">Smart Payments</text>
+  
+  <!-- Gradients -->
+  <defs>
+    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#3B82F6" />
+      <stop offset="50%" stopColor="#8B5CF6" />
+      <stop offset="100%" stopColor="#06B6D4" />
+    </linearGradient>
+    <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#1E40AF" />
+      <stop offset="50%" stopColor="#7C3AED" />
+      <stop offset="100%" stopColor="#0891B2" />
+    </linearGradient>
+    <linearGradient id="gradient3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#F59E0B" />
+      <stop offset="100%" stopColor="#EF4444" />
+    </linearGradient>
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stopColor="#3B82F6" />
+      <stop offset="50%" stopColor="#8B5CF6" />
+      <stop offset="100%" stopColor="#06B6D4" />
+    </linearGradient>
+  </defs>
+</svg>

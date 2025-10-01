@@ -17,3 +17,19 @@ TaggedPay makes crypto as simple as mobile money, but with global reach and lowe
  Payments: Paystack, Monnify 
  Auth: OAuth 2.0 + KYC provider
 
+Tagged is currently deployed on testnest on the following chains. 
+
+flow - Flow Sepolia
+Deployer: 0x09c5096AD92A3eb3b83165a4d177a53D3D754197
+Deployed to: 0xEc38bc9Be954b1b95501167A443b5cc81E6e3975
+Transaction hash: 0x5f1eedeb5720078c0ebfd300101770eeb99ab982fa4c418b1daee6f3f5d89bf8
+
+Base: BASE Sepolia
+Deployer: 0x4246a99Db07C10fCE03ab238f68E5003AC5264a1
+Deployed to: 0xD45839223f4B50a113Deba22a7e11Aab7B4C9F7d
+Transaction hash: 0x520d169be28dd6b7e27da1f827a8bef49c02af1de9af7a766136c3535dc4fe9c
+
+LISK SEPOLIA
+Deployer: 0x09c5096AD92A3eb3b83165a4d177a53D3D754197
+Deployed to: 0xEc38bc9Be954b1b95501167A443b5cc81E6e3975
+Transaction hash: 0xbb7dad98a7ab7d3d7af0bdebe5d642e11513dc049b5ddaf71d53220784df6a9e
