@@ -31,13 +31,13 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const userMenuItems = [
     { to: "/", label: "Dashboard", icon: Home, end: true },
-    { to: "/balances", label: "Balances", icon: Coins },
-    { to: "/deposits", label: "Deposits", icon: PlusCircle },
+    { to: "/balances", label: "Assets", icon: Coins },
+    { to: "/deposits", label: "Receive", icon: PlusCircle },
     // { to: "/qr-code", label: "QR Code", icon: QrCode },
-    { to: "/withdraw", label: "Withdraw", icon: Send },
-    { to: "/swap", label: "Swap", icon: RefreshCcw },
+    { to: "/withdraw", label: "Send", icon: Send },
+    { to: "/swap", label: "Exchange", icon: RefreshCcw },
     { to: "/bills", label: "Pay Bills", icon: Receipt },
-    { to: "/multi-currency", label: "Multi-Currency", icon: ArrowRightLeft },
+    { to: "/multi-currency", label: "Swap", icon: ArrowRightLeft },
     { to: "/split", label: "Split Payment", icon: UserPlus },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
