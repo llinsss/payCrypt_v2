@@ -86,6 +86,10 @@ const WithdrawView: React.FC = () => {
         if (response.data === "success" && response.tx) {
           const txHash = response.tx.transaction_hash;
           toast.success(`Deposit successful!\nTransaction Hash: ${txHash}`);
+          setAmount("");
+          setRecipientAddress("");
+          setRecipientTag("");
+          setBankAccount("");
         } else {
           toast.error("Deposit failed. Please try again.");
         }
