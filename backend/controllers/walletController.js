@@ -243,6 +243,12 @@ export const getWalletBalance = async (req, res) => {
           const usd_value = Number(crypto_value) * (token.price ?? 1);
           const ngn_value = usd_value * ngnPrice;
 
+          console.log(
+            Number(crypto_value).toFixed(2),
+            Number(balance.amount).toFixed(2),
+            crypto_value,
+            balance.amount
+          );
           if (
             Number(crypto_value).toFixed(2) !==
             Number(balance.amount).toFixed(2)
