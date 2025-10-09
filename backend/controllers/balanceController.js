@@ -141,8 +141,19 @@ export const createUserBalance = async (user_id, tag) => {
           tag,
           lisk.LISK_CONFIG.accountAddress
         );
-        await lisk_tx.wait(); // ensure tx confirmed
-        address = await lisk_contract.getUserChainAddress(tag);
+        // await lisk_tx.wait();
+        // address = await lisk_contract.getUserChainAddress(tag);
+        const lisk_receipt = await lisk_tx.wait();
+        const lisk_tag_event = lisk_receipt.logs
+          .map((log) => {
+            try {
+              return lisk_contract.interface.parseLog(log);
+            } catch {
+              return null;
+            }
+          })
+          .filter((e) => e && e.name === "TagRegistered")[0];
+        address = lisk_tag_event?.args?.[1] ?? null;
       }
 
       // ---- BASE ----
@@ -152,8 +163,19 @@ export const createUserBalance = async (user_id, tag) => {
           tag,
           base.BASE_CONFIG.accountAddress
         );
-        await base_tx.wait();
-        address = await base_contract.getUserChainAddress(tag);
+        // await base_tx.wait();
+        // address = await base_contract.getUserChainAddress(tag);
+        const base_receipt = await base_tx.wait();
+        const base_tag_event = base_receipt.logs
+          .map((log) => {
+            try {
+              return base_contract.interface.parseLog(log);
+            } catch {
+              return null;
+            }
+          })
+          .filter((e) => e && e.name === "TagRegistered")[0];
+        address = base_tag_event?.args?.[1] ?? null;
       }
 
       // ---- FLOW ----
@@ -163,8 +185,19 @@ export const createUserBalance = async (user_id, tag) => {
           tag,
           flow.FLOW_CONFIG.accountAddress
         );
-        await flow_tx.wait();
-        address = await flow_contract.getUserChainAddress(tag);
+        // await flow_tx.wait();
+        // address = await flow_contract.getUserChainAddress(tag);
+        const flow_receipt = await flow_tx.wait();
+        const flow_tag_event = flow_receipt.logs
+          .map((log) => {
+            try {
+              return flow_contract.interface.parseLog(log);
+            } catch {
+              return null;
+            }
+          })
+          .filter((e) => e && e.name === "TagRegistered")[0];
+        address = flow_tag_event?.args?.[1] ?? null;
       }
 
       // ---- DEFAULT (Fallback) ----
@@ -186,6 +219,6 @@ export const createUserBalance = async (user_id, tag) => {
     return balances;
   } catch (error) {
     console.error("❌ createUserBalance failed:", error);
-    throw error; 
+    throw error;
   }
 };
