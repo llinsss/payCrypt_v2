@@ -136,7 +136,7 @@ export const createUserBalance = async (user_id, tag) => {
 
       // ---- LISK ----
       else if (token.symbol === "LSK") {
-        const lisk_contract = await lisk.contract;
+        const lisk_contract = lisk.contract;
         const lisk_tx = await lisk_contract.registerTag(
           tag,
           lisk.LISK_CONFIG.accountAddress
@@ -147,7 +147,7 @@ export const createUserBalance = async (user_id, tag) => {
 
       // ---- BASE ----
       else if (token.symbol === "BASE") {
-        const base_contract = await base.contract;
+        const base_contract = base.contract;
         const base_tx = await base_contract.registerTag(
           tag,
           base.BASE_CONFIG.accountAddress
@@ -158,7 +158,7 @@ export const createUserBalance = async (user_id, tag) => {
 
       // ---- FLOW ----
       else if (token.symbol === "FLOW") {
-        const flow_contract = await flow.contract;
+        const flow_contract = flow.contract;
         const flow_tx = await flow_contract.registerTag(
           tag,
           flow.FLOW_CONFIG.accountAddress
