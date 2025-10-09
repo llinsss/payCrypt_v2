@@ -1,8 +1,8 @@
 import { Queue } from "bullmq";
-import redis from "./redis.js";
+import { redisConnection } from "./redis.js";
 
 export const balanceQueue = new Queue("balance-setup", {
-  connection: redis,
+  connection: redisConnection,
   defaultJobOptions: {
     attempts: 3, // retry failed jobs up to 3 times
     backoff: {
@@ -13,3 +13,13 @@ export const balanceQueue = new Queue("balance-setup", {
     removeOnFail: false, // keep failed jobs for inspection
   },
 });
+balanceQueue.on("waiting", (jobId) =>
+  console.log(`⏳ Job ${jobId} waiting in queue`)
+);
+balanceQueue.on("active", (job) => console.log(`⚙️ Processing job ${job.id}`));
+balanceQueue.on("failed", (job, err) =>
+  console.error(`💥 Job ${job.id} failed:`, err.message)
+);
+balanceQueue.on("completed", (job) =>
+  console.log(`✅ Job ${job.id} completed successfully`)
+);

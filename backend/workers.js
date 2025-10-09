@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import redis from "./config/redis.js";
+import { redisConnection } from "./config/redis.js";
 import { createUserBalance } from "./controllers/balanceController.js";
 
 const balanceWorker = new Worker(
@@ -11,7 +11,7 @@ const balanceWorker = new Worker(
     return { success: true, user_id };
   },
   {
-    connection: redis,
+    connection: redisConnection,
     concurrency: 5, // number of jobs processed in parallel
   }
 );
