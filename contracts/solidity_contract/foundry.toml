@@ -1,4 +1,5 @@
 [profile.default]
+evm_version = "paris"
 src = "src"
 out = "out"
 libs = ["lib"]

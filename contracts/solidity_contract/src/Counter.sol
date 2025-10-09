@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.19;
+
+import {ReentrancyGuard} from "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 interface IERC20 {
     function totalSupply() external view returns (uint256);
@@ -30,7 +32,7 @@ contract Wallet {
     /// @notice Allows the owner to withdraw funds to a specified address
     /// @param recipient The address to which the funds will be sent
     /// @param amount The amount of Ether to withdraw
-    function withdrawTo(address payable recipient, uint256 amount) external onlyOwner {
+    function withdrawETH(address payable recipient, uint256 amount) external onlyOwner {
         require(address(this).balance >= amount, "Insufficient balance");
         (bool sent,) = recipient.call{value: amount}("");
         require(sent, "Transfer failed");
@@ -71,33 +73,20 @@ contract Wallet {
         return IERC20(token).balanceOf(address(this));
     }
 
-    /**
-     * @notice Allows the owner to pull ERC20 tokens from any user who has approved this wallet
-     * @param token Address of the ERC20 token
-     * @param to Address to pull tokens from
-     * @param amount Amount of tokens to pull
-     */
-    function pullERC20From(address token, address to, uint256 amount) external onlyOwner {
-        IERC20 erc20 = IERC20(token);
-        bool sent = erc20.transfer(to, amount);
-        require(sent, "Transfer failed");
-    }
-
     /// @notice Accepts direct Ether deposits
     receive() external payable {}
 }
 
 interface IWallet {
-    function withdrawTo(address payable recipient, uint256 amount) external;
+    function withdrawETH(address payable recipient, uint256 amount) external;
     function getBalance() external view returns (uint256);
     function getERC20Balance(address token) external view returns (uint256);
     function withdrawERC20(address token, address recipient, uint256 amount) external returns (bool);
-    function pullERC20From(address token, address from, uint256 amount) external;
 }
 /// @title TagRouter - A contract to manage tag-based ETH routing to user-owned wallets.
 
-contract TagRouter {
-    address owner;
+contract TagRouter is ReentrancyGuard {
+    address public owner;
 
     struct UserProfile {
         address owner; // The address that owns the tag
@@ -110,6 +99,12 @@ contract TagRouter {
 
     event TagRegistered(string indexed tag, address indexed owner);
     event DepositReceived(string indexed tag, address indexed from, uint256 amount);
+    event SwappedFromWallet(
+        address indexed wallet, address indexed token, uint256 ethAmount, uint256 tokenAmount, string tag
+    );
+    event SwappedFromToken(
+        address indexed wallet, address indexed token, uint256 tokenAmount, uint256 ethAmount, string tag
+    );
 
     /// @notice Constructor sets the initial owner of the wallet
     constructor() {
@@ -151,6 +146,25 @@ contract TagRouter {
         require(success, "ETH transfer to user wallet failed");
 
         emit DepositReceived(tag, msg.sender, msg.value);
+    }
+
+    /// @notice Allows sending ETH to a tag, which gets forwarded to the tag owner's wallet
+    /// @param tag The registered tag to deposit ETH to
+    function depositERC20ToTag(string memory tag, address token, uint256 amount) external {
+        require(userProfiles[tag].exists, "Tag not registered");
+        require(amount > 0, "No tokens sent");
+        require(token != address(0), "Invalid token address");
+
+        address userWallet = userProfiles[tag].user_chainAddress;
+        require(userWallet != address(0), "User wallet not found");
+
+        IERC20 erc20 = IERC20(token);
+        require(erc20.allowance(msg.sender, address(this)) >= amount, "Insufficient allowance");
+
+        bool success = erc20.transferFrom(msg.sender, userWallet, amount);
+        require(success, "Token transfer failed");
+
+        emit DepositReceived(tag, msg.sender, amount);
     }
 
     /// @notice Returns the wallet address associated with a tag
@@ -198,32 +212,29 @@ contract TagRouter {
      * @param rate  Number of tokens to send per 1 ETH (18 decimals).
      *              Example: If 1 ETH = 200 USDC, rate = 200 * 10^18.
      */
-  function swapEthForToken(address token, uint256 rate, string memory _tag, uint256 _amount) public payable {
-    require(_amount > 0, "No ETH sent");
-    require(rate > 0, "Invalid rate");
+    function swapEthForToken(address token, uint256 rate, string memory _tag, uint256 _amountEth) public nonReentrant {
+        require(_amountEth > 0, "No ETH amount");
+        require(rate > 0, "Invalid rate");
 
-    // Lookup user wallet address
-    IWallet wallet = IWallet(payable(userProfiles[_tag].user_chainAddress));
-    require(address(wallet) != address(0), "Tag not registered");
+        address walletAddr = userProfiles[_tag].user_chainAddress;
+        require(walletAddr != address(0), "Tag not registered");
 
-    IWallet userWallet = IWallet(payable(userProfiles[_tag].user_chainAddress));
-    require(userWallet != IWallet(address(0)), "User wallet not found");
+        IWallet wallet = IWallet(payable(walletAddr));
+        require(wallet.getBalance() >= _amountEth, "Insufficient ETH in user wallet");
 
-    // Calculate how many tokens to send based on the rate
-    wallet.withdrawTo(payable(address(this)),_amount);
+        uint256 before = address(this).balance;
+        wallet.withdrawETH(payable(address(this)), _amountEth);
+        require(address(this).balance >= before + _amountEth, "Withdraw failed");
 
-    uint256 amountToSend = (_amount * rate) / 1 ether;
+        uint256 amountToSend = (_amountEth * rate) / 1 ether;
 
-    IERC20 erc20 = IERC20(token);
+        IERC20 erc20 = IERC20(token);
+        require(erc20.balanceOf(address(this)) >= amountToSend, "Insufficient token liquidity");
 
-    // Ensure TagRouter has enough tokens to send
-    require(erc20.balanceOf(address(this)) >= amountToSend, "Insufficient token liquidity");
+        IERC20(token).transfer(walletAddr, amountToSend);
 
-    // Send ERC20 tokens to the wallet associated with the tag
-    bool success = erc20.transfer(address(wallet), amountToSend);
-    require(success, "Token transfer failed");
-}
-     
+        emit SwappedFromWallet(walletAddr, token, _amountEth, amountToSend, _tag);
+    }
 
     /**
      * @notice Swap ERC20 tokens sent by the user for ETH at a given rate.
@@ -233,28 +244,42 @@ contract TagRouter {
      * @param _tag The tag associated with the user.
      *              Example: If 200 USDC = 1 ETH, rate = 200 * 10^18.
      */
-    function swapTokenForEth(address token, uint256 amount, uint256 rate, string memory _tag) public {
+    /**
+     * @notice Swap ERC20 tokens (from the user's wallet contract) for ETH at a given rate.
+     * @param token The ERC20 token contract address being swapped in.
+     * @param amount The amount of tokens the user wants to swap (in token decimals).
+     * @param rate   Number of tokens required per 1 ETH (scaled to 18 decimals).
+     *               Example: If 200 USDC = 1 ETH, rate = 200 * 10^18.
+     * @param _tag   The tag associated with the user.
+     */
+    function swapTokenForEth(address token, uint256 amount, uint256 rate, string memory _tag) public nonReentrant {
         require(amount > 0, "No token amount");
         require(rate > 0, "Invalid rate");
 
-        address tagowner = userProfiles[_tag].owner;
-        require(tagowner != address(0), "Tag not registered");
+        address walletAddr = userProfiles[_tag].user_chainAddress;
+        require(walletAddr != address(0), "Tag not registered");
 
-        // Calculate how much ETH to give based on amount and rate
+        // Calculate how much ETH to send
+        // Formula: amount / rate = ETH (scaled by 1 ether for precision)
         uint256 ethToSend = (amount * 1 ether) / rate;
-
         require(address(this).balance >= ethToSend, "Insufficient ETH liquidity");
 
         IERC20 erc20 = IERC20(token);
-        IWallet wallet = IWallet(payable(userProfiles[_tag].user_chainAddress));
+        IWallet wallet = IWallet(payable(walletAddr));
 
-        // Transfer tokens from the user to this contract
-        wallet.pullERC20From(address(erc20), address(this), amount);
-        // require(received, "Token transfer failed");
+        uint256 beforeBal = erc20.balanceOf(address(this));
 
-        // Send ETH to the user
-        (bool sent,) = tagowner.call{value: ethToSend}("");
+        // Pull tokens from the user’s on-chain wallet into this contract
+        wallet.withdrawERC20(address(erc20), address(this), amount);
+
+        // Verify we actually received the tokens
+        require(erc20.balanceOf(address(this)) >= beforeBal + amount, "Token transfer failed");
+
+        // Send ETH to the user's wallet
+        (bool sent,) = payable(walletAddr).call{value: ethToSend}("");
         require(sent, "ETH transfer failed");
+
+        emit SwappedFromToken(walletAddr, token, amount, ethToSend, _tag);
     }
 
     /**
@@ -278,7 +303,7 @@ contract TagRouter {
         uint256 balance = wallet.getBalance();
         require(balance >= amount, "Insufficient wallet balance");
 
-        wallet.withdrawTo(payable(to), amount);
+        wallet.withdrawETH(payable(to), amount);
     }
 
     /// @notice Fallback receive function to allow ETH transfers directly to the router contract
