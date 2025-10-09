@@ -1,26 +1,27 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import { createUserBalance } from "./balanceController.js";
 import Wallet from "../models/Wallet.js";
 import BankAccount from "../models/BankAccount.js";
+import { balanceQueue } from "../config/queue.js";
 
 export const register = async (req, res) => {
   try {
     const { email, tag, address, password, role } = req.body;
 
-    // Check if user email already exists
+    // --- Check email ---
     const existingUserEmail = await User.findByEmail(email);
     if (existingUserEmail) {
       return res.status(400).json({ error: "User email already exists" });
     }
 
-    // Check if user tag already exists
+    // --- Check tag ---
     const existingUserTag = await User.findByTag(tag);
     if (existingUserTag) {
       return res.status(400).json({ error: "User tag already exists" });
     }
+
+    // --- Create user ---
     const photo = `https://api.dicebear.com/9.x/initials/svg?seed=${tag}`;
-    // Create new user
     const user = await User.create({
       email,
       tag,
@@ -30,25 +31,30 @@ export const register = async (req, res) => {
       role,
     });
 
-    // Generate JWT token
+    // --- Generate JWT ---
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
       expiresIn: "24h",
     });
-
     user.password = undefined;
 
-    const create_wallet = await Wallet.create({ user_id: user.id });
+    // --- Create wallet + bank account immediately ---
+    await Wallet.create({ user_id: user.id });
+    await BankAccount.create({ user_id: user.id });
 
-    const create_bank_account = await BankAccount.create({ user_id: user.id });
+    // --- Queue balance creation (async) ---
+    await balanceQueue.add("create-balances", {
+      user_id: user.id,
+      tag,
+    });
 
-    const create_balances = await createUserBalance(user.id, tag);
-
+    // --- Respond immediately ---
     res.status(201).json({
       message: "User registered successfully",
       token,
       user,
     });
   } catch (error) {
+    console.error("❌ Registration failed:", error);
     res.status(500).json({ error: error.message });
   }
 };

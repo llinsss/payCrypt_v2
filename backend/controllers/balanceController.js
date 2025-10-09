@@ -114,111 +114,81 @@ export const deleteBalance = async (req, res) => {
 };
 
 export const createUserBalance = async (user_id, tag) => {
-  try {
-    const tokens = await Token.getAll();
-    const balances = [];
+  const tokens = await Token.getAll();
 
-    for (const token of tokens) {
-      let address = null;
+  // Chain-specific registration handlers
+  const chainHandlers = {
+    STRK: async () => {
+      const contract = await starknet.getContract();
+      const tx = await contract.register_tag(tag);
+      await starknet.provider.waitForTransaction(tx.transaction_hash);
+      const addr = await contract.get_tag_wallet_address(tag);
+      return `0x${BigInt(addr).toString(16)}`;
+    },
 
-      // ---- STARKNET ----
-      if (token.symbol === "STRK") {
-        const starknet_contract = await starknet.getContract();
-        const starknet_tx = await starknet_contract.register_tag(tag);
-        await starknet.provider.waitForTransaction(
-          starknet_tx.transaction_hash
-        );
+    LSK: async () => {
+      const { contract, LISK_CONFIG } = lisk;
+      const tx = await contract.registerTag(tag, LISK_CONFIG.accountAddress);
+      const receipt = await tx.wait();
+      return extractTagAddress(receipt, contract);
+    },
 
-        const starknet_generated_address =
-          await starknet_contract.get_tag_wallet_address(tag);
-        address = `0x${BigInt(starknet_generated_address).toString(16)}`;
+    BASE: async () => {
+      const { contract, BASE_CONFIG } = base;
+      const tx = await contract.registerTag(tag, BASE_CONFIG.accountAddress);
+      const receipt = await tx.wait();
+      return extractTagAddress(receipt, contract);
+    },
+
+    FLOW: async () => {
+      const { contract, FLOW_CONFIG } = flow;
+      const tx = await contract.registerTag(tag, FLOW_CONFIG.accountAddress);
+      const receipt = await tx.wait();
+      return extractTagAddress(receipt, contract);
+    },
+  };
+
+  // Helper to extract "TagRegistered" event
+  const extractTagAddress = (receipt, contract) => {
+    const event = receipt.logs
+      .map((log) => {
+        try {
+          return contract.interface.parseLog(log);
+        } catch {
+          return null;
+        }
+      })
+      .find((e) => e && e.name === "TagRegistered");
+
+    return event?.args?.[1] ?? null;
+  };
+
+  // Process all tokens in parallel
+  const balances = await Promise.allSettled(
+    tokens.map(async (token) => {
+      const handler = chainHandlers[token.symbol];
+      if (!handler) {
+        console.warn(`⚠️ No handler found for token: ${token.symbol}`);
+        return null;
       }
 
-      // ---- LISK ----
-      else if (token.symbol === "LSK") {
-        const lisk_contract = lisk.contract;
-        const lisk_tx = await lisk_contract.registerTag(
-          tag,
-          lisk.LISK_CONFIG.accountAddress
-        );
-        // await lisk_tx.wait();
-        // address = await lisk_contract.getUserChainAddress(tag);
-        const lisk_receipt = await lisk_tx.wait();
-        const lisk_tag_event = lisk_receipt.logs
-          .map((log) => {
-            try {
-              return lisk_contract.interface.parseLog(log);
-            } catch {
-              return null;
-            }
-          })
-          .filter((e) => e && e.name === "TagRegistered")[0];
-        address = lisk_tag_event?.args?.[1] ?? null;
+      try {
+        const address = await handler();
+        if (!address) throw new Error("No address generated");
+        return await Balance.create({
+          user_id,
+          token_id: token.id,
+          address,
+        });
+      } catch (err) {
+        console.error(`❌ Failed for ${token.symbol}:`, err.message);
+        return null;
       }
+    })
+  );
 
-      // ---- BASE ----
-      else if (token.symbol === "BASE") {
-        const base_contract = base.contract;
-        const base_tx = await base_contract.registerTag(
-          tag,
-          base.BASE_CONFIG.accountAddress
-        );
-        // await base_tx.wait();
-        // address = await base_contract.getUserChainAddress(tag);
-        const base_receipt = await base_tx.wait();
-        const base_tag_event = base_receipt.logs
-          .map((log) => {
-            try {
-              return base_contract.interface.parseLog(log);
-            } catch {
-              return null;
-            }
-          })
-          .filter((e) => e && e.name === "TagRegistered")[0];
-        address = base_tag_event?.args?.[1] ?? null;
-      }
-
-      // ---- FLOW ----
-      else if (token.symbol === "FLOW") {
-        const flow_contract = flow.contract;
-        const flow_tx = await flow_contract.registerTag(
-          tag,
-          flow.FLOW_CONFIG.accountAddress
-        );
-        // await flow_tx.wait();
-        // address = await flow_contract.getUserChainAddress(tag);
-        const flow_receipt = await flow_tx.wait();
-        const flow_tag_event = flow_receipt.logs
-          .map((log) => {
-            try {
-              return flow_contract.interface.parseLog(log);
-            } catch {
-              return null;
-            }
-          })
-          .filter((e) => e && e.name === "TagRegistered")[0];
-        address = flow_tag_event?.args?.[1] ?? null;
-      }
-
-      // ---- DEFAULT (Fallback) ----
-      if (!address) {
-        console.warn(`⚠️ No address generated for token: ${token.symbol}`);
-        continue;
-      }
-
-      // ---- CREATE BALANCE ENTRY ----
-      const balance = await Balance.create({
-        user_id,
-        token_id: token.id,
-        address,
-      });
-
-      balances.push(balance);
-    }
-
-    return balances;
-  } catch (error) {
-    console.error("❌ createUserBalance failed:", error);
-    throw error;
-  }
+  // Filter successful balances
+  return balances
+    .filter((r) => r.status === "fulfilled" && r.value)
+    .map((r) => r.value);
 };
