@@ -142,7 +142,7 @@ export const createUserBalance = async (user_id, tag) => {
           lisk.LISK_CONFIG.accountAddress
         );
         await lisk_tx.wait(); // ensure tx confirmed
-        address = await lisk.getUserChainAddress(tag);
+        address = await lisk_contract.getUserChainAddress(tag);
       }
 
       // ---- BASE ----
@@ -153,7 +153,7 @@ export const createUserBalance = async (user_id, tag) => {
           base.BASE_CONFIG.accountAddress
         );
         await base_tx.wait();
-        address = await base.getUserChainAddress(tag);
+        address = await base_contract.getUserChainAddress(tag);
       }
 
       // ---- FLOW ----
@@ -164,7 +164,7 @@ export const createUserBalance = async (user_id, tag) => {
           flow.FLOW_CONFIG.accountAddress
         );
         await flow_tx.wait();
-        address = await flow.getUserChainAddress(tag);
+        address = await flow_contract.getUserChainAddress(tag);
       }
 
       // ---- DEFAULT (Fallback) ----
