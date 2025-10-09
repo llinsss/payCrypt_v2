@@ -28,11 +28,11 @@ export const seed = async (knex) => {
     },
     {
       id: 4,
-      symbol: "XLM",
-      name: "Stellar",
-      native_currency: { name: "Lumen", symbol: "XLM" },
-      rpc_url: "https://horizon.stellar.org",
-      block_explorer: "https://stellar.expert/explorer/public",
+      symbol: "FLOW",
+      name: "Flow",
+      native_currency: { name: "Flow Token", symbol: "FLOW" },
+      rpc_url: "https://rest-mainnet.onflow.org",
+      block_explorer: "https://flowscan.org",
     },
   ]);
 };

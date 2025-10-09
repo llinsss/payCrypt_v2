@@ -34,12 +34,12 @@ export const seed = async (knex) => {
     {
       id: 4,
       address: "native",
-      symbol: "XLM",
-      name: "Stellar",
-      decimals: 7,
-      logo_url: "xlm.svg",
-      chain: "Stellar",
-      price: 0.112,
+      symbol: "FLOW",
+      name: "Flow",
+      decimals: 8,
+      logo_url: "flow.svg",
+      chain: "Flow",
+      price: 0.45,
     },
   ]);
 };

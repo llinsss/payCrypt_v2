@@ -1,4 +1,4 @@
-import starknet from "./../starknet-contract.js";
+import starknet from "./../contracts/starknet-contract.js";
 import Transaction from "../models/Transaction.js";
 import Balance from "../models/Balance.js";
 import User from "../models/User.js";

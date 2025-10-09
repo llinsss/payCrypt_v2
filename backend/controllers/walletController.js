@@ -1,5 +1,5 @@
 import Wallet from "../models/Wallet.js";
-import starknet from "../starknet-contract.js";
+import starknet from "../contracts/starknet-contract.js";
 import { shortString } from "starknet";
 import { from18Decimals, to18Decimals } from "../utils/amount.js";
 import Balance from "../models/Balance.js";

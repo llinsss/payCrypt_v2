@@ -1,6 +1,9 @@
 import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
-import starknet from "../starknet-contract.js";
+import starknet from "../contracts/starknet-contract.js";
+import base from "../contracts/base-contract.js";
+import lisk from "../contracts/lisk-contract.js";
+import flow from "../contracts/flow-contract.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 
@@ -36,7 +39,7 @@ export const getBalances = async (req, res) => {
 export const getBalanceByUser = async (req, res) => {
   try {
     const { id } = req.user;
-    const ngnPrice = Number(await redis.get(NGN_KEY) ?? 1600);
+    const ngnPrice = Number((await redis.get(NGN_KEY)) ?? 1600);
     const balances = await Balance.getByUser(id);
     let response = [];
     for (const balance of balances) {
@@ -115,26 +118,59 @@ export const createUserBalance = async (user_id, tag) => {
     const tokens = await Token.getAll();
     const balances = [];
 
-    // Get contract only once
-    const contract = tokens.some((t) => t.symbol === "STRK")
-      ? await starknet.getContract()
-      : null;
-
     for (const token of tokens) {
       let address = null;
 
-      if (token.symbol === "STRK" && contract) {
-        // Write tx (register tag)
-        const tx = await contract.register_tag(tag);
-        await starknet.provider.waitForTransaction(tx.transaction_hash);
+      // ---- STARKNET ----
+      if (token.symbol === "STRK") {
+        const starknet_contract = await starknet.getContract();
+        const starknet_tx = await starknet_contract.register_tag(tag);
+        await starknet.provider.waitForTransaction(
+          starknet_tx.transaction_hash
+        );
 
-        // Read wallet address
-        const feltAddress = await contract.get_tag_wallet_address(tag);
-
-        address = `0x${feltAddress.toString(16)}`;
-        console.log("Wallet address:", address);
+        const starknet_generated_address =
+          await starknet_contract.get_tag_wallet_address(tag);
+        address = `0x${BigInt(starknet_generated_address).toString(16)}`;
       }
 
+      // ---- LISK ----
+      else if (token.symbol === "LSK") {
+        const lisk_tx = await lisk.registerTag(
+          tag,
+          lisk.LISK_CONFIG.accountAddress
+        );
+        await lisk_tx.wait(); // ensure tx confirmed
+        address = await lisk.getUserChainAddress(tag);
+      }
+
+      // ---- BASE ----
+      else if (token.symbol === "BASE") {
+        const base_tx = await base.registerTag(
+          tag,
+          base.BASE_CONFIG.accountAddress
+        );
+        await base_tx.wait();
+        address = await base.getUserChainAddress(tag);
+      }
+
+      // ---- FLOW ----
+      else if (token.symbol === "FLOW") {
+        const flow_tx = await flow.registerTag(
+          tag,
+          flow.FLOW_CONFIG.accountAddress
+        );
+        await flow_tx.wait();
+        address = await flow.getUserChainAddress(tag);
+      }
+
+      // ---- DEFAULT (Fallback) ----
+      if (!address) {
+        console.warn(`⚠️ No address generated for token: ${token.symbol}`);
+        continue;
+      }
+
+      // ---- CREATE BALANCE ENTRY ----
       const balance = await Balance.create({
         user_id,
         token_id: token.id,
@@ -147,6 +183,6 @@ export const createUserBalance = async (user_id, tag) => {
     return balances;
   } catch (error) {
     console.error("❌ createUserBalance failed:", error);
-    throw error; // let the controller handle the HTTP response
+    throw error; 
   }
 };
