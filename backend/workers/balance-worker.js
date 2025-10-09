@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import redis from "../config/redis";
+import redis from "../config/redis.js";
 import { createUserBalance } from "../controllers/balanceController.js";
 
 const balanceWorker = new Worker(
