@@ -17,6 +17,8 @@
         "db:reset": "knex migrate:rollback --all && knex migrate:latest && knex seed:run"
     },
     "dependencies": {
+        "@bull-board/api": "^6.13.0",
+        "@bull-board/express": "^6.13.0",
         "autoswap-sdk": "^1.0.6",
         "axios": "^1.11.0",
         "bcrypt": "^5.1.0",
