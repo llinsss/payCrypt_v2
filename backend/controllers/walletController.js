@@ -289,7 +289,8 @@ export const getWalletBalance = async (req, res) => {
           const lisk_contract = lisk.contract;
           const userTag = user.tag;
           const bal = await lisk_contract.getTagBalance(userTag);
-          const crypto_value = Number(bal / token.decimals);
+          const decimals = Math.pow(10, Number(token.decimals));
+          const crypto_value = Number(bal / decimals);
           const usd_value = Number(crypto_value) * (token.price ?? 1);
           const ngn_value = usd_value * ngnPrice;
 
@@ -334,11 +335,12 @@ export const getWalletBalance = async (req, res) => {
             usd_value,
             ngn_value,
           };
-        }  else if (token.symbol === "BASE") {
+        } else if (token.symbol === "BASE") {
           const base_contract = base.contract;
           const userTag = user.tag;
           const bal = await base_contract.getTagBalance(userTag);
-          const crypto_value = Number(bal / token.decimals);
+          const decimals = Math.pow(10, Number(token.decimals));
+          const crypto_value = Number(bal / decimals);
           const usd_value = Number(crypto_value) * (token.price ?? 1);
           const ngn_value = usd_value * ngnPrice;
 
@@ -383,11 +385,12 @@ export const getWalletBalance = async (req, res) => {
             usd_value,
             ngn_value,
           };
-        }  else if (token.symbol === "FLOW") {
+        } else if (token.symbol === "FLOW") {
           const flow_contract = flow.contract;
           const userTag = user.tag;
           const bal = await flow_contract.getTagBalance(userTag);
-          const crypto_value = Number(bal / token.decimals);
+          const decimals = Math.pow(10, Number(token.decimals));
+          const crypto_value = Number(bal / decimals);
           const usd_value = Number(crypto_value) * (token.price ?? 1);
           const ngn_value = usd_value * ngnPrice;
 
