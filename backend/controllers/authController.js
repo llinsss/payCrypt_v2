@@ -38,14 +38,15 @@ export const register = async (req, res) => {
     user.password = undefined;
 
     // --- Create wallet + bank account immediately ---
-    await Wallet.create({ user_id: user.id });
-    await BankAccount.create({ user_id: user.id });
+    const create_wallet = await Wallet.create({ user_id: user.id });
+    const create_bank_account = await BankAccount.create({ user_id: user.id });
     console.log(user.id);
     // --- Queue balance creation (async) ---
-    await balanceQueue.add("create-balances", {
+    const balance_queue = await balanceQueue.add("create-balances", {
       user_id: user.id,
       tag,
     });
+    console.log(balance_queue);
 
     // --- Respond immediately ---
     res.status(201).json({
