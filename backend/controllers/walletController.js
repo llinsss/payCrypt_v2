@@ -1,5 +1,8 @@
 import Wallet from "../models/Wallet.js";
 import starknet from "../contracts/starknet-contract.js";
+import base from "../contracts/base-contract.js";
+import lisk from "../contracts/lisk-contract.js";
+import flow from "../contracts/flow-contract.js";
 import { shortString } from "starknet";
 import { from18Decimals, to18Decimals } from "../utils/amount.js";
 import Balance from "../models/Balance.js";
@@ -223,18 +226,16 @@ export const getWalletBalance = async (req, res) => {
     // Fetch NGN rate once
     const ngnPrice = Number((await redis.get(NGN_KEY)) ?? 1600);
 
-    const contract = await starknet.getContract();
-    const userTag = shortString.encodeShortString(user.tag).toString();
-
     // Process balances in parallel
     const response = await Promise.all(
       balances.map(async (balance) => {
         const token = tokenMap.get(balance.token_id);
         if (!token) return null;
 
-        // Handle STRK token
         if (token.symbol === "STRK") {
-          const bal = await contract.get_tag_wallet_balance(
+          const starknet_contract = await starknet.getContract();
+          const userTag = shortString.encodeShortString(user.tag).toString();
+          const bal = await starknet_contract.get_tag_wallet_balance(
             userTag,
             String(process.env.STARKNET_TOKEN_ADDRESS)
           );
@@ -284,16 +285,162 @@ export const getWalletBalance = async (req, res) => {
             usd_value,
             ngn_value,
           };
+        } else if (token.symbol === "LSK") {
+          const lisk_contract = lisk.contract;
+          const userTag = user.tag;
+          const bal = await lisk_contract.getTagBalance(userTag);
+          const crypto_value = bal;
+          const usd_value = Number(crypto_value) * (token.price ?? 1);
+          const ngn_value = usd_value * ngnPrice;
+
+          if (Number(crypto_value) != Number(balance.amount)) {
+            await Balance.update(balance.id, {
+              amount: crypto_value,
+              usd_value,
+            });
+
+            if (Number(crypto_value) > Number(balance.amount)) {
+              const depositAmount =
+                Number(crypto_value) - Number(balance.amount);
+              const depositUsdValue = token.price * depositAmount;
+              Transaction.create({
+                user_id: user.id,
+                status: "completed",
+                token_id: balance.token_id,
+                chain_id: null,
+                reference: secureRandomString(16),
+                type: "credit",
+                tx_hash: balance.address,
+                usd_value: depositUsdValue,
+                amount: depositAmount,
+                timestamp: new Date(),
+                from_address: null,
+                to_address: null,
+                description: "Deposit",
+                extra: null,
+              });
+              Notification.create({
+                user_id: user.id,
+                title: "Deposit",
+                body: `Deposit of ${depositAmount} ${token.symbol} received`,
+              });
+            }
+          }
+
+          return {
+            symbol: token.symbol,
+            name: token.name,
+            crypto_value,
+            usd_value,
+            ngn_value,
+          };
+        }  else if (token.symbol === "BASE") {
+          const base_contract = base.contract;
+          const userTag = user.tag;
+          const bal = await base_contract.getTagBalance(userTag);
+          const crypto_value = bal;
+          const usd_value = Number(crypto_value) * (token.price ?? 1);
+          const ngn_value = usd_value * ngnPrice;
+
+          if (Number(crypto_value) != Number(balance.amount)) {
+            await Balance.update(balance.id, {
+              amount: crypto_value,
+              usd_value,
+            });
+
+            if (Number(crypto_value) > Number(balance.amount)) {
+              const depositAmount =
+                Number(crypto_value) - Number(balance.amount);
+              const depositUsdValue = token.price * depositAmount;
+              Transaction.create({
+                user_id: user.id,
+                status: "completed",
+                token_id: balance.token_id,
+                chain_id: null,
+                reference: secureRandomString(16),
+                type: "credit",
+                tx_hash: balance.address,
+                usd_value: depositUsdValue,
+                amount: depositAmount,
+                timestamp: new Date(),
+                from_address: null,
+                to_address: null,
+                description: "Deposit",
+                extra: null,
+              });
+              Notification.create({
+                user_id: user.id,
+                title: "Deposit",
+                body: `Deposit of ${depositAmount} ${token.symbol} received`,
+              });
+            }
+          }
+
+          return {
+            symbol: token.symbol,
+            name: token.name,
+            crypto_value,
+            usd_value,
+            ngn_value,
+          };
+        }  else if (token.symbol === "FLOW") {
+          const flow_contract = flow.contract;
+          const userTag = user.tag;
+          const bal = await flow_contract.getTagBalance(userTag);
+          const crypto_value = bal;
+          const usd_value = Number(crypto_value) * (token.price ?? 1);
+          const ngn_value = usd_value * ngnPrice;
+
+          if (Number(crypto_value) != Number(balance.amount)) {
+            await Balance.update(balance.id, {
+              amount: crypto_value,
+              usd_value,
+            });
+
+            if (Number(crypto_value) > Number(balance.amount)) {
+              const depositAmount =
+                Number(crypto_value) - Number(balance.amount);
+              const depositUsdValue = token.price * depositAmount;
+              Transaction.create({
+                user_id: user.id,
+                status: "completed",
+                token_id: balance.token_id,
+                chain_id: null,
+                reference: secureRandomString(16),
+                type: "credit",
+                tx_hash: balance.address,
+                usd_value: depositUsdValue,
+                amount: depositAmount,
+                timestamp: new Date(),
+                from_address: null,
+                to_address: null,
+                description: "Deposit",
+                extra: null,
+              });
+              Notification.create({
+                user_id: user.id,
+                title: "Deposit",
+                body: `Deposit of ${depositAmount} ${token.symbol} received`,
+              });
+            }
+          }
+
+          return {
+            symbol: token.symbol,
+            name: token.name,
+            crypto_value,
+            usd_value,
+            ngn_value,
+          };
         }
 
-        // Non-STRK tokens
-        return {
-          symbol: token.symbol,
-          name: token.name,
-          crypto_value: 0,
-          usd_value: 0,
-          ngn_value: 0,
-        };
+        // return {
+        //   symbol: token.symbol,
+        //   name: token.name,
+        //   crypto_value: 0,
+        //   usd_value: 0,
+        //   ngn_value: 0,
+        // };
       })
     );
 

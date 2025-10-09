@@ -3,6 +3,9 @@ import redis from "../config/redis.js";
 import * as freecryptoapi from "../services/free-crypto-api.js";
 import * as exchangerateapi from "../services/exchange-rate-api.js";
 import starknet from "../contracts/starknet-contract.js";
+import base from "../contracts/base-contract.js";
+import lisk from "../contracts/lisk-contract.js";
+import flow from "../contracts/flow-contract.js";
 import { shortString } from "starknet";
 import listenForDeposits from "../services/starknetListener.js";
 import { NGN_KEY } from "../config/initials.js";
@@ -118,6 +121,5 @@ router.get("/fetch-transactions/:block_number", async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 });
-
 
 export default router;
