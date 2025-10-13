@@ -38,6 +38,81 @@ STARKNET: 0x028add5d29f4aa3e4144ba1a85d509de6719e58cabe42cc72f58f46c6a84a785
 
 currently testing on these chains and will be going on mainnet soon
 
+Demo Instructions
+
+### Prerequisites
+- Node.js 18+ installed
+- MySQL database running
+- Git installed
+
+### Quick Setup
+
+#### 1. Clone & Install
+```bash
+git clone https://github.com/llinsss/payCrypt_v2.git
+cd payCrypt_v2
+npm install
+cd backend && npm install && cd ..
+```
+
+#### 2. Database Setup
+```bash
+cd backend
+cp .env.example .env
+# Edit .env with your MySQL credentials
+npm run migrate
+```
+
+#### 3. Start Application
+```bash
+# Terminal 1: Backend
+cd backend && npm run dev
+
+# Terminal 2: Frontend  
+npm run dev
+```
+
+### Demo Flow
+
+#### Access Points
+- **Frontend**: http://localhost:5173
+- **Backend**: http://localhost:3000
+
+#### Demo Steps
+
+1. **Register Account**
+   - Create account with @tag (e.g., @john_lagos)
+   - Complete KYC verification
+
+2. **Explore Dashboard**
+   - View multi-chain balances
+   - See supported tokens (STRK, LSK, BASE, FLOW)
+   - Check transaction history
+
+3. **Test @Tag Payments**
+   - Share your @tag for receiving
+   - Use QR code generation
+   - Test cross-chain transfers
+
+4. **Banking Integration**
+   - Link Nigerian bank account
+   - Test crypto-to-NGN conversion
+   - Withdraw to bank account
+
+#### Key Features to Demo
+- ✅ @Tag payments vs wallet addresses
+- ✅ Multi-chain support (4 networks)
+- ✅ Instant NGN conversion
+- ✅ Mobile-responsive design
+- ✅ Real-time balance updates
+
+#### Troubleshooting
+- Ensure MySQL is running
+- Check ports 3000 (backend) and 5173 (frontend) are free
+- Run `npm install` in both root and backend directories
+
+**Demo showcases how TaggedPay makes crypto payments as simple as WhatsApp for African users.**
+
 U2U Network Integration Documentation
 
 Overview
