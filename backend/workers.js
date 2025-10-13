@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import { redisConnection } from "./config/redis.js";
 import { createUserBalance } from "./controllers/balanceController.js";
 
-const balanceWorker = new Worker(
+export const balanceWorker = new Worker(
   "balance-setup",
   async (job) => {
     const { user_id, tag } = job.data;
@@ -15,14 +15,3 @@ const balanceWorker = new Worker(
     concurrency: 5, // number of jobs processed in parallel
   }
 );
-
-// Worker event listeners
-balanceWorker.on("completed", (job) => {
-  console.log(`✅ Job ${job.id} completed for user ${job.data.user_id}`);
-});
-
-balanceWorker.on("failed", (job, err) => {
-  console.error(`💥 Job ${job.id} failed: ${err.message}`);
-});
-
-export default balanceWorker;
