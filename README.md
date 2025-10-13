@@ -54,20 +54,20 @@ Quick Setup
 git clone https://github.com/llinsss/payCrypt_v2.git
 cd payCrypt_v2
 npm install
-cd backend && npm install && cd ..
+cd backend && npm install && cd 
 
 
 2. Database Setup
   bash
 cd backend
 cp .env.example .env
-# Edit .env with your MySQL credentials
+ Edit .env with your MySQL credentials
 npm run migrate
-```
 
-#### 3. Start Application
-```bash
-# Terminal 1: Backend
+
+ 3. Start Application
+  bash
+  Terminal 1: Backend
 cd backend && npm run dev
 
 # Terminal 2: Frontend  
