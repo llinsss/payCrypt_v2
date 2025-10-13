@@ -40,6 +40,10 @@ currently testing on these chains and will be going on mainnet soon
 
 Demo Instructions
 
+simply visit https://taggedpay.xyz/
+sign up, do kyc (we accept dummy data for now)
+then explore the product.
+
   
   Prerequisites
 
@@ -101,19 +105,19 @@ npm run dev
    - Test crypto-to-NGN conversion
    - Withdraw to bank account
 
-#### Key Features to Demo
-- ✅ @Tag payments vs wallet addresses
-- ✅ Multi-chain support (4 networks)
-- ✅ Instant NGN conversion
-- ✅ Mobile-responsive design
-- ✅ Real-time balance updates
+  Key Features to Demo
+- @Tag payments vs wallet addresses
+- Multi-chain support (4 networks)
+- Instant NGN conversion
+- Mobile-responsive design
+- Real-time balance updates
 
-#### Troubleshooting
+  Troubleshooting
 - Ensure MySQL is running
 - Check ports 3000 (backend) and 5173 (frontend) are free
 - Run `npm install` in both root and backend directories
 
-**Demo showcases how TaggedPay makes crypto payments as simple as WhatsApp for African users.**
+Demo showcases how TaggedPay makes crypto payments as simple as WhatsApp for African users.
 
 U2U Network Integration Documentation
 
