@@ -86,17 +86,17 @@ npm run dev
    - Create account with @tag (e.g., @john_lagos)
    - Complete KYC verification
 
-2. **Explore Dashboard**
+2. Explore Dashboard
    - View multi-chain balances
    - See supported tokens (STRK, LSK, BASE, FLOW)
    - Check transaction history
 
-3. **Test @Tag Payments**
+3. Test @Tag Payments
    - Share your @tag for receiving
    - Use QR code generation
    - Test cross-chain transfers
 
-4. **Banking Integration**
+4. Banking Integration
    - Link Nigerian bank account
    - Test crypto-to-NGN conversion
    - Withdraw to bank account
