@@ -37,3 +37,47 @@ Transaction hash: 0xbb7dad98a7ab7d3d7af0bdebe5d642e11513dc049b5ddaf71d53220784df
 STARKNET: 0x028add5d29f4aa3e4144ba1a85d509de6719e58cabe42cc72f58f46c6a84a785
 
 currently testing on these chains and will be going on mainnet soon
+
+U2U Network Integration Documentation
+
+Overview
+The U2U Network is integrated into the project through smart contracts, on-chain account creation, and token operations. The project leverages U2U’s EVM-compatible blockchain to provide decentralized, tag-based smart wallets and seamless asset transfers.
+
+1. Deployment on U2U Mainnet
+The core smart contracts, including the TagRouter and Wallet contracts, are written in Solidity and deployed directly on the U2U Mainnet. This integration enables:
+
+Low transaction fees
+Fast finality
+Full EVM compatibility
+
+2. On-Chain Smart Wallet Creation
+When a user registers a unique tag (e.g., @username), a dedicated smart wallet is automatically deployed for them on the U2U network via the TagRouter. 
+Each wallet:
+Exists fully on-chain
+Is controlled by contract logic (not private keys)
+Supports account abstraction-style operations
+
+3. Support for U2U and ERC-20 Tokens
+
+Each smart wallet can manage multiple asset types on the U2U blockchain:
+U2U native tokens
+ERC-20 tokens deployed on U2U
+Operations supported include:
+Deposits to a tag wallet
+Tag-to-tag transfers (wallet-to-wallet)
+Balance checks and withdrawals
+
+4. Router-Controlled Operations (Paymaster Model)
+The TagRouter contract acts as a controller and optional paymaster, 
+enabling:
+Gasless or sponsored transactions
+Secure withdrawals using withdrawETH and withdrawERC20
+Internal swaps between U2U and ERC-20 tokens
+This ensures a smooth user experience while maintaining full decentralization.
+
+5. Decentralization and Transparency
+All wallet logic, asset transfers, and swaps are executed via U2U blockchain transactions. 
+There are:
+No centralized servers managing funds
+Complete transparency through the public ledger
+Immutable transaction history for all tag operations
