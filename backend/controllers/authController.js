@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import BankAccount from "../models/BankAccount.js";
-import { balanceQueue } from "../config/queue.js";
+import { balanceQueue } from "../queues/balance.js";
 
 export const register = async (req, res) => {
   try {

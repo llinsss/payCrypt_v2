@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./redis.js";
+import { redisConnection } from "../config/redis.js";
 
 export const balanceQueue = new Queue("balance-setup", {
   connection: redisConnection,
