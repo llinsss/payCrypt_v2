@@ -70,19 +70,19 @@ npm run migrate
   Terminal 1: Backend
 cd backend && npm run dev
 
-# Terminal 2: Frontend  
+  Terminal 2: Frontend  
 npm run dev
-```
 
-### Demo Flow
 
-#### Access Points
-- **Frontend**: http://localhost:5173
-- **Backend**: http://localhost:3000
+ Demo Flow
 
-#### Demo Steps
+ Access Points
+- Frontend: http://localhost:5173
+- Backend: http://localhost:3000
 
-1. **Register Account**
+ Demo Steps
+
+1. Register Account
    - Create account with @tag (e.g., @john_lagos)
    - Complete KYC verification
 
