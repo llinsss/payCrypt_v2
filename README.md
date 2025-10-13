@@ -49,16 +49,16 @@ Git installed
 
 Quick Setup
 
-#### 1. Clone & Install
-```bash
+ 1. Clone & Install
+   bash
 git clone https://github.com/llinsss/payCrypt_v2.git
 cd payCrypt_v2
 npm install
 cd backend && npm install && cd ..
-```
 
-#### 2. Database Setup
-```bash
+
+2. Database Setup
+  bash
 cd backend
 cp .env.example .env
 # Edit .env with your MySQL credentials
