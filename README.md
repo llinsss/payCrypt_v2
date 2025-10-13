@@ -40,12 +40,14 @@ currently testing on these chains and will be going on mainnet soon
 
 Demo Instructions
 
-### Prerequisites
-- Node.js 18+ installed
-- MySQL database running
-- Git installed
+  
+  Prerequisites
 
-### Quick Setup
+Node.js 18+ installed
+MySQL database running
+Git installed
+
+Quick Setup
 
 #### 1. Clone & Install
 ```bash
