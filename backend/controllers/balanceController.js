@@ -1,8 +1,9 @@
 import Balance from "../models/Balance.js";
 import Token from "../models/Token.js";
 import starknet from "../contracts/starknet-contract.js";
-import base from "../contracts/base-contract.js";
+import u2u from "../contracts/u2u-contract.js";
 import lisk from "../contracts/lisk-contract.js";
+import flow from "../contracts/flow-contract.js";
 import flow from "../contracts/flow-contract.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
@@ -120,14 +121,25 @@ export const createUserBalance = async (user_id, tag) => {
   const chainHandlers = {
     STRK: async () => {
       const contract = await starknet.getContract();
+      const existing_tag = await contract.get_tag_wallet_address(tag);
+      if (existing_tag) {
+        return `0x${BigInt(existing_tag).toString(16)}`;
+      }
       const tx = await contract.register_tag(tag);
       await starknet.provider.waitForTransaction(tx.transaction_hash);
-      const addr = await contract.get_tag_wallet_address(tag);
-      return `0x${BigInt(addr).toString(16)}`;
+      const new_tag = await contract.get_tag_wallet_address(tag);
+      if (new_tag) {
+        return `0x${BigInt(new_tag).toString(16)}`;
+      }
+      return null;
     },
 
     LSK: async () => {
       const { contract, LISK_CONFIG } = lisk;
+      const existing_tag = await contract.getUserChainAddress(tag)
+      if(existing_tag){
+        return existing_tag
+      }
       const tx = await contract.registerTag(tag, LISK_CONFIG.accountAddress);
       const receipt = await tx.wait();
       return extractTagAddress(receipt, contract);
@@ -135,6 +147,10 @@ export const createUserBalance = async (user_id, tag) => {
 
     BASE: async () => {
       const { contract, BASE_CONFIG } = base;
+      const existing_tag = await contract.getUserChainAddress(tag)
+      if(existing_tag){
+        return existing_tag
+      }
       const tx = await contract.registerTag(tag, BASE_CONFIG.accountAddress);
       const receipt = await tx.wait();
       return extractTagAddress(receipt, contract);
@@ -142,6 +158,21 @@ export const createUserBalance = async (user_id, tag) => {
 
     FLOW: async () => {
       const { contract, FLOW_CONFIG } = flow;
+      const existing_tag = await contract.getUserChainAddress(tag)
+      if(existing_tag){
+        return existing_tag
+      }
+      const tx = await contract.registerTag(tag, FLOW_CONFIG.accountAddress);
+      const receipt = await tx.wait();
+      return extractTagAddress(receipt, contract);
+    },
+
+    U2U: async () => {
+      const { contract, FLOW_CONFIG } = flow;
+      const existing_tag = await contract.getUserChainAddress(tag)
+      if(existing_tag){
+        return existing_tag
+      }
       const tx = await contract.registerTag(tag, FLOW_CONFIG.accountAddress);
       const receipt = await tx.wait();
       return extractTagAddress(receipt, contract);

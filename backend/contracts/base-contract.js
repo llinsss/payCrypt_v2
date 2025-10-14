@@ -5,7 +5,7 @@ dotenv.config();
 import { mainABI } from "../abis/SolidityContractABI.js";
 
 const BASE_CONFIG = {
-  network: process.env.BASE_NETWORK || "mainnet-alpha",
+  network: process.env.BASE_NETWORK || "testnet",
   nodeUrl: process.env.BASE_RPC_URL,
   contractAddress: process.env.BASE_CONTRACT_ADDRESS,
   accountAddress: process.env.BASE_ACCOUNT_ADDRESS,

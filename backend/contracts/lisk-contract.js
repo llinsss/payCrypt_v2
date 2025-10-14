@@ -5,7 +5,7 @@ dotenv.config();
 import { mainABI } from "../abis/SolidityContractABI.js";
 
 const LISK_CONFIG = {
-  network: process.env.LISK_NETWORK || "mainnet-alpha",
+  network: process.env.LISK_NETWORK || "testnet",
   nodeUrl: process.env.LISK_RPC_URL,
   contractAddress: process.env.LISK_CONTRACT_ADDRESS,
   accountAddress: process.env.LISK_ACCOUNT_ADDRESS,
@@ -27,5 +27,5 @@ export default {
   provider,
   wallet,
   contract,
-  LISK_CONFIG
+  LISK_CONFIG,
 };
