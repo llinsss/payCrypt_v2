@@ -338,13 +338,13 @@ export const send_to_wallet = async (req, res) => {
         amount: transferAmount,
         timestamp,
         from_address: user.tag,
-        to_address: receiver_tag,
+        to_address: receiver_address,
         description: "Fund transfer",
       }),
       Notification.create({
         user_id: user.id,
         title: "Fund transfer",
-        body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_tag}`,
+        body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_address}`,
       }),
       ...(recipient &&
         Transaction.create({
@@ -359,7 +359,7 @@ export const send_to_wallet = async (req, res) => {
           amount: transferAmount,
           timestamp,
           from_address: user.tag,
-          to_address: receiver_tag,
+          to_address: receiver_address,
           description: "Fund received",
         })),
       ...(recipient &&
