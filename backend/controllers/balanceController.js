@@ -121,10 +121,6 @@ export const createUserBalance = async (user_id, tag) => {
   const chainHandlers = {
     STRK: async () => {
       const contract = await starknet.getContract();
-      const existing_tag = await contract.get_tag_wallet_address(tag);
-      if (existing_tag) {
-        return `0x${BigInt(existing_tag).toString(16)}`;
-      }
       const tx = await contract.register_tag(tag);
       await starknet.provider.waitForTransaction(tx.transaction_hash);
       const new_tag = await contract.get_tag_wallet_address(tag);
