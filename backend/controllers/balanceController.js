@@ -7,7 +7,6 @@ import flow from "../contracts/flow-contract.js";
 import base from "../contracts/base-contract.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
-import { sleep } from "../utils/sleep.js";
 import db from "../config/database.js";
 
 export const createBalance = async (req, res) => {
@@ -116,164 +115,110 @@ export const deleteBalance = async (req, res) => {
   }
 };
 
-/**
- * Retry helper with exponential backoff
- */
-const withRetry = async (fn, retries = 3, delay = 2000) => {
-  let attempt = 0;
-  while (attempt < retries) {
-    try {
-      return await fn();
-    } catch (err) {
-      attempt++;
-      const wait = delay * attempt;
-      console.warn(
-        `⚠️ Retry ${attempt}/${retries} after ${wait}ms: ${err.message}`
-      );
-      if (attempt >= retries) throw err;
-      await sleep(wait);
-    }
-  }
-};
-
-/**
- * Extract TagRegistered event address
- */
-const extractTagAddress = (receipt, contract) => {
-  if (!receipt?.logs?.length) return null;
-  for (const log of receipt.logs) {
-    try {
-      const event = contract.interface.parseLog(log);
-      if (event?.name === "TagRegistered") {
-        return event.args?.wallet || event.args?.[1] || null;
-      }
-    } catch {}
-  }
-  return null;
-};
-
-/**
- * Create user balance across all chains
- */
 export const createUserBalance = async (user_id, tag) => {
+  const tokens = await Token.getAll();
   const user = await db("users").where("id", user_id).first();
   if (!user) null;
-  const redisKey = `user_balance:${user_id}:${tag}`;
-  const cached = await redis.get(redisKey);
 
-  // Prevent duplicate concurrent executions
-  if (cached === "processing") {
-    console.log(`⚠️ Tag creation already in progress for ${tag}`);
-    return [];
-  }
+  // --- Helper: Extract TagRegistered event address ---
+  const extractTagAddress = (receipt, contract) => {
+    if (!receipt?.logs?.length) return null;
+    for (const log of receipt.logs) {
+      try {
+        const event = contract.interface.parseLog(log);
+        if (event?.name === "TagRegistered") {
+          return event.args?.wallet || event.args?.[1] || null;
+        }
+      } catch {
+        continue; // ignore unrelated logs
+      }
+    }
+    return null;
+  };
 
-  await redis.setEx(redisKey, 300, "processing"); // lock for 5 minutes
+  // --- Generic EVM handler factory ---
+  const makeEvmHandler = (chain) => async (tag) => {
+    const { contract, config } = chain;
+    if (!contract || !config?.accountAddress) {
+      throw new Error(`Invalid chain configuration for ${config?.nodeUrl}`);
+    }
 
-  try {
-    const tokens = await Token.getAll();
+    console.log(`\n🔗 ${config.nodeUrl}: Registering tag "${tag}"...`);
 
-    /**
-     * Generic EVM handler factory
-     */
-    const makeEvmHandler = (chain) => async (tag) => {
-      const { contract, config } = chain;
-      if (!contract || !config?.accountAddress) {
-        throw new Error(`Invalid chain config: ${config?.nodeUrl}`);
+    const tx = await contract.registerTag(tag);
+    console.log(`📤 ${config.nodeUrl} Tx Hash: ${tx.hash}`);
+
+    const receipt = await tx.wait();
+    console.log(
+      `✅ ${config.nodeUrl} Confirmed in Block: ${receipt.blockNumber}`
+    );
+
+    const tagAddress = extractTagAddress(receipt, contract);
+    if (!tagAddress)
+      console.warn(`⚠️ No TagRegistered event found on ${config.nodeUrl}`);
+    return tagAddress;
+  };
+
+  // --- Define supported EVM chains ---
+  const evmChains = { BASE: base, LSK: lisk, FLOW: flow, U2U: u2u };
+  const evmHandlers = Object.fromEntries(
+    Object.entries(evmChains).map(([symbol, chain]) => [
+      symbol,
+      makeEvmHandler(chain),
+    ])
+  );
+
+  // --- Chain Handlers ---
+  const chainHandlers = {
+    STRK: async (tag) => {
+      const contract = await starknet.getContract();
+      if (!contract) throw new Error("❌ StarkNet contract not initialized");
+
+      console.log(`\n🔗 STRK: Registering tag "${tag}"...`);
+      const tx = await contract.register_tag(tag);
+      console.log("📤 STRK Tx sent:", tx.transaction_hash);
+
+      await starknet.provider.waitForTransaction(tx.transaction_hash);
+      console.log("✅ STRK Tx confirmed");
+
+      const newTag = await contract.get_tag_wallet_address(tag);
+      return newTag && newTag !== "0x0"
+        ? `0x${BigInt(newTag).toString(16)}`
+        : null;
+    },
+    ...evmHandlers,
+  };
+
+  // --- Process all tokens concurrently ---
+  const results = await Promise.allSettled(
+    tokens.map(async (token) => {
+      const balance = await db("balances")
+        .where("user_id", user.id)
+        .where("token_id", token.id)
+        .first();
+      if (balance && balance.address) {
+        console.warn(`⚠️ Balance already exists: ${token.symbol}`);
+        null;
+      }
+      const handler = chainHandlers[token.symbol];
+      if (!handler) {
+        console.warn(`⚠️ Skipping unsupported token: ${token.symbol}`);
+        return null;
       }
 
-      console.log(`\n🔗 ${config.nodeUrl}: Registering tag "${tag}"...`);
-      const tx = await contract.registerTag(tag, config.accountAddress);
-      console.log(`📤 ${config.nodeUrl} Tx Hash: ${tx.hash}`);
+      try {
+        const address = await handler(tag);
+        if (!address) throw new Error("No address generated");
+        return await Balance.create({ user_id: user.id, token_id: token.id, address });
+      } catch (err) {
+        console.error(`❌ ${token.symbol} registration failed:`, err.message);
+        return null;
+      }
+    })
+  );
 
-      const receipt = await tx.wait();
-      console.log(
-        `✅ ${config.nodeUrl} Confirmed in Block: ${receipt.blockNumber}`
-      );
-
-      const tagAddress = extractTagAddress(receipt, contract);
-      if (!tagAddress)
-        console.warn(`⚠️ No TagRegistered event found on ${config.nodeUrl}`);
-      return tagAddress;
-    };
-
-    /**
-     * Define supported chains
-     */
-    const evmChains = { BASE: base, LSK: lisk, FLOW: flow, U2U: u2u };
-    const evmHandlers = Object.fromEntries(
-      Object.entries(evmChains).map(([symbol, chain]) => [
-        symbol,
-        makeEvmHandler(chain),
-      ])
-    );
-
-    /**
-     * Chain handlers (EVM + StarkNet)
-     */
-    const chainHandlers = {
-      STRK: async (tag) => {
-        const contract = await starknet.getContract();
-        if (!contract) throw new Error("❌ StarkNet contract not initialized");
-
-        console.log(`\n🔗 STRK: Registering tag "${tag}"...`);
-        const tx = await contract.register_tag(tag);
-        console.log("📤 STRK Tx sent:", tx.transaction_hash);
-
-        await starknet.provider.waitForTransaction(tx.transaction_hash);
-        console.log("✅ STRK Tx confirmed");
-
-        const newTag = await contract.get_tag_wallet_address(tag);
-        return newTag && newTag !== "0x0"
-          ? `0x${BigInt(newTag).toString(16)}`
-          : null;
-      },
-      ...evmHandlers,
-    };
-
-    /**
-     * Process all tokens concurrently with safe retries
-     */
-    const results = await Promise.allSettled(
-      tokens.map(async (token) => {
-        const balance = await db("balances")
-          .where("user_id", user.id)
-          .where("token_id", token.id)
-          .first();
-        if (balance && balance.address) {
-          console.warn(`⚠️ Balance already exists: ${token.symbol}`);
-          null;
-        }
-        const handler = chainHandlers[token.symbol];
-        if (!handler) {
-          console.warn(`⚠️ Skipping unsupported token: ${token.symbol}`);
-          return null;
-        }
-
-        try {
-          const address = await handler(tag);
-          if (!address) throw new Error("No address generated");
-          return await Balance.create({
-            user_id: user.id,
-            token_id: token.id,
-            address,
-          });
-        } catch (err) {
-          console.error(`❌ ${token.symbol} registration failed:`, err.message);
-          return null;
-        }
-      })
-    );
-
-    const successful = results
-      .filter((r) => r.status === "fulfilled" && r.value)
-      .map((r) => r.value);
-
-    await redis.setEx(redisKey, 3600, JSON.stringify(successful)); // cache for 1 hour
-    return successful;
-  } catch (err) {
-    console.error("❌ createUserBalance failed:", err.message);
-    throw err;
-  } finally {
-    await redis.del(redisKey); // clear processing lock
-  }
+  // --- Return only successful balances ---
+  return results
+    .filter((r) => r.status === "fulfilled" && r.value)
+    .map((r) => r.value);
 };
