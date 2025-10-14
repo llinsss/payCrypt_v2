@@ -345,7 +345,29 @@ export const send_to_wallet = async (req, res) => {
         title: "Fund transfer",
         body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_address}`,
       }),
-      ...(recipient &&
+    ]);
+    if (recipient) {
+      await Promise.all([
+        Transaction.create({
+          user_id: user.id,
+          status: "completed",
+          token_id: balance.token_id,
+          chain_id: token.id,
+          reference,
+          type: "debit",
+          tx_hash: txHash,
+          usd_value: usdValue,
+          amount: transferAmount,
+          timestamp,
+          from_address: user.tag,
+          to_address: receiver_address,
+          description: "Fund transfer",
+        }),
+        Notification.create({
+          user_id: user.id,
+          title: "Fund transfer",
+          body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_address}`,
+        }),
         Transaction.create({
           user_id: recipient.id,
           status: "completed",
@@ -360,14 +382,14 @@ export const send_to_wallet = async (req, res) => {
           from_address: user.tag,
           to_address: receiver_address,
           description: "Fund received",
-        })),
-      ...(recipient &&
+        }),
         Notification.create({
           user_id: recipient.id,
           title: "Fund received",
           body: `You received ${transferAmount} ${token.symbol} from ${user.tag}`,
-        })),
-    ]);
+        }),
+      ]);
+    }
 
     return res.json({ data: "success", txHash });
   } catch (error) {
