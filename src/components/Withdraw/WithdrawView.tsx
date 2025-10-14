@@ -20,7 +20,7 @@ import { apiClient } from "../../utils/api";
 import toast from "react-hot-toast";
 
 type WithdrawType = "wallet" | "fiat" | "tag";
-interface DepositResponse {
+interface DepositByTagResponse {
   data: "success";
   txHash: string;
 }
@@ -72,7 +72,7 @@ const WithdrawView: React.FC = () => {
     if (withdrawType === "tag") {
       try {
         setIsProcessing(true);
-        const response = await apiClient.post<DepositResponse>(
+        const response = await apiClient.post<DepositByTagResponse>(
           "/wallets/send-to-tag",
           {
             balance_id: selectedBalance?.id,
