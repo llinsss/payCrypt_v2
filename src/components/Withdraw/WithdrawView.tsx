@@ -20,10 +20,11 @@ import { apiClient } from "../../utils/api";
 import toast from "react-hot-toast";
 
 type WithdrawType = "wallet" | "fiat" | "tag";
-interface DepositByTagResponse {
+interface DepositByTagAndWalletResponse {
   data: "success";
   txHash: string;
 }
+
 
 const WithdrawView: React.FC = () => {
   const [withdrawType, setWithdrawType] = useState<WithdrawType>("wallet");
@@ -65,20 +66,26 @@ const WithdrawView: React.FC = () => {
     withdrawType === "wallet"
       ? recipientAddress.trim().length > 0
       : withdrawType === "tag"
-      ? recipientTag.trim().length > 0
-      : bankAccount.trim().length > 0;
+        ? recipientTag.trim().length > 0
+        : bankAccount.trim().length > 0;
 
   const handleWithdraw = async () => {
-    if (withdrawType === "tag") {
+    if (withdrawType === "tag" || withdrawType === "wallet") {
       try {
+        const url = withdrawType === "tag" ? "/wallets/send-to-tag" : "/wallets/send-to-wallet"
+        const body = withdrawType === "tag" ? {
+          balance_id: selectedBalance?.id,
+          amount: amount,
+          receiver_tag: recipientTag,
+        } : {
+          balance_id: selectedBalance?.id,
+          amount: amount,
+          receiver_address: recipientAddress,
+        }
         setIsProcessing(true);
-        const response = await apiClient.post<DepositByTagResponse>(
-          "/wallets/send-to-tag",
-          {
-            balance_id: selectedBalance?.id,
-            amount: amount,
-            receiver_tag: recipientTag,
-          }
+        const response = await apiClient.post<DepositByTagAndWalletResponse>(
+          url,
+          body
         );
         setIsProcessing(false);
         if (response.data === "success" && response.txHash) {
@@ -158,7 +165,7 @@ const WithdrawView: React.FC = () => {
               onChange={(e) =>
                 setSelectedBalance(
                   balances.find((b) => b.id.toString() === e.target.value) ||
-                    null
+                  null
                 )
               }
               className="w-full p-3 border border-gray-300 rounded-xl appearance-none bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -214,7 +221,7 @@ const WithdrawView: React.FC = () => {
                     ≈{" "}
                     {formatCurrency(
                       (inputAmount / maxAmount) *
-                        Number(selectedBalance.usd_value)
+                      Number(selectedBalance.usd_value)
                     )}
                   </span>
                 )}
@@ -232,8 +239,8 @@ const WithdrawView: React.FC = () => {
                 {withdrawType === "wallet"
                   ? "Recipient Address"
                   : withdrawType === "tag"
-                  ? "Recipient Tag"
-                  : "Bank Details"}
+                    ? "Recipient Tag"
+                    : "Bank Details"}
               </span>
             </label>
 
@@ -342,11 +349,10 @@ const WithdrawView: React.FC = () => {
           type="button"
           onClick={handleWithdraw}
           disabled={!isValidAmount || !isValidRecipient || isProcessing}
-          className={`w-full py-4 px-6 rounded-xl font-semibold transition-all duration-300 ${
-            isValidAmount && isValidRecipient && !isProcessing
-              ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-              : "bg-gray-200 text-gray-500 cursor-not-allowed"
-          }`}
+          className={`w-full py-4 px-6 rounded-xl font-semibold transition-all duration-300 ${isValidAmount && isValidRecipient && !isProcessing
+            ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+            : "bg-gray-200 text-gray-500 cursor-not-allowed"
+            }`}
         >
           {isProcessing ? (
             <div className="flex items-center justify-center space-x-2">
@@ -360,8 +366,8 @@ const WithdrawView: React.FC = () => {
                 {withdrawType === "wallet"
                   ? "Send to Wallet"
                   : withdrawType === "tag"
-                  ? "Send to Tag"
-                  : "Withdraw to Bank"}
+                    ? "Send to Tag"
+                    : "Withdraw to Bank"}
               </span>
             </div>
           )}
@@ -382,11 +388,10 @@ const WithdrawMethodTab: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl font-medium transition-all duration-300 ${
-      active
-        ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-sm"
-        : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-    }`}
+    className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl font-medium transition-all duration-300 ${active
+      ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-sm"
+      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+      }`}
   >
     {icon}
     <span>{label}</span>

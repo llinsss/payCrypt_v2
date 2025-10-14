@@ -232,6 +232,149 @@ export const send_to_tag = async (req, res) => {
   }
 };
 
+export const send_to_wallet = async (req, res) => {
+  try {
+    const { id } = req.user;
+    const { receiver_address, amount, balance_id } = req.body;
+
+    if (!receiver_address || !amount || !balance_id) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const [user, recipient, balance] = await Promise.all([
+      User.findById(id),
+      Balance.findByAddress(receiver_address),
+      Balance.findById(balance_id),
+    ]);
+
+    if (!user) return res.status(400).json({ error: "User not found" });
+    if (!recipient)
+      return res.status(400).json({ error: "Recipient not found" });
+    if (recipient.id === user.id)
+      return res.status(400).json({ error: "Cannot send to self" });
+    if (!balance) return res.status(400).json({ error: "Balance not found" });
+    if (balance.user_id !== id)
+      return res.status(403).json({ error: "Unauthorized" });
+
+    const transferAmount = Number(amount);
+    if (transferAmount > Number(balance.amount)) {
+      return res.status(422).json({ error: "Insufficient wallet balance" });
+    }
+
+    const token = await Token.findById(balance.token_id);
+    if (!token) return res.status(400).json({ error: "Token not found" });
+
+    const timestamp = new Date();
+    const usdPrice = token.price ?? 1;
+    const usdValue = transferAmount * usdPrice;
+    const reference = secureRandomString(16);
+    let txHash = null;
+
+    // ====== ⚡ Handle StarkNet ======
+    if (token.symbol === "STRK") {
+      const contract = await starknet.getContract();
+      const receiverAddress = shortString.encodeShortString(receiver_address);
+      const transferValue = to18Decimals(transferAmount.toString());
+
+      const tx = await contract.withdraw_from_wallet(
+        String(process.env.STARKNET_TOKEN_ADDRESS),
+        user.tag,
+        receiverAddress,
+        transferValue
+      );
+
+      await starknet.provider.waitForTransaction(tx.transaction_hash);
+      txHash = tx.transaction_hash;
+
+      if (!txHash)
+        return res
+          .status(422)
+          .json({ error: "Failed to transfer on StarkNet" });
+    }
+
+    // ====== ⚡ Handle EVM Chains ======
+    else {
+      let contract = null;
+      if (token.symbol === "U2U") {
+        const { contract: _contract } = u2u;
+        contract = _contract;
+      }
+      if (token.symbol === "LSK") {
+        const { contract: _contract } = lisk;
+        contract = _contract;
+      }
+      if (token.symbol === "BASE") {
+        const { contract: _contract } = base;
+        contract = _contract;
+      }
+      if (token.symbol === "FLOW") {
+        const { contract: _contract } = flow;
+        contract = _contract;
+      }
+
+      const tx = await contract.withdrawEthFromWallet(
+        receiver_address,
+        ethers.parseUnits(transferAmount.toString(), 18),
+        user.tag
+      );
+      const receipt = await tx.wait();
+      txHash = receipt.hash;
+
+      if (!txHash)
+        return res.status(422).json({ error: "Failed to transfer on EVM" });
+    }
+
+    // ====== ⛓ Common database updates ======
+    await Promise.all([
+      Transaction.create({
+        user_id: user.id,
+        status: "completed",
+        token_id: balance.token_id,
+        chain_id: token.id,
+        reference,
+        type: "debit",
+        tx_hash: txHash,
+        usd_value: usdValue,
+        amount: transferAmount,
+        timestamp,
+        from_address: user.tag,
+        to_address: receiver_tag,
+        description: "Fund transfer",
+      }),
+      Notification.create({
+        user_id: user.id,
+        title: "Fund transfer",
+        body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_tag}`,
+      }),
+      Transaction.create({
+        user_id: recipient.id,
+        status: "completed",
+        token_id: balance.token_id,
+        chain_id: token.chain_id,
+        reference: secureRandomString(16),
+        type: "credit",
+        tx_hash: txHash,
+        usd_value: usdValue,
+        amount: transferAmount,
+        timestamp,
+        from_address: user.tag,
+        to_address: receiver_tag,
+        description: "Fund received",
+      }),
+      Notification.create({
+        user_id: recipient.id,
+        title: "Fund received",
+        body: `You received ${transferAmount} ${token.symbol} from ${user.tag}`,
+      }),
+    ]);
+
+    return res.json({ data: "success", txHash });
+  } catch (error) {
+    console.error("Transfer Error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 export const getWalletBalance = async (req, res) => {
   try {
     const { id } = req.user;

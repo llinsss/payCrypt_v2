@@ -6,6 +6,7 @@ import {
   getWalletByUserId,
   getWalletBalance,
   send_to_tag,
+  send_to_wallet,
 } from "../controllers/walletController.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -13,6 +14,7 @@ const router = express.Router();
 
 router.get("/", authenticate, getWalletByUserId);
 router.post("/send-to-tag", authenticate, send_to_tag);
+router.post("/send-to-wallet", authenticate, send_to_wallet);
 router.get("/balance", authenticate, getWalletBalance);
 router.get("/:id", authenticate, getWalletById);
 router.put("/:id", authenticate, updateWallet);
