@@ -11,7 +11,7 @@ export const up = async (knex) => {
       table.string("type", 255);
       table.string("status", 255).defaultTo("completed");
       table.string("tx_hash", 255);
-      table.decimal("usd_value", 18, 3).defaultTo(0);
+      table.decimal("usd_value", 18, 10).defaultTo(0);
       table.decimal("amount", 18, 8).defaultTo(0);
       table.string("timestamp", 255);
       table.string("from_address", 255);

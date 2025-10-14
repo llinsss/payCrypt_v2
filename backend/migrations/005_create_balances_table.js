@@ -6,8 +6,8 @@ export const up = async (knex) => {
       table.increments("id").primary();
       table.integer("user_id").unsigned().notNullable();
       table.integer("token_id").unsigned().notNullable();
-      table.decimal("amount", 18, 3).defaultTo(0);
-      table.decimal("usd_value", 18, 8).defaultTo(0);
+      table.decimal("amount", 18, 10).defaultTo(0);
+      table.decimal("usd_value", 18, 10).defaultTo(0);
       table.string("address", 255);
       table.timestamp("created_at").defaultTo(knex.fn.now());
       table.timestamp("updated_at").defaultTo(knex.fn.now());
