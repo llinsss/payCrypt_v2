@@ -142,7 +142,7 @@ export const createUserBalance = async (user_id, tag) => {
 
     console.log(`\n🔗 ${config.nodeUrl}: Registering tag "${tag}"...`);
 
-    const tx = await contract.registerTag(tag, config.accountAddress);
+    const tx = await contract.registerTag(tag);
     console.log(`📤 ${config.nodeUrl} Tx Hash: ${tx.hash}`);
 
     const receipt = await tx.wait();
