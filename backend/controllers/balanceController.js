@@ -216,7 +216,6 @@ export const createUserBalance = async (user_id, tag) => {
       }
     })
   );
-
   // --- Return only successful balances ---
   return results
     .filter((r) => r.status === "fulfilled" && r.value)
