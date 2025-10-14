@@ -1,9 +1,12 @@
 import { starknetQueue } from "../queues/starknet.js";
 import redis from "../config/redis.js";
-import { getContract, utils } from "../contracts/starknet-contract.js";
+import {
+  getContract,
+  utils,
+  provider,
+} from "../contracts/starknet-contract.js";
 
 const contract = getContract();
-const { provider } = contract;
 
 const CONTRACT_ADDRESS = contract.address;
 const REDIS_KEY = "starknet:lastProcessedBlock";
