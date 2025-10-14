@@ -137,22 +137,22 @@ export const createUserBalance = async (user_id, tag) => {
   const makeEvmHandler = (chain) => async (tag) => {
     const { contract, config } = chain;
     if (!contract || !config?.accountAddress) {
-      throw new Error(
-        `Invalid chain configuration for ${config?.network || "EVM"}`
-      );
+      throw new Error(`Invalid chain configuration for ${config?.nodeUrl}`);
     }
 
-    console.log(`\n🔗 ${config.network || "EVM"}: Registering tag "${tag}"...`);
+    console.log(`\n🔗 ${config.nodeUrl}: Registering tag "${tag}"...`);
 
     const tx = await contract.registerTag(tag, config.accountAddress);
-    console.log(`📤 Tx Hash: ${tx.hash}`);
+    console.log(`📤 ${config.nodeUrl} Tx Hash: ${tx.hash}`);
 
     const receipt = await tx.wait();
-    console.log(`✅ Confirmed in Block: ${receipt.blockNumber}`);
+    console.log(
+      `✅ ${config.nodeUrl} Confirmed in Block: ${receipt.blockNumber}`
+    );
 
     const tagAddress = extractTagAddress(receipt, contract);
     if (!tagAddress)
-      console.warn(`⚠️ No TagRegistered event found on ${config.network}`);
+      console.warn(`⚠️ No TagRegistered event found on ${config.nodeUrl}`);
     return tagAddress;
   };
 

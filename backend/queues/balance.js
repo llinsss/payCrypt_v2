@@ -3,7 +3,7 @@ import queueConfig from "./index.js";
 
 export const balanceQueue = new Queue("balance-setup", queueConfig);
 balanceQueue.on("waiting", (jobId) =>
-  console.log(`⏳ Balance Job ${jobId} waiting in queue`)
+  console.log(`⏳ Balance Job ${JSON.stringify(jobId)} waiting in queue`)
 );
 balanceQueue.on("active", (job) =>
   console.log(`⚙️ Balance Processing job ${job.id}`)
