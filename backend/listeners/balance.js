@@ -118,17 +118,25 @@ export const startBalancePoller = async () => {
                 chainReaders[token.symbol](user.tag, token)
               );
 
-              if (Number(cryptoValue) > Number(balance.amount)) {
-                const depositAmount =
-                  Number(cryptoValue) - Number(balance.amount);
-                const usdValue = token.price * depositAmount;
-                const ngnValue = usdValue * ngnPrice;
+              const onchainValue = Number(cryptoValue);
+              const walletValue = Number(balance.amount);
 
-                await Balance.update(balance.id, {
-                  amount: cryptoValue,
-                  usd_value: token.price * cryptoValue,
-                });
+              // Skip if equal (no change)
+              if (onchainValue === walletValue) return;
 
+              // Always update wallet to match on-chain value
+              await Balance.update(balance.id, {
+                amount: onchainValue,
+                usd_value: token.price * onchainValue,
+              });
+
+              const difference = Math.abs(onchainValue - walletValue);
+              const usdValue = token.price * difference;
+              const ngnValue = usdValue * ngnPrice;
+              const now = new Date();
+
+              if (onchainValue > walletValue) {
+                // 🔼 CREDIT (Deposit)
                 await Transaction.create({
                   user_id: user.id,
                   status: "completed",
@@ -137,19 +145,43 @@ export const startBalancePoller = async () => {
                   type: "credit",
                   tx_hash: balance.address,
                   usd_value: usdValue,
-                  amount: depositAmount,
-                  timestamp: new Date(),
+                  amount: difference,
+                  timestamp: now,
                   description: "Deposit",
                 });
 
                 await Notification.create({
                   user_id: user.id,
                   title: "Deposit",
-                  body: `Deposit of ${depositAmount} ${token.symbol} received`,
+                  body: `Deposit of ${difference} ${token.symbol} received`,
                 });
 
                 console.log(
-                  `💰 Deposit detected: +${depositAmount} ${token.symbol} for ${user.tag}`
+                  `💰 Deposit detected: +${difference} ${token.symbol} for ${user.tag}`
+                );
+              } else {
+                // 🔽 DEBIT (Withdrawal)
+                await Transaction.create({
+                  user_id: user.id,
+                  status: "completed",
+                  token_id: token.id,
+                  reference: secureRandomString(16),
+                  type: "debit",
+                  tx_hash: balance.address,
+                  usd_value: usdValue,
+                  amount: difference,
+                  timestamp: now,
+                  description: "Withdrawal",
+                });
+
+                await Notification.create({
+                  user_id: user.id,
+                  title: "Withdrawal",
+                  body: `Withdrawal of ${difference} ${token.symbol} completed`,
+                });
+
+                console.log(
+                  `💸 Withdrawal detected: -${difference} ${token.symbol} for ${user.tag}`
                 );
               }
             } catch (err) {
