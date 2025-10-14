@@ -4,7 +4,7 @@ dotenv.config();
 
 import { mainABI } from "../abis/SolidityContractABI.js";
 
-const LISK_CONFIG = {
+const config = {
   network: process.env.LISK_NETWORK || "testnet",
   nodeUrl: process.env.LISK_RPC_URL,
   contractAddress: process.env.LISK_CONTRACT_ADDRESS,
@@ -13,13 +13,13 @@ const LISK_CONFIG = {
   contractABI: mainABI,
 };
 
-const provider = new ethers.JsonRpcProvider(LISK_CONFIG.nodeUrl);
+const provider = new ethers.JsonRpcProvider(config.nodeUrl);
 
-const wallet = new ethers.Wallet(LISK_CONFIG.privateKey, provider);
+const wallet = new ethers.Wallet(config.privateKey, provider);
 
 const contract = new ethers.Contract(
-  LISK_CONFIG.contractAddress,
-  LISK_CONFIG.contractABI,
+  config.contractAddress,
+  config.contractABI,
   wallet
 );
 
@@ -27,5 +27,5 @@ export default {
   provider,
   wallet,
   contract,
-  LISK_CONFIG,
+  config,
 };

@@ -1,9 +1,9 @@
 import { Worker } from "bullmq";
-import { utils, getContract } from "../starknet-contract.js";
 import db from "../config/database.js";
 import redis, { redisConnection } from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import secureRandomString from "../utils/random-string.js";
+import { getContract, utils } from "../contracts/starknet-contract.js";
 
 const { contract } = getContract();
 

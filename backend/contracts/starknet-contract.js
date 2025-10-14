@@ -1,7 +1,7 @@
 import { Account, Contract, RpcProvider, stark, uint256 } from "starknet";
 import { mainABI } from "../abis/StarknetContractABI.js";
 
-const STARKNET_CONFIG = {
+const config = {
   network: process.env.STARKNET_NETWORK || "sepolia",
   nodeUrl: process.env.STARKNET_RPC_URL,
   contractAddress: process.env.STARKNET_CONTRACT_ADDRESS,
@@ -11,15 +11,15 @@ const STARKNET_CONFIG = {
 };
 
 // Provider
-const provider = new RpcProvider({ nodeUrl: STARKNET_CONFIG.nodeUrl });
+const provider = new RpcProvider({ nodeUrl: config.nodeUrl });
 
 // Account (for write ops)
 let account = null;
-if (STARKNET_CONFIG.accountAddress && STARKNET_CONFIG.privateKey) {
+if (config.accountAddress && config.privateKey) {
   account = new Account(
     provider,
-    STARKNET_CONFIG.accountAddress,
-    STARKNET_CONFIG.privateKey
+    config.accountAddress,
+    config.privateKey
   );
 }
 
@@ -30,20 +30,20 @@ let contract = null;
  * Initialize and return the contract instance
  */
 export const getContract = () => {
-  if (!STARKNET_CONFIG.contractAddress) {
+  if (!config.contractAddress) {
     throw new Error("❌ Contract address not provided in env vars");
   }
 
   if (!contract) {
     contract = new Contract(
-      STARKNET_CONFIG.contractABI,
-      STARKNET_CONFIG.contractAddress,
+      config.contractABI,
+      config.contractAddress,
       account ?? provider
     );
 
     console.log("✅ StarkNet contract initialized");
-    console.log("📝 Address:", STARKNET_CONFIG.contractAddress);
-    console.log("🌐 Network:", STARKNET_CONFIG.network);
+    console.log("📝 Address:", config.contractAddress);
+    console.log("🌐 Network:", config.network);
   }
 
   return contract;
@@ -72,5 +72,5 @@ export default {
   account,
   getContract,
   utils,
-  STARKNET_CONFIG,
+  config,
 };

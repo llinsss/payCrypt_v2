@@ -50,7 +50,7 @@ const listenForDeposits = async (block_number = null) => {
       for (const ev of receipt.events) {
         // only process DepositReceived
         if (
-          eqHex(ev.from_address, starknet.STARKNET_CONFIG.contractAddress) &&
+          eqHex(ev.from_address, starknet.config.contractAddress) &&
           eqHex(ev.keys[0], DEPOSIT_RECEIVED_SELECTOR)
         ) {
           const decoded = decodeDepositEvent(ev);
@@ -92,8 +92,8 @@ const listenForDeposits = async (block_number = null) => {
                   const autoswappr = new AutoSwappr({
                     contractAddress: process.env.AUTOSWAPPR_CONTRACT_ADDRESS,
                     rpcUrl: "https://starknet-mainnet.public.blastapi.io",
-                    accountAddress: starknet.STARKNET_CONFIG.accountAddress,
-                    privateKey: starknet.STARKNET_CONFIG.privateKey,
+                    accountAddress: starknet.config.accountAddress,
+                    privateKey: starknet.config.privateKey,
                   });
                   const result = await autoswappr.executeSwap(
                     TOKEN_ADDRESSES.STRK,
@@ -141,7 +141,7 @@ const listenForDeposits = async (block_number = null) => {
             if (
               eqHex(
                 ev.from_address,
-                starknet.STARKNET_CONFIG.contractAddress
+                starknet.config.contractAddress
               ) &&
               eqHex(ev.keys[0], DEPOSIT_RECEIVED_SELECTOR)
             ) {

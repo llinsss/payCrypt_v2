@@ -1,6 +1,6 @@
 import { starknetQueue } from "../queues/starknet.js";
-import { getContract, utils } from "../starknet-contract.js";
 import redis from "../config/redis.js";
+import { getContract, utils } from "../contracts/starknet-contract.js";
 
 const contract = getContract();
 const { provider } = contract;

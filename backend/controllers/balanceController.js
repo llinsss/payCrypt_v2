@@ -120,39 +120,71 @@ export const createUserBalance = async (user_id, tag) => {
   // --- Helper: Extract TagRegistered event address ---
   const extractTagAddress = (receipt, contract) => {
     if (!receipt?.logs?.length) return null;
-
     for (const log of receipt.logs) {
       try {
         const event = contract.interface.parseLog(log);
-        if (event?.name === "TagRegistered") return event.args?.[1] ?? null;
+        if (event?.name === "TagRegistered") {
+          return event.args?.wallet || event.args?.[1] || null;
+        }
       } catch {
-        continue; // ignore irrelevant logs
+        continue; // ignore unrelated logs
       }
     }
     return null;
   };
 
-  // --- Reusable chain handler factory ---
-  const makeEvmHandler = (chain) => async () => {
-    const { contract, CONFIG } = chain;
-    const tx = await contract.registerTag(tag, CONFIG.accountAddress);
+  // --- Generic EVM handler factory ---
+  const makeEvmHandler = (chain) => async (tag) => {
+    const { contract, config } = chain;
+    if (!contract || !config?.accountAddress) {
+      throw new Error(
+        `Invalid chain configuration for ${config?.network || "EVM"}`
+      );
+    }
+
+    console.log(`\n🔗 ${config.network || "EVM"}: Registering tag "${tag}"...`);
+
+    const tx = await contract.registerTag(tag, config.accountAddress);
+    console.log(`📤 Tx Hash: ${tx.hash}`);
+
     const receipt = await tx.wait();
-    return extractTagAddress(receipt, contract);
+    console.log(`✅ Confirmed in Block: ${receipt.blockNumber}`);
+
+    const tagAddress = extractTagAddress(receipt, contract);
+    if (!tagAddress)
+      console.warn(`⚠️ No TagRegistered event found on ${config.network}`);
+    return tagAddress;
   };
 
-  // --- Chain Handlers Map ---
+  // --- Define supported EVM chains ---
+  const evmChains = { BASE: base, LISK: lisk, FLOW: flow, U2U: u2u };
+  const evmHandlers = Object.fromEntries(
+    Object.entries(evmChains).map(([symbol, chain]) => [
+      symbol,
+      makeEvmHandler(chain),
+    ])
+  );
+
+  // --- Chain Handlers ---
   const chainHandlers = {
-    STRK: async () => {
-      const { contract, provider } = await starknet.getContract();
+    ...evmHandlers,
+
+    STRK: async (tag) => {
+      const contract = await starknet.getContract();
+      if (!contract) throw new Error("❌ StarkNet contract not initialized");
+
+      console.log(`\n🔗 STRK: Registering tag "${tag}"...`);
       const tx = await contract.register_tag(tag);
-      await provider.waitForTransaction(tx.transaction_hash);
+      console.log("📤 STRK Tx sent:", tx.transaction_hash);
+
+      await starknet.provider.waitForTransaction(tx.transaction_hash);
+      console.log("✅ STRK Tx confirmed");
+
       const newTag = await contract.get_tag_wallet_address(tag);
-      return newTag ? `0x${BigInt(newTag).toString(16)}` : null;
+      return newTag && newTag !== "0x0"
+        ? `0x${BigInt(newTag).toString(16)}`
+        : null;
     },
-    LSK: makeEvmHandler(lisk),
-    BASE: makeEvmHandler(base),
-    FLOW: makeEvmHandler(flow),
-    U2U: makeEvmHandler(u2u),
   };
 
   // --- Process all tokens concurrently ---
@@ -165,17 +197,18 @@ export const createUserBalance = async (user_id, tag) => {
       }
 
       try {
-        const address = await handler();
+        const address = await handler(tag);
         if (!address) throw new Error("No address generated");
-        return Balance.create({ user_id, token_id: token.id, address });
+        return await Balance.create({ user_id, token_id: token.id, address });
       } catch (err) {
         console.error(`❌ ${token.symbol} registration failed:`, err.message);
         return null;
       }
     })
   );
+
+  // --- Return only successful balances ---
   return results
     .filter((r) => r.status === "fulfilled" && r.value)
     .map((r) => r.value);
 };
-

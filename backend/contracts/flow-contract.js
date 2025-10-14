@@ -4,7 +4,7 @@ dotenv.config();
 
 import { mainABI } from "../abis/SolidityContractABI.js";
 
-const FLOW_CONFIG = {
+const config = {
   network: process.env.FLOW_NETWORK || "testnet",
   nodeUrl: process.env.FLOW_RPC_URL,
   contractAddress: process.env.FLOW_CONTRACT_ADDRESS,
@@ -13,13 +13,13 @@ const FLOW_CONFIG = {
   contractABI: mainABI,
 };
 
-const provider = new ethers.JsonRpcProvider(FLOW_CONFIG.nodeUrl);
+const provider = new ethers.JsonRpcProvider(config.nodeUrl);
 
-const wallet = new ethers.Wallet(FLOW_CONFIG.privateKey, provider);
+const wallet = new ethers.Wallet(config.privateKey, provider);
 
 const contract = new ethers.Contract(
-  FLOW_CONFIG.contractAddress,
-  FLOW_CONFIG.contractABI,
+  config.contractAddress,
+  config.contractABI,
   wallet
 );
 
@@ -27,5 +27,5 @@ export default {
   provider,
   wallet,
   contract,
-  FLOW_CONFIG
+  config,
 };
