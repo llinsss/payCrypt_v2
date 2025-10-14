@@ -136,11 +136,6 @@ export const createUserBalance = async (user_id, tag) => {
 
     LSK: async () => {
       const { contract, LISK_CONFIG } = lisk;
-      const existing_tag = await contract.getUserChainAddress(tag);
-      console.log(existing_tag)
-      // if (existing_tag) {
-      //   return existing_tag;
-      // }
       const tx = await contract.registerTag(tag, LISK_CONFIG.accountAddress);
       const receipt = await tx.wait();
       return extractTagAddress(receipt, contract);
@@ -148,11 +143,6 @@ export const createUserBalance = async (user_id, tag) => {
 
     BASE: async () => {
       const { contract, BASE_CONFIG } = base;
-      const existing_tag = await contract.getUserChainAddress(tag);
-      console.log(existing_tag)
-      // if (existing_tag) {
-      //   return existing_tag;
-      // }
       const tx = await contract.registerTag(tag, BASE_CONFIG.accountAddress);
       const receipt = await tx.wait();
       return extractTagAddress(receipt, contract);
@@ -160,11 +150,6 @@ export const createUserBalance = async (user_id, tag) => {
 
     FLOW: async () => {
       const { contract, FLOW_CONFIG } = flow;
-      const existing_tag = await contract.getUserChainAddress(tag);
-      console.log(existing_tag)
-      // if (existing_tag) {
-      //   return existing_tag;
-      // }
       const tx = await contract.registerTag(tag, FLOW_CONFIG.accountAddress);
       const receipt = await tx.wait();
       return extractTagAddress(receipt, contract);
@@ -172,11 +157,6 @@ export const createUserBalance = async (user_id, tag) => {
 
     U2U: async () => {
       const { contract, U2U_CONFIG } = u2u;
-      const existing_tag = await contract.getUserChainAddress(tag);
-      console.log(existing_tag)
-      // if (existing_tag) {
-      //   return existing_tag;
-      // }
       const tx = await contract.registerTag(tag, U2U_CONFIG.accountAddress);
       const receipt = await tx.wait();
       return extractTagAddress(receipt, contract);
