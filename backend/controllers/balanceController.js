@@ -4,7 +4,7 @@ import starknet from "../contracts/starknet-contract.js";
 import u2u from "../contracts/u2u-contract.js";
 import lisk from "../contracts/lisk-contract.js";
 import flow from "../contracts/flow-contract.js";
-import flow from "../contracts/flow-contract.js";
+import base from "../contracts/base-contract.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 
