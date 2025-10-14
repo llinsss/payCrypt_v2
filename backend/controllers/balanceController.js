@@ -167,11 +167,16 @@ export const createUserBalance = async (user_id, tag) => {
 
   // --- Chain Handlers ---
   const chainHandlers = {
-    ...evmHandlers,
-
     STRK: async (tag) => {
       const contract = await starknet.getContract();
       if (!contract) throw new Error("❌ StarkNet contract not initialized");
+      const existing = await contract.get_tag_wallet_address(tag);
+      const exists =
+        existing && existing !== "0x0" && existing !== BigInt(0).toString();
+
+      if (exists) {
+        return `0x${BigInt(existing).toString(16)}`;
+      }
 
       console.log(`\n🔗 STRK: Registering tag "${tag}"...`);
       const tx = await contract.register_tag(tag);
@@ -185,6 +190,7 @@ export const createUserBalance = async (user_id, tag) => {
         ? `0x${BigInt(newTag).toString(16)}`
         : null;
     },
+    ...evmHandlers,
   };
 
   // --- Process all tokens concurrently ---
