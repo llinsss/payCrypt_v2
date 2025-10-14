@@ -1,12 +1,7 @@
 import { starknetQueue } from "../queues/starknet.js";
 import redis from "../config/redis.js";
-import {
-  getContract,
-  utils,
-  provider,
-} from "../contracts/starknet-contract.js";
-
-const contract = getContract();
+import starknet from "../contracts/starknet-contract.js";
+const contract = await starknet.getContract();
 
 const CONTRACT_ADDRESS = contract.address;
 const REDIS_KEY = "starknet:lastProcessedBlock";
@@ -18,7 +13,7 @@ const CHUNK_SIZE = 100; // events batch size
  */
 const getBlockNumber = async () => {
   try {
-    return await provider.getBlockNumber();
+    return await starknet.provider.getBlockNumber();
   } catch (err) {
     console.error("⚠️ Failed to get block number:", err.message);
     return null;
@@ -30,7 +25,7 @@ const getBlockNumber = async () => {
  */
 const getEventsInRange = async (from, to) => {
   try {
-    const res = await provider.getEvents({
+    const res = await starknet.provider.getEvents({
       from_block: { block_number: from },
       to_block: { block_number: to },
       address: CONTRACT_ADDRESS,
@@ -54,7 +49,7 @@ const decodeEvent = (rawEvent) => {
   // Determine event type by data length or your ABI pattern
   // DepositReceived: sender, recipient, amount.low, amount.high, token
   if (data.length === 5) {
-    const amount = utils.uint256ToBigInt({
+    const amount = starknet.utils.uint256ToBigInt({
       low: data[2],
       high: data[3],
     });
@@ -70,7 +65,7 @@ const decodeEvent = (rawEvent) => {
 
   // WithdrawalCompleted: sender, amount.low, amount.high, token
   if (data.length === 4) {
-    const amount = utils.uint256ToBigInt({
+    const amount = starknet.utils.uint256ToBigInt({
       low: data[1],
       high: data[2],
     });
