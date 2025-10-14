@@ -237,20 +237,18 @@ export const send_to_wallet = async (req, res) => {
     const { id } = req.user;
     const { receiver_address, amount, balance_id } = req.body;
 
-    if (!receiver_address || !amount || !balance_id) {
+    if (!amount || !balance_id) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const [user, recipient, balance] = await Promise.all([
+    const [user, balance] = await Promise.all([
       User.findById(id),
       Balance.findByAddress(receiver_address),
       Balance.findById(balance_id),
     ]);
 
     if (!user) return res.status(400).json({ error: "User not found" });
-    if (!recipient)
-      return res.status(400).json({ error: "Recipient not found" });
-    if (recipient.id === user.id)
+    if (recipient && recipient.id === user.id)
       return res.status(400).json({ error: "Cannot send to self" });
     if (!balance) return res.status(400).json({ error: "Balance not found" });
     if (balance.user_id !== id)
@@ -346,26 +344,28 @@ export const send_to_wallet = async (req, res) => {
         title: "Fund transfer",
         body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_tag}`,
       }),
-      Transaction.create({
-        user_id: recipient.id,
-        status: "completed",
-        token_id: balance.token_id,
-        chain_id: token.chain_id,
-        reference: secureRandomString(16),
-        type: "credit",
-        tx_hash: txHash,
-        usd_value: usdValue,
-        amount: transferAmount,
-        timestamp,
-        from_address: user.tag,
-        to_address: receiver_tag,
-        description: "Fund received",
-      }),
-      Notification.create({
-        user_id: recipient.id,
-        title: "Fund received",
-        body: `You received ${transferAmount} ${token.symbol} from ${user.tag}`,
-      }),
+      ...(recipient &&
+        Transaction.create({
+          user_id: recipient.id,
+          status: "completed",
+          token_id: balance.token_id,
+          chain_id: token.chain_id,
+          reference: secureRandomString(16),
+          type: "credit",
+          tx_hash: txHash,
+          usd_value: usdValue,
+          amount: transferAmount,
+          timestamp,
+          from_address: user.tag,
+          to_address: receiver_tag,
+          description: "Fund received",
+        })),
+      ...(recipient &&
+        Notification.create({
+          user_id: recipient.id,
+          title: "Fund received",
+          body: `You received ${transferAmount} ${token.symbol} from ${user.tag}`,
+        })),
     ]);
 
     return res.json({ data: "success", txHash });
