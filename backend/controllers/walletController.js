@@ -13,6 +13,7 @@ import secureRandomString from "../utils/random-string.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import dotenv from "dotenv";
+import { ethers } from "ethers";
 dotenv.config();
 
 export const getWalletByUserId = async (req, res) => {
