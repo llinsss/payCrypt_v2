@@ -1,3 +1,5 @@
+import { symbol } from "joi";
+
 export const seed = async (knex) => {
   // Deletes ALL existing entries
   await knex("chains").del();
@@ -33,6 +35,14 @@ export const seed = async (knex) => {
       native_currency: { name: "Flow Token", symbol: "FLOW" },
       rpc_url: "https://rest-mainnet.onflow.org",
       block_explorer: "https://flowscan.org",
+    },
+    {
+      id: 5,
+      symbol: "U2U",
+      name: "U2U",
+      native_currency: { name: "U2U Network", symbol: "U2U" },
+      rpc_url: "https://rpc-mainnet.u2u.xyz",
+      block_explorer: "https://u2uscan.xyz",
     },
   ]);
 };

@@ -41,5 +41,16 @@ export const seed = async (knex) => {
       chain: "Flow",
       price: 0.45,
     },
+    ,
+    {
+      id: 5,
+      address: "0x558e7139800f8bc119f68d23a6126fffd43a66a6",
+      symbol: "U2U",
+      name: "U2U Network",
+      decimals: 18,
+      logo_url: "u2u.png",
+      chain: "U2U Solaris Mainnet",
+      price: 0.0213,
+    },
   ]);
 };
