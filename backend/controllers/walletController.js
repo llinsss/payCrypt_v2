@@ -273,7 +273,6 @@ export const send_to_wallet = async (req, res) => {
       const contract = await starknet.getContract();
       const senderTag = shortString.encodeShortString(user.tag);
       const receiverAddress = receiver_address;
-      //  shortString.encodeShortString(receiver_address);
       const transferValue = to18Decimals(transferAmount.toString());
 
       const tx = await contract.withdraw_from_wallet(
