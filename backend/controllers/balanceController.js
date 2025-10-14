@@ -181,21 +181,19 @@ export const createUserBalance = async (user_id, tag) => {
         throw new Error(`Invalid chain config: ${config?.nodeUrl}`);
       }
 
-      return await withRetry(async () => {
-        console.log(`\n🔗 ${config.nodeUrl}: Registering tag "${tag}"...`);
-        const tx = await contract.registerTag(tag, config.accountAddress);
-        console.log(`📤 ${config.nodeUrl} Tx Hash: ${tx.hash}`);
+      console.log(`\n🔗 ${config.nodeUrl}: Registering tag "${tag}"...`);
+      const tx = await contract.registerTag(tag, config.accountAddress);
+      console.log(`📤 ${config.nodeUrl} Tx Hash: ${tx.hash}`);
 
-        const receipt = await tx.wait();
-        console.log(
-          `✅ ${config.nodeUrl} Confirmed in Block: ${receipt.blockNumber}`
-        );
+      const receipt = await tx.wait();
+      console.log(
+        `✅ ${config.nodeUrl} Confirmed in Block: ${receipt.blockNumber}`
+      );
 
-        const tagAddress = extractTagAddress(receipt, contract);
-        if (!tagAddress)
-          console.warn(`⚠️ No TagRegistered event found on ${config.nodeUrl}`);
-        return tagAddress;
-      });
+      const tagAddress = extractTagAddress(receipt, contract);
+      if (!tagAddress)
+        console.warn(`⚠️ No TagRegistered event found on ${config.nodeUrl}`);
+      return tagAddress;
     };
 
     /**
@@ -213,24 +211,22 @@ export const createUserBalance = async (user_id, tag) => {
      * Chain handlers (EVM + StarkNet)
      */
     const chainHandlers = {
-      STRK: async (tag) =>
-        await withRetry(async () => {
-          const contract = await starknet.getContract();
-          if (!contract)
-            throw new Error("❌ StarkNet contract not initialized");
+      STRK: async (tag) => {
+        const contract = await starknet.getContract();
+        if (!contract) throw new Error("❌ StarkNet contract not initialized");
 
-          console.log(`\n🔗 STRK: Registering tag "${tag}"...`);
-          const tx = await contract.register_tag(tag);
-          console.log("📤 STRK Tx sent:", tx.transaction_hash);
+        console.log(`\n🔗 STRK: Registering tag "${tag}"...`);
+        const tx = await contract.register_tag(tag);
+        console.log("📤 STRK Tx sent:", tx.transaction_hash);
 
-          await starknet.provider.waitForTransaction(tx.transaction_hash);
-          console.log("✅ STRK Tx confirmed");
+        await starknet.provider.waitForTransaction(tx.transaction_hash);
+        console.log("✅ STRK Tx confirmed");
 
-          const newTag = await contract.get_tag_wallet_address(tag);
-          return newTag && newTag !== "0x0"
-            ? `0x${BigInt(newTag).toString(16)}`
-            : null;
-        }),
+        const newTag = await contract.get_tag_wallet_address(tag);
+        return newTag && newTag !== "0x0"
+          ? `0x${BigInt(newTag).toString(16)}`
+          : null;
+      },
       ...evmHandlers,
     };
 
@@ -256,7 +252,11 @@ export const createUserBalance = async (user_id, tag) => {
         try {
           const address = await handler(tag);
           if (!address) throw new Error("No address generated");
-          return await Balance.create({ user_id: user.id, token_id: token.id, address });
+          return await Balance.create({
+            user_id: user.id,
+            token_id: token.id,
+            address,
+          });
         } catch (err) {
           console.error(`❌ ${token.symbol} registration failed:`, err.message);
           return null;
