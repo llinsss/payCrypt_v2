@@ -117,89 +117,65 @@ export const deleteBalance = async (req, res) => {
 export const createUserBalance = async (user_id, tag) => {
   const tokens = await Token.getAll();
 
-  // Chain-specific registration handlers
+  // --- Helper: Extract TagRegistered event address ---
+  const extractTagAddress = (receipt, contract) => {
+    if (!receipt?.logs?.length) return null;
+
+    for (const log of receipt.logs) {
+      try {
+        const event = contract.interface.parseLog(log);
+        if (event?.name === "TagRegistered") return event.args?.[1] ?? null;
+      } catch {
+        continue; // ignore irrelevant logs
+      }
+    }
+    return null;
+  };
+
+  // --- Reusable chain handler factory ---
+  const makeEvmHandler = (chain) => async () => {
+    const { contract, CONFIG } = chain;
+    const tx = await contract.registerTag(tag, CONFIG.accountAddress);
+    const receipt = await tx.wait();
+    return extractTagAddress(receipt, contract);
+  };
+
+  // --- Chain Handlers Map ---
   const chainHandlers = {
     STRK: async () => {
-      const contract = await starknet.getContract();
+      const { contract, provider } = await starknet.getContract();
       const tx = await contract.register_tag(tag);
-      await starknet.provider.waitForTransaction(tx.transaction_hash);
-      const new_tag = await contract.get_tag_wallet_address(tag);
-      if (new_tag) {
-        return `0x${BigInt(new_tag).toString(16)}`;
-      }
-      return null;
+      await provider.waitForTransaction(tx.transaction_hash);
+      const newTag = await contract.get_tag_wallet_address(tag);
+      return newTag ? `0x${BigInt(newTag).toString(16)}` : null;
     },
-
-    LSK: async () => {
-      const { contract, LISK_CONFIG } = lisk;
-      const tx = await contract.registerTag(tag, LISK_CONFIG.accountAddress);
-      const receipt = await tx.wait();
-      return extractTagAddress(receipt, contract);
-    },
-
-    BASE: async () => {
-      const { contract, BASE_CONFIG } = base;
-      const tx = await contract.registerTag(tag, BASE_CONFIG.accountAddress);
-      const receipt = await tx.wait();
-      return extractTagAddress(receipt, contract);
-    },
-
-    FLOW: async () => {
-      const { contract, FLOW_CONFIG } = flow;
-      const tx = await contract.registerTag(tag, FLOW_CONFIG.accountAddress);
-      const receipt = await tx.wait();
-      return extractTagAddress(receipt, contract);
-    },
-
-    U2U: async () => {
-      const { contract, U2U_CONFIG } = u2u;
-      const tx = await contract.registerTag(tag, U2U_CONFIG.accountAddress);
-      const receipt = await tx.wait();
-      return extractTagAddress(receipt, contract);
-    },
+    LSK: makeEvmHandler(lisk),
+    BASE: makeEvmHandler(base),
+    FLOW: makeEvmHandler(flow),
+    U2U: makeEvmHandler(u2u),
   };
 
-  // Helper to extract "TagRegistered" event
-  const extractTagAddress = (receipt, contract) => {
-    const event = receipt.logs
-      .map((log) => {
-        try {
-          return contract.interface.parseLog(log);
-        } catch {
-          return null;
-        }
-      })
-      .find((e) => e && e.name === "TagRegistered");
-
-    return event?.args?.[1] ?? null;
-  };
-
-  // Process all tokens in parallel
-  const balances = await Promise.allSettled(
+  // --- Process all tokens concurrently ---
+  const results = await Promise.allSettled(
     tokens.map(async (token) => {
       const handler = chainHandlers[token.symbol];
       if (!handler) {
-        console.warn(`⚠️ No handler found for token: ${token.symbol}`);
+        console.warn(`⚠️ Skipping unsupported token: ${token.symbol}`);
         return null;
       }
 
       try {
         const address = await handler();
         if (!address) throw new Error("No address generated");
-        return await Balance.create({
-          user_id,
-          token_id: token.id,
-          address,
-        });
+        return Balance.create({ user_id, token_id: token.id, address });
       } catch (err) {
-        console.error(`❌ Failed for ${token.symbol}:`, err.message);
+        console.error(`❌ ${token.symbol} registration failed:`, err.message);
         return null;
       }
     })
   );
-
-  // Filter successful balances
-  return balances
+  return results
     .filter((r) => r.status === "fulfilled" && r.value)
     .map((r) => r.value);
 };
+
