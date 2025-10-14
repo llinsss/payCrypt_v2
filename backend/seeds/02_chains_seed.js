@@ -1,5 +1,3 @@
-import { symbol } from "joi";
-
 export const seed = async (knex) => {
   // Deletes ALL existing entries
   await knex("chains").del();
