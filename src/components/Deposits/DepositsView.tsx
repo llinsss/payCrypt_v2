@@ -97,12 +97,13 @@ const DepositsView: React.FC = () => {
   }, [userTag, copyToClipboard]);
 
   // QR code data
-  const depositData = JSON.stringify({
-    tag: user?.tag,
-    address: selectedToken?.address,
-    token: selectedToken?.token_name,
-    version: "1.0",
-  });
+  // const depositData = JSON.stringify({
+  //   tag: user?.tag,
+  //   address: selectedToken?.address,
+  //   token: selectedToken?.token_name,
+  //   version: "1.0",
+  // });
+  const depositData = selectedToken?.address;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -112,16 +113,14 @@ const DepositsView: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab("tag")}
-            className={`flex-1 flex items-center justify-center space-x-2 p-2 rounded-xl font-semibold transition-all duration-300 ${
-              activeTab === "tag"
+            className={`flex-1 flex items-center justify-center space-x-2 p-2 rounded-xl font-semibold transition-all duration-300 ${activeTab === "tag"
                 ? "bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-lg shadow-purple-500/25"
                 : "text-gray-500 hover:text-gray-700 hover:bg-white/80"
-            }`}
+              }`}
           >
             <div
-              className={`p-2 rounded-lg ${
-                activeTab === "tag" ? "bg-white/20" : "bg-gray-100"
-              }`}
+              className={`p-2 rounded-lg ${activeTab === "tag" ? "bg-white/20" : "bg-gray-100"
+                }`}
             >
               <AtSign size={16} />
             </div>
@@ -130,16 +129,14 @@ const DepositsView: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab("qr")}
-            className={`flex-1 flex items-center justify-center space-x-2 p-2 rounded-xl font-semibold transition-all duration-300 ${
-              activeTab === "qr"
+            className={`flex-1 flex items-center justify-center space-x-2 p-2 rounded-xl font-semibold transition-all duration-300 ${activeTab === "qr"
                 ? "bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-lg shadow-purple-500/25"
                 : "text-gray-500 hover:text-gray-700 hover:bg-white/80"
-            }`}
+              }`}
           >
             <div
-              className={`p-2 rounded-lg ${
-                activeTab === "qr" ? "bg-white/20" : "bg-gray-100"
-              }`}
+              className={`p-2 rounded-lg ${activeTab === "qr" ? "bg-white/20" : "bg-gray-100"
+                }`}
             >
               <QrCode size={16} />
             </div>
@@ -305,137 +302,137 @@ const QRDepositView: React.FC<{
   downloadQR,
   shareQR,
 }) => (
-  <div className="space-y-6">
-    {/* Enhanced Token Selection */}
-    <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-      <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-        <span>Select Token</span>
-        <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
-          {balances.filter((b) => b.address).length} available
-        </span>
-      </h4>
+    <div className="space-y-6">
+      {/* Enhanced Token Selection */}
+      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+        <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+          <span>Select Token</span>
+          <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+            {balances.filter((b) => b.address).length} available
+          </span>
+        </h4>
 
-      {loading ? (
-        <div className="text-center p-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto" />
-          <div className="text-gray-500 mt-2">Loading tokens...</div>
+        {loading ? (
+          <div className="text-center p-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto" />
+            <div className="text-gray-500 mt-2">Loading tokens...</div>
+          </div>
+        ) : balances.length === 0 ? (
+          <div className="text-center p-8 text-gray-500">No tokens available</div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {balances.map((balance) => (
+              <TokenCard
+                key={balance.id}
+                balance={balance}
+                isSelected={selectedToken?.id === balance.id}
+                onClick={() => setSelectedToken(balance)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Enhanced QR Code Section */}
+      {selectedToken?.address && (
+        <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl p-8 border border-gray-200/50 shadow-lg">
+          <div className="flex flex-col lg:flex-row gap-8 items-center">
+            {/* QR Code with Enhanced Design */}
+            <div className="flex-1">
+              <div className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-lg">
+                <div className="text-center mb-4">
+                  <div className="font-semibold text-gray-900">
+                    {selectedToken.token_name}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    Scan to send {selectedToken.token_symbol}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center w-full bg-white">
+                  <div className="max-w-60 p-4 rounded-xl border border-gray-200">
+                    <QRCode
+                      id="qr-code"
+                      value={depositData}
+                      size={200}
+                      style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Enhanced Deposit Information */}
+            <div className="flex-1 space-y-6">
+              <div className="bg-gradient-to-r from-purple-500 to-blue-500 rounded-2xl p-6 text-white shadow-lg">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div>
+                    <div className="text-sm text-purple-100">
+                      Send {selectedToken.token_symbol} to
+                    </div>
+                    <div className="text-2xl font-bold">{userTag}</div>
+                  </div>
+                </div>
+
+                {selectedToken.address && (
+                  <div className="bg-white/10 rounded-xl p-3">
+                    <div className="text-xs text-purple-100 mb-1">
+                      Wallet Address
+                    </div>
+                    <div className="text-sm font-mono break-all bg-white/5 rounded px-2 py-1">
+                      {selectedToken.address}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <ActionButton
+                  onClick={() => copyToClipboard(userTag, "tag")}
+                  active={copiedField === "tag"}
+                  icon={
+                    copiedField === "tag" ? (
+                      <CheckCircle className="w-4 h-4" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )
+                  }
+                  label={copiedField === "tag" ? "Copied!" : "Copy Tag"}
+                  fullWidth
+                />
+                <ActionButton
+                  onClick={downloadQR}
+                  icon={<Download className="w-4 h-4" />}
+                  label="Save QR"
+                  fullWidth
+                />
+                <ActionButton
+                  onClick={shareQR}
+                  icon={<Share2 className="w-4 h-4" />}
+                  label="Share"
+                  fullWidth
+                  primary
+                />
+              </div>
+            </div>
+          </div>
         </div>
-      ) : balances.length === 0 ? (
-        <div className="text-center p-8 text-gray-500">No tokens available</div>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {balances.map((balance) => (
-            <TokenCard
-              key={balance.id}
-              balance={balance}
-              isSelected={selectedToken?.id === balance.id}
-              onClick={() => setSelectedToken(balance)}
-            />
-          ))}
+      )}
+
+      {/* No Address Warning */}
+      {selectedToken && !selectedToken.address && (
+        <div className="bg-gradient-to-r from-rose-50 to-red-50 rounded-2xl p-6 border border-rose-200 text-center">
+          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+          <h4 className="text-lg font-semibold text-rose-800 mb-2">
+            Address Not Configured
+          </h4>
+          <p className="text-rose-700">
+            {selectedToken.token_name} wallet address is not set up yet.
+          </p>
         </div>
       )}
     </div>
-
-    {/* Enhanced QR Code Section */}
-    {selectedToken?.address && (
-      <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl p-8 border border-gray-200/50 shadow-lg">
-        <div className="flex flex-col lg:flex-row gap-8 items-center">
-          {/* QR Code with Enhanced Design */}
-          <div className="flex-1">
-            <div className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-lg">
-              <div className="text-center mb-4">
-                <div className="font-semibold text-gray-900">
-                  {selectedToken.token_name}
-                </div>
-                <div className="text-sm text-gray-500">
-                  Scan to send {selectedToken.token_symbol}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-center w-full bg-white">
-                <div className="max-w-60 p-4 rounded-xl border border-gray-200">
-                  <QRCode
-                    id="qr-code"
-                    value={depositData}
-                    size={200}
-                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Enhanced Deposit Information */}
-          <div className="flex-1 space-y-6">
-            <div className="bg-gradient-to-r from-purple-500 to-blue-500 rounded-2xl p-6 text-white shadow-lg">
-              <div className="flex items-center space-x-3 mb-4">
-                <div>
-                  <div className="text-sm text-purple-100">
-                    Send {selectedToken.token_symbol} to
-                  </div>
-                  <div className="text-2xl font-bold">{userTag}</div>
-                </div>
-              </div>
-
-              {selectedToken.address && (
-                <div className="bg-white/10 rounded-xl p-3">
-                  <div className="text-xs text-purple-100 mb-1">
-                    Wallet Address
-                  </div>
-                  <div className="text-sm font-mono break-all bg-white/5 rounded px-2 py-1">
-                    {selectedToken.address}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <ActionButton
-                onClick={() => copyToClipboard(userTag, "tag")}
-                active={copiedField === "tag"}
-                icon={
-                  copiedField === "tag" ? (
-                    <CheckCircle className="w-4 h-4" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )
-                }
-                label={copiedField === "tag" ? "Copied!" : "Copy Tag"}
-                fullWidth
-              />
-              <ActionButton
-                onClick={downloadQR}
-                icon={<Download className="w-4 h-4" />}
-                label="Save QR"
-                fullWidth
-              />
-              <ActionButton
-                onClick={shareQR}
-                icon={<Share2 className="w-4 h-4" />}
-                label="Share"
-                fullWidth
-                primary
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* No Address Warning */}
-    {selectedToken && !selectedToken.address && (
-      <div className="bg-gradient-to-r from-rose-50 to-red-50 rounded-2xl p-6 border border-rose-200 text-center">
-        <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
-        <h4 className="text-lg font-semibold text-rose-800 mb-2">
-          Address Not Configured
-        </h4>
-        <p className="text-rose-700">
-          {selectedToken.token_name} wallet address is not set up yet.
-        </p>
-      </div>
-    )}
-  </div>
-);
+  );
 
 // Enhanced Token Card Component
 const TokenCard: React.FC<{
@@ -446,11 +443,10 @@ const TokenCard: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className={`p-4 rounded-xl border-2 transition-all duration-300 text-left group ${
-      isSelected
+    className={`p-4 rounded-xl border-2 transition-all duration-300 text-left group ${isSelected
         ? "border-blue-500 bg-blue-50 shadow-lg shadow-blue-500/20 scale-105"
         : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-md"
-    } ${!balance.address ? "opacity-50" : ""}`}
+      } ${!balance.address ? "opacity-50" : ""}`}
   >
     <div className="flex items-center space-x-3">
       <div className="flex-1">
@@ -500,24 +496,22 @@ const ActionButton: React.FC<{
   primary = false,
   variant = "default",
 }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`flex items-center justify-center space-x-2 py-3 px-4 rounded-xl font-medium transition-all duration-300 ${
-      fullWidth ? "w-full" : ""
-    } ${
-      variant === "light"
-        ? "bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm"
-        : primary
-        ? "bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-        : active
-        ? "bg-gray-200 text-gray-800"
-        : "bg-white text-gray-700 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 shadow-sm hover:shadow-md"
-    }`}
-  >
-    {icon}
-    <span className="text-sm font-medium">{label}</span>
-  </button>
-);
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-center space-x-2 py-3 px-4 rounded-xl font-medium transition-all duration-300 ${fullWidth ? "w-full" : ""
+        } ${variant === "light"
+          ? "bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm"
+          : primary
+            ? "bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+            : active
+              ? "bg-gray-200 text-gray-800"
+              : "bg-white text-gray-700 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 shadow-sm hover:shadow-md"
+        }`}
+    >
+      {icon}
+      <span className="text-sm font-medium">{label}</span>
+    </button>
+  );
 
 export default DepositsView;
