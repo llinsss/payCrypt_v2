@@ -241,7 +241,7 @@ export const send_to_wallet = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const [user, balance] = await Promise.all([
+    const [user, recipient, balance] = await Promise.all([
       User.findById(id),
       Balance.findByAddress(receiver_address),
       Balance.findById(balance_id),
