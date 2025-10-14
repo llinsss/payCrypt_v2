@@ -271,13 +271,14 @@ export const send_to_wallet = async (req, res) => {
     // ====== ⚡ Handle StarkNet ======
     if (token.symbol === "STRK") {
       const contract = await starknet.getContract();
+      const senderTag = shortString.encodeShortString(user.tag);
       const receiverAddress = receiver_address;
       //  shortString.encodeShortString(receiver_address);
       const transferValue = to18Decimals(transferAmount.toString());
 
       const tx = await contract.withdraw_from_wallet(
         String(process.env.STARKNET_TOKEN_ADDRESS),
-        user.tag,
+        senderTag,
         receiverAddress,
         transferValue
       );
