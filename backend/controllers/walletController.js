@@ -349,26 +349,6 @@ export const send_to_wallet = async (req, res) => {
     if (recipient) {
       await Promise.all([
         Transaction.create({
-          user_id: user.id,
-          status: "completed",
-          token_id: balance.token_id,
-          chain_id: token.id,
-          reference,
-          type: "debit",
-          tx_hash: txHash,
-          usd_value: usdValue,
-          amount: transferAmount,
-          timestamp,
-          from_address: user.tag,
-          to_address: receiver_address,
-          description: "Fund transfer",
-        }),
-        Notification.create({
-          user_id: user.id,
-          title: "Fund transfer",
-          body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_address}`,
-        }),
-        Transaction.create({
           user_id: recipient.id,
           status: "completed",
           token_id: balance.token_id,
