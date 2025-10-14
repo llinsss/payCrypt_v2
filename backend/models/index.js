@@ -7,7 +7,7 @@ import Chain from "./Chain.js";
 import Wallet from "./Wallet.js";
 import Kyc from "./Kyc.js";
 import BankAccount from "./BankAccount.js";
-export default {
+export {
   User,
   Balance,
   Token,
