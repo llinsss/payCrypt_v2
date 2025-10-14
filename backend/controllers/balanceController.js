@@ -1,10 +1,5 @@
-import Balance from "../models/Balance.js";
-import Token from "../models/Token.js";
-import starknet from "../contracts/starknet-contract.js";
-import u2u from "../contracts/u2u-contract.js";
-import lisk from "../contracts/lisk-contract.js";
-import flow from "../contracts/flow-contract.js";
-import base from "../contracts/base-contract.js";
+import { Balance, Token } from "../models/index.js";
+import { starknet, lisk, base, flow, u2u } from "../contracts/chains.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import db from "../config/database.js";
@@ -209,7 +204,11 @@ export const createUserBalance = async (user_id, tag) => {
       try {
         const address = await handler(tag);
         if (!address) throw new Error("No address generated");
-        return await Balance.create({ user_id: user.id, token_id: token.id, address });
+        return await Balance.create({
+          user_id: user.id,
+          token_id: token.id,
+          address,
+        });
       } catch (err) {
         console.error(`❌ ${token.symbol} registration failed:`, err.message);
         return null;

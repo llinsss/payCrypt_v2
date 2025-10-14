@@ -1,16 +1,14 @@
 import { shortString } from "starknet";
 import redis from "../config/redis.js";
-import starknet from "../contracts/starknet-contract.js";
-import base from "../contracts/base-contract.js";
-import lisk from "../contracts/lisk-contract.js";
-import u2u from "../contracts/u2u-contract.js";
-import flow from "../contracts/flow-contract.js";
+import { starknet, lisk, base, flow, u2u } from "../contracts/chains.js";
 import { sleep } from "../utils/sleep.js";
-import User from "../models/User.js";
-import Balance from "../models/Balance.js";
-import Token from "../models/Token.js";
-import Transaction from "../models/Transaction.js";
-import Notification from "../models/Notification.js";
+import {
+  User,
+  Balance,
+  Token,
+  Transaction,
+  Notification,
+} from "../models/index.js";
 import { from18Decimals, to18Decimals } from "../utils/amount.js";
 import secureRandomString from "../utils/random-string.js";
 

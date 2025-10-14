@@ -1,6 +1,6 @@
 import { starknetQueue } from "../queues/starknet.js";
 import redis from "../config/redis.js";
-import starknet from "../contracts/starknet-contract.js";
+import { starknet } from "../contracts/chains.js";
 const contract = await starknet.getContract();
 
 const CONTRACT_ADDRESS = contract.address;

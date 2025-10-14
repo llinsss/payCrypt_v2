@@ -1,15 +1,14 @@
-import Wallet from "../models/Wallet.js";
-import starknet from "../contracts/starknet-contract.js";
-import base from "../contracts/base-contract.js";
-import lisk from "../contracts/lisk-contract.js";
-import flow from "../contracts/flow-contract.js";
 import { shortString } from "starknet";
+import {
+  User,
+  Balance,
+  Token,
+  Transaction,
+  Notification,
+  Wallet,
+} from "../models/index.js";
+import { starknet, lisk, base, flow, u2u } from "../contracts/chains.js";
 import { from18Decimals, to18Decimals } from "../utils/amount.js";
-import Balance from "../models/Balance.js";
-import Token from "../models/Token.js";
-import User from "../models/User.js";
-import Transaction from "../models/Transaction.js";
-import Notification from "../models/Notification.js";
 import secureRandomString from "../utils/random-string.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
@@ -93,12 +92,10 @@ export const send_to_tag = async (req, res) => {
     const { id } = req.user;
     const { receiver_tag, amount, balance_id } = req.body;
 
-    // Fail fast: validate input
     if (!receiver_tag || !amount || !balance_id) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Parallel fetches (user, recipient, balance)
     const [user, recipient, balance] = await Promise.all([
       User.findById(id),
       User.findByTag(receiver_tag),
@@ -115,58 +112,90 @@ export const send_to_tag = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
 
     const transferAmount = Number(amount);
-    if (transferAmount > Number(balance.amount))
+    if (transferAmount > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
+    }
 
     const token = await Token.findById(balance.token_id);
     if (!token) return res.status(400).json({ error: "Token not found" });
 
-    if (token.symbol !== "STRK") {
-      return res.status(422).json({ error: "Channel inactive" });
-    }
-
-    // Blockchain interaction
-    const contract = await starknet.getContract();
-    const senderTag = shortString.encodeShortString(user.tag);
-    const receiverTag = shortString.encodeShortString(receiver_tag);
-    const transferValue = to18Decimals(transferAmount.toString());
-
-    const tx = await contract.deposit_to_tag(
-      receiverTag,
-      senderTag,
-      transferValue,
-      String(process.env.STARKNET_TOKEN_ADDRESS)
-    );
-
-    await starknet.provider.waitForTransaction(tx.transaction_hash);
-
-    if (!tx.transaction_hash) {
-      return res.status(422).json({ error: "Failed to transfer" });
-    }
-
-    // Prepare common metadata
     const timestamp = new Date();
     const usdPrice = token.price ?? 1;
     const usdValue = transferAmount * usdPrice;
     const reference = secureRandomString(16);
+    let txHash = null;
 
-    // Write debit/credit transactions + notifications in parallel
+    // ====== ⚡ Handle StarkNet ======
+    if (token.symbol === "STRK") {
+      const contract = await starknet.getContract();
+      const senderTag = shortString.encodeShortString(user.tag);
+      const receiverTag = shortString.encodeShortString(receiver_tag);
+      const transferValue = to18Decimals(transferAmount.toString());
+
+      const tx = await contract.deposit_to_tag(
+        receiverTag,
+        senderTag,
+        transferValue,
+        String(process.env.STARKNET_TOKEN_ADDRESS)
+      );
+
+      await starknet.provider.waitForTransaction(tx.transaction_hash);
+      txHash = tx.transaction_hash;
+
+      if (!txHash)
+        return res
+          .status(422)
+          .json({ error: "Failed to transfer on StarkNet" });
+    }
+
+    // ====== ⚡ Handle EVM Chains ======
+    else {
+      let contract = null;
+      if (token.symbol === "U2U") {
+        const { contract: _contract } = u2u;
+        contract = _contract;
+      }
+      if (token.symbol === "LSK") {
+        const { contract: _contract } = lisk;
+        contract = _contract;
+      }
+      if (token.symbol === "BASE") {
+        const { contract: _contract } = base;
+        contract = _contract;
+      }
+      if (token.symbol === "FLOW") {
+        const { contract: _contract } = flow;
+        contract = _contract;
+      }
+
+      const tx = await contract.depositEthFromTagToTag(
+        user.tag,
+        receiver_tag,
+        ethers.parseUnits(transferAmount.toString(), 18)
+      );
+      const receipt = await tx.wait();
+      txHash = receipt.hash;
+
+      if (!txHash)
+        return res.status(422).json({ error: "Failed to transfer on EVM" });
+    }
+
+    // ====== ⛓ Common database updates ======
     await Promise.all([
       Transaction.create({
         user_id: user.id,
         status: "completed",
         token_id: balance.token_id,
-        chain_id: null,
+        chain_id: token.id,
         reference,
         type: "debit",
-        tx_hash: tx.transaction_hash,
+        tx_hash: txHash,
         usd_value: usdValue,
         amount: transferAmount,
         timestamp,
         from_address: user.tag,
         to_address: receiver_tag,
         description: "Fund transfer",
-        extra: null,
       }),
       Notification.create({
         user_id: user.id,
@@ -177,17 +206,16 @@ export const send_to_tag = async (req, res) => {
         user_id: recipient.id,
         status: "completed",
         token_id: balance.token_id,
-        chain_id: null,
+        chain_id: token.chain_id,
         reference: secureRandomString(16),
         type: "credit",
-        tx_hash: tx.transaction_hash,
+        tx_hash: txHash,
         usd_value: usdValue,
         amount: transferAmount,
         timestamp,
         from_address: user.tag,
         to_address: receiver_tag,
         description: "Fund received",
-        extra: null,
       }),
       Notification.create({
         user_id: recipient.id,
@@ -196,8 +224,9 @@ export const send_to_tag = async (req, res) => {
       }),
     ]);
 
-    return res.json({ data: "success", tx });
+    return res.json({ data: "success", txHash });
   } catch (error) {
+    console.error("Transfer Error:", error);
     return res.status(500).json({ error: error.message });
   }
 };
