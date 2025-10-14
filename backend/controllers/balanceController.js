@@ -157,7 +157,7 @@ export const createUserBalance = async (user_id, tag) => {
   };
 
   // --- Define supported EVM chains ---
-  const evmChains = { BASE: base, LISK: lisk, FLOW: flow, U2U: u2u };
+  const evmChains = { BASE: base, LSK: lisk, FLOW: flow, U2U: u2u };
   const evmHandlers = Object.fromEntries(
     Object.entries(evmChains).map(([symbol, chain]) => [
       symbol,
