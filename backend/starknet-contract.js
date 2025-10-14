@@ -1,4 +1,11 @@
-import { Account, Contract, RpcProvider, stark, uint256 } from "starknet";
+import {
+  Account,
+  Contract,
+  RpcProvider,
+  stark,
+  uint256,
+  validateAndParseAddress,
+} from "starknet";
 import { mainABI } from "./abis/StarknetContractABI.js";
 
 const STARKNET_CONFIG = {
@@ -9,6 +16,11 @@ const STARKNET_CONFIG = {
   privateKey: process.env.STARKNET_PRIVATE_KEY,
   contractABI: mainABI,
 };
+
+// Validate minimal config
+if (!STARKNET_CONFIG.nodeUrl) {
+  throw new Error("❌ STARKNET_RPC_URL must be set in environment variables");
+}
 
 // Provider
 const provider = new RpcProvider({ nodeUrl: STARKNET_CONFIG.nodeUrl });
@@ -41,12 +53,14 @@ export const getContract = () => {
       account ?? provider
     );
 
-    console.log("✅ StarkNet contract initialized");
-    console.log("📝 Address:", STARKNET_CONFIG.contractAddress);
-    console.log("🌐 Network:", STARKNET_CONFIG.network);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("✅ StarkNet contract initialized");
+      console.log("📝 Address:", STARKNET_CONFIG.contractAddress);
+      console.log("🌐 Network:", STARKNET_CONFIG.network);
+    }
   }
 
-  return contract;
+  return { contract, provider, account };
 };
 
 // Utility functions
@@ -54,13 +68,20 @@ export const utils = {
   feltToString: (felt) => stark.feltToStr(felt),
   stringToFelt: (str) => stark.strToFelt(str),
 
-  uint256ToBigInt: ({ low, high }) => BigInt(low) + (BigInt(high) << 128n),
+  uint256ToBigInt: ({ low, high }) => {
+    try {
+      return BigInt(low) + (BigInt(high) << 128n);
+    } catch {
+      return 0n;
+    }
+  },
 
   bigIntToUint256: (value) => uint256.bnToUint256(BigInt(value)),
 
   isValidStarkNetAddress: (address) => {
     try {
-      return !!stark.validateAndParseAddress(address);
+      validateAndParseAddress(address);
+      return true;
     } catch {
       return false;
     }

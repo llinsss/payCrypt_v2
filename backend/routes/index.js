@@ -9,6 +9,8 @@ import chainRoutes from "./chains.js";
 import walletRoutes from "./wallets.js";
 import bankAccountRoutes from "./bank-accounts.js";
 import notificationRoutes from "./notifications.js";
+import starknetRoutes from "./starknet.js";
+
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -21,5 +23,7 @@ router.use("/chains", chainRoutes);
 router.use("/wallets", walletRoutes);
 router.use("/bank-accounts", bankAccountRoutes);
 router.use("/notifications", notificationRoutes);
+
+router.use("/starknet", starknetRoutes);
 
 export default router;
