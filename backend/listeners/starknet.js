@@ -22,6 +22,8 @@ export const startStarknetListener = async () => {
           from_block: { block_number: lastBlock },
           to_block: { block_number: currentBlock },
           address: contract.address,
+          keys: [],
+          chunk_size: 100,
         });
 
         for (const e of events.events) {
