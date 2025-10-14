@@ -41,7 +41,6 @@ export const seed = async (knex) => {
       chain: "Flow",
       price: 0.45,
     },
-    ,
     {
       id: 5,
       address: "0x558e7139800f8bc119f68d23a6126fffd43a66a6",
