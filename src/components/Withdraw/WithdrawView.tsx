@@ -22,9 +22,7 @@ import toast from "react-hot-toast";
 type WithdrawType = "wallet" | "fiat" | "tag";
 interface DepositResponse {
   data: "success";
-  tx: {
-    transaction_hash: string;
-  };
+  txHash: string;
 }
 
 const WithdrawView: React.FC = () => {
@@ -83,8 +81,8 @@ const WithdrawView: React.FC = () => {
           }
         );
         setIsProcessing(false);
-        if (response.data === "success" && response.tx) {
-          const txHash = response.tx.transaction_hash;
+        if (response.data === "success" && response.txHash) {
+          const txHash = response.txHash;
           toast.success(`Deposit successful!\nTransaction Hash: ${txHash}`);
           setAmount("");
           setRecipientAddress("");
