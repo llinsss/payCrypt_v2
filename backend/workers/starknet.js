@@ -39,18 +39,12 @@ export const starknetWorker = new Worker(
 
       // Update balance table
       await db("balances")
-        .insert({
-          user_id: user.id,
-          token_id: _token.id,
-          amount: crypto_value,
-          usd_value,
-          address: recipient,
-          updated_at: db.fn.now(),
+        .where({
+          id: balance.id,
         })
-        .onConflict(["user_id", "token_id"])
-        .merge({
-          amount: db.raw("amount + ?", [amountDecimal]),
-          usd_value: db.raw("usd_value + ?", [usd_value]),
+        .update({
+          amount: balance.amount + crypto_value,
+          usd_value: balance.usd_value + usd_value,
           updated_at: db.fn.now(),
         });
 
