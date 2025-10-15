@@ -124,7 +124,7 @@ U2U Network Integration Documentation
 To run the demo. go to https://taggedpay.xyz/ 
 login with: 
 email: llinsomouduu@gmail.com
-ps: Tanna!7!
+PW: Tanna!7!
 then test run the app
 Overview
 The U2U Network is integrated into the project through smart contracts, on-chain account creation, and token operations. The project leverages U2U’s EVM-compatible blockchain to provide decentralized, tag-based smart wallets and seamless asset transfers.
