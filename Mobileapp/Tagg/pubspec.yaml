@@ -1,0 +1,47 @@
+name: Tagg
+description: A new Flutter project.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.3 <4.0.0'
+
+dependencies:
+  dotted_line: ^3.2.3
+  file_picker: ^10.3.3
+  flutter:
+    sdk: flutter
+  flutter_svg: ^2.2.1
+  google_fonts: ^6.3.1
+  http: ^1.5.0
+  intl: ^0.20.2
+  qr_flutter: ^4.1.0
+  shared_preferences: ^2.5.3
+  stacked: ^3.4.0
+  stacked_services: ^1.1.0
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  build_runner: ^2.4.5
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+  mockito: ^5.4.1
+  stacked_generator: ^1.3.3
+  golden_toolkit: ^0.15.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - lib/assets/svgs/icons/
+    - lib/assets/svgs/images/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "lib/assets/svgs/images/logo.png"
+  adaptive_icon_background: "#090715"
+  adaptive_icon_foreground: "lib/assets/svgs/images/logo.png"
+
