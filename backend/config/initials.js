@@ -10,13 +10,13 @@ export const updateTokenPrices = async () => {
   try {
     console.log("⏳ Updating token prices...");
 
-    const tokens = await db("tokens").select("id", "symbol");
+    const tokens = await db("tokens").select("id", "token");
 
     // Create tasks with throttling
     const tasks = tokens.map((token) =>
       limit(async () => {
         try {
-          const data = await freecryptoapi.rate(token.symbol);
+          const data = await freecryptoapi.rate(token.token);
           const price = data?.last ? Number.parseFloat(data.last) : null;
 
           if (price && !Number.isNaN(price)) {
