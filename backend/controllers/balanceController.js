@@ -1,7 +1,6 @@
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import db from "../config/database.js";
-import redis from "../config/redis.js";
 import { sleep } from "../utils/sleep.js";
 import { User, Balance, Token } from "../models/index.js";
 import * as contract from "../contracts/index.js";
