@@ -3,9 +3,6 @@ import db from "../config/database.js";
 import redis, { redisConnection } from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import secureRandomString from "../utils/random-string.js";
-import { getContract, utils } from "../contracts/starknet-contract.js";
-
-const { contract } = getContract();
 
 export const starknetWorker = new Worker(
   "starknet-transactions",

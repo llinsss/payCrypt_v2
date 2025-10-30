@@ -1,0 +1,54 @@
+import redis from "../../config/redis.js";
+import { createApiClient } from "../../utils/api.js";
+import axios from "axios";
+
+export const getVTUToken = async () => {
+  try {
+    const cached = await redis.get("vtu:token");
+    if (cached) {
+      return cached;
+    }
+    const new_cache = await setVTUToken();
+    return new_cache;
+  } catch (err) {
+    console.error("⚠️ VTU TOKEN ERROR:", err?.response?.data || err.message);
+    await redis.del("vtu:token");
+    return null;
+  }
+};
+
+export const setVTUToken = async () => {
+  try {
+    const { data } = await axios.post(
+      `${process.env.VTU_API_URL}/jwt-auth/v1/token`,
+      {
+        username: process.env.VTU_USERNAME,
+        password: process.env.VTU_PASSWORD,
+      }
+    );
+
+    if (data?.token) {
+      await redis.set("vtu:token", data.token, {
+        EX: 24 * 60 * 60,
+      });
+
+      console.log("🔐 New VTU token fetched and cached for 24h.");
+      return data.token;
+    }
+
+    console.error("❌ VTU API returned no token.");
+    return null;
+  } catch (err) {
+    console.error("⚠️ VTU TOKEN ERROR:", err?.response?.data || err.message);
+    await redis.del("vtu:token");
+    return null;
+  }
+};
+
+const getVtuClient = async () => {
+  const token = await getVTUToken();
+  return createApiClient(process.env.VTU_API_URL, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+};
+export const vtu = await getVtuClient();

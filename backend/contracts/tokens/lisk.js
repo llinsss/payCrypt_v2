@@ -1,15 +1,13 @@
 import { ethers } from "ethers";
-import dotenv from "dotenv";
-dotenv.config();
 
-import { mainABI } from "../abis/SolidityContractABI.js";
+import { mainABI } from "../../abis/SolidityContractABI.js";
 
 const config = {
-  network: process.env.BASE_NETWORK || "testnet",
-  nodeUrl: process.env.BASE_RPC_URL,
-  contractAddress: process.env.BASE_CONTRACT_ADDRESS,
-  accountAddress: process.env.BASE_ACCOUNT_ADDRESS,
-  privateKey: process.env.BASE_PRIVATE_KEY,
+  network: process.env.LISK_NETWORK || "testnet",
+  nodeUrl: process.env.LISK_RPC_URL,
+  contractAddress: process.env.LISK_CONTRACT_ADDRESS,
+  accountAddress: process.env.LISK_ACCOUNT_ADDRESS,
+  privateKey: process.env.LISK_PRIVATE_KEY,
   contractABI: mainABI,
 };
 
@@ -27,5 +25,5 @@ export default {
   provider,
   wallet,
   contract,
-  config
+  config,
 };

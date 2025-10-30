@@ -1,5 +1,5 @@
 import { Balance, Token } from "../models/index.js";
-import { starknet, lisk, base, flow, u2u } from "../contracts/chains.js";
+import * as contract from "../contracts/index.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import db from "../config/database.js";
@@ -114,76 +114,6 @@ export const createUserBalance = async (user_id, tag) => {
   const tokens = await Token.getAll();
   const user = await db("users").where("id", user_id).first();
   if (!user) null;
-
-  // --- Helper: Extract TagRegistered event address ---
-  const extractTagAddress = (receipt, contract) => {
-    if (!receipt?.logs?.length) return null;
-    for (const log of receipt.logs) {
-      try {
-        const event = contract.interface.parseLog(log);
-        if (event?.name === "TagRegistered") {
-          return event.args?.wallet || event.args?.[1] || null;
-        }
-      } catch {
-        continue; // ignore unrelated logs
-      }
-    }
-    return null;
-  };
-
-  // --- Generic EVM handler factory ---
-  const makeEvmHandler = (chain) => async (tag) => {
-    const { contract, config } = chain;
-    if (!contract || !config?.accountAddress) {
-      throw new Error(`Invalid chain configuration for ${config?.nodeUrl}`);
-    }
-
-    console.log(`\n🔗 ${config.nodeUrl}: Registering tag "${tag}"...`);
-
-    const tx = await contract.registerTag(tag);
-    console.log(`📤 ${config.nodeUrl} Tx Hash: ${tx.hash}`);
-
-    const receipt = await tx.wait();
-    console.log(
-      `✅ ${config.nodeUrl} Confirmed in Block: ${receipt.blockNumber}`
-    );
-
-    const tagAddress = extractTagAddress(receipt, contract);
-    if (!tagAddress)
-      console.warn(`⚠️ No TagRegistered event found on ${config.nodeUrl}`);
-    return tagAddress;
-  };
-
-  // --- Define supported EVM chains ---
-  const evmChains = { BASE: base, LSK: lisk, FLOW: flow, U2U: u2u };
-  const evmHandlers = Object.fromEntries(
-    Object.entries(evmChains).map(([symbol, chain]) => [
-      symbol,
-      makeEvmHandler(chain),
-    ])
-  );
-
-  // --- Chain Handlers ---
-  const chainHandlers = {
-    STRK: async (tag) => {
-      const contract = await starknet.getContract();
-      if (!contract) throw new Error("❌ StarkNet contract not initialized");
-
-      console.log(`\n🔗 STRK: Registering tag "${tag}"...`);
-      const tx = await contract.register_tag(tag);
-      console.log("📤 STRK Tx sent:", tx.transaction_hash);
-
-      await starknet.provider.waitForTransaction(tx.transaction_hash);
-      console.log("✅ STRK Tx confirmed");
-
-      const newTag = await contract.get_tag_wallet_address(tag);
-      return newTag && newTag !== "0x0"
-        ? `0x${BigInt(newTag).toString(16)}`
-        : null;
-    },
-    ...evmHandlers,
-  };
-
   // --- Process all tokens concurrently ---
   const results = await Promise.allSettled(
     tokens.map(async (token) => {
@@ -195,14 +125,11 @@ export const createUserBalance = async (user_id, tag) => {
         console.warn(`⚠️ Balance already exists: ${token.symbol}`);
         null;
       }
-      const handler = chainHandlers[token.symbol];
-      if (!handler) {
-        console.warn(`⚠️ Skipping unsupported token: ${token.symbol}`);
-        return null;
-      }
 
       try {
-        const address = await handler(tag);
+        const chain = contract.chains[token.symbol];
+        if (!chain) throw new Error("No chain found");
+        const address = await contract.register(chain, tag);
         if (!address) throw new Error("No address generated");
         return await Balance.create({
           user_id: user.id,

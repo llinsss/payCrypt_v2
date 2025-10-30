@@ -1,6 +1,4 @@
 import axios from "axios";
-import dotenv from "dotenv";
-dotenv.config();
 
 const EXCHANGE_RATE_API_KEY = process.env.EXCHANGE_RATE_API_KEY;
 

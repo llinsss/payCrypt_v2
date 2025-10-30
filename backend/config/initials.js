@@ -5,6 +5,8 @@ import * as exchangerateapi from "../services/exchange-rate-api.js";
 import redis from "./redis.js";
 
 const limit = pLimit(5);
+export const NGN_KEY = "USD_NGN";
+export const SIX_HOURS = 6 * 60 * 60;
 
 export const updateTokenPrices = async () => {
   try {
@@ -48,9 +50,6 @@ export const updateTokenPrices = async () => {
     console.error("❌ Error in updateTokenPrices:", err.message);
   }
 };
-
-export const NGN_KEY = "USD_NGN";
-export const SIX_HOURS = 6 * 60 * 60;
 
 export const updateNgnRate = async () => {
   try {

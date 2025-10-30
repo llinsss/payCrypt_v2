@@ -3,9 +3,21 @@ import redis from "../config/redis.js";
 import * as freecryptoapi from "../services/free-crypto-api.js";
 import * as exchangerateapi from "../services/exchange-rate-api.js";
 import { NGN_KEY } from "../config/initials.js";
+import * as controller from "../controllers/generalController.js";
 
 const router = express.Router();
 
+router.post("/upload-file", controller.upload_file);
+router.get("/bill/balance", controller.bill_balance);
+router.get("/bill/data-variations", controller.bill_data_variations);
+router.get("/bill/tv-variations", controller.bill_tv_variations);
+router.get("/bill/tv-services", controller.bill_tv_services);
+router.get("/bill/betting-services", controller.bill_betting_services);
+router.get("/bill/electricity-services", controller.bill_electricity_services);
+router.get("/bill/airtime-services", controller.bill_airtime_services);
+router.get("/bill/data-services", controller.bill_data_services);
+router.post("/bill/requery", controller.bill_requery);
+router.post("/bill/verify-customer", controller.bill_verify_customer);
 // Health check endpoint
 router.get("/health", (req, res) => {
   res.status(200).json({

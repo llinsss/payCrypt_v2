@@ -5,8 +5,8 @@ import app from "./app.js";
 import knex from "knex";
 import knexConfig from "./knexfile.js";
 import redis from "./config/redis.js";
-import "./listeners.js";
-import "./workers.js";
+// import "./listeners.js";
+// import "./workers.js";
 
 const PORT = process.env.PORT || 3000;
 

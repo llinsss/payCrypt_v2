@@ -1,15 +1,13 @@
 import { ethers } from "ethers";
-import dotenv from "dotenv";
-dotenv.config();
 
-import { mainABI } from "../abis/SolidityContractABI.js";
+import { mainABI } from "../../abis/SolidityContractABI.js";
 
 const config = {
-  network: process.env.FLOW_NETWORK || "testnet",
-  nodeUrl: process.env.FLOW_RPC_URL,
-  contractAddress: process.env.FLOW_CONTRACT_ADDRESS,
-  accountAddress: process.env.FLOW_ACCOUNT_ADDRESS,
-  privateKey: process.env.FLOW_PRIVATE_KEY,
+  network: process.env.BASE_NETWORK || "testnet",
+  nodeUrl: process.env.BASE_RPC_URL,
+  contractAddress: process.env.BASE_CONTRACT_ADDRESS,
+  accountAddress: process.env.BASE_ACCOUNT_ADDRESS,
+  privateKey: process.env.BASE_PRIVATE_KEY,
   contractABI: mainABI,
 };
 

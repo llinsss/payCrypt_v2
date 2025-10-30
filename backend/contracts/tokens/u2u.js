@@ -1,8 +1,6 @@
 import { ethers } from "ethers";
-import dotenv from "dotenv";
-dotenv.config();
 
-import { mainABI } from "../abis/SolidityContractABI.js";
+import { mainABI } from "../../abis/SolidityContractABI.js";
 
 const config = {
   network: process.env.U2U_NETWORK || "mainnet",
