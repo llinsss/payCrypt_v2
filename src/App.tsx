@@ -31,7 +31,7 @@ import AdminUsers from "./components/Admin/AdminUsers";
 import AdminPayouts from "./components/Admin/AdminPayouts";
 import KYCForm from "./components/KYC/KYCForm";
 import ApiTest from "./components/Test/ApiTest";
-// import { useIntervalApi } from "./hooks/useIntervalApi";
+import { useIntervalApi } from "./hooks/useIntervalApi";
 
 // Private app layout with auth guard
 const PrivateLayout: React.FC = () => {
@@ -39,7 +39,7 @@ const PrivateLayout: React.FC = () => {
   const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
-  // useIntervalApi("/wallets/balance", 120000);
+  useIntervalApi("/balances/sync", 10000);
   if (isLoading) {
     return (
       <div className="min-h-screen grid place-items-center">
