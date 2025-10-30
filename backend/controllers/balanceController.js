@@ -1,8 +1,12 @@
-import { Balance, Token } from "../models/index.js";
-import * as contract from "../contracts/index.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import db from "../config/database.js";
+import redis from "../config/redis.js";
+import { sleep } from "../utils/sleep.js";
+import { User, Balance, Token } from "../models/index.js";
+import * as contract from "../contracts/index.js";
+import * as evm from "../contracts/services/evm.js";
+import * as starknet from "../contracts/services/starknet.js";
 
 export const createBalance = async (req, res) => {
   try {
@@ -146,4 +150,75 @@ export const createUserBalance = async (user_id, tag) => {
   return results
     .filter((r) => r.status === "fulfilled" && r.value)
     .map((r) => r.value);
+};
+
+export const updateUserBalance = async (req, res) => {
+  const POLL_INTERVAL = 10_000;
+  const LOCK_KEY = `balance_poller_lock:${req.user.id}`;
+  const LOCK_TTL = 15_000;
+  const MAX_RETRIES = 3;
+  const CONCURRENCY_LIMIT = 5;
+  const NGN_KEY = "ngn_rate";
+  console.log("🚀 Starting balance poller...");
+  while (true) {
+    const lock = await redis.set(LOCK_KEY, "locked", {
+      NX: true,
+      PX: LOCK_TTL,
+    });
+    if (!lock) {
+      console.log("⏳ Another poller is running, skipping this cycle...");
+      await sleep(POLL_INTERVAL);
+      continue;
+    }
+
+    try {
+      const user = await User.findById(req.user.id);
+      if (!user) continue;
+      const balances = await Balance.getAll();
+      if (!balances.length) {
+        await sleep(POLL_INTERVAL);
+        continue;
+      }
+      const tokenIds = [...new Set(balances.map((b) => b.token_id))];
+      const tokens = await Token.findByIds(tokenIds);
+      const tokenMap = new Map(tokens.map((t) => [t.id, t]));
+      for (const batch of chunk(balances, CONCURRENCY_LIMIT)) {
+        await Promise.all(
+          batch.map(async (balance) => {
+            const token = tokenMap.get(balance.token_id);
+            if (!token) return;
+            const chain = contract.chains[token.symbol];
+            try {
+              const onchainValue = await (chain == "starknet"
+                ? starknet.getTagBalance(user.tag)
+                : evm.getTagBalance(chain, user.tag));
+
+              const dbValue = Number(balance.amount);
+              console.log(
+                `Chain: ${chain} | DB Bal: ${dbValue} | Onchain Bal: ${onchainValue} | Tag: ${user.tag}`
+              );
+              if (Number.isNaN(onchainValue)) return;
+              if (Math.abs(onchainValue - dbValue) < 1e-10) return;
+              await Balance.update(balance.id, {
+                amount: onchainValue,
+                usd_value: token.price * onchainValue,
+              });
+            } catch (err) {
+              console.warn(
+                `❌ Poll error for ${user?.tag || "unknown"} (${
+                  token?.symbol || "?"
+                }): ${err.message}`
+              );
+            }
+          })
+        );
+      }
+      console.log("✅ Polling cycle complete.");
+    } catch (err) {
+      console.error("💥 Poller error:", err.message);
+    } finally {
+      await redis.del(LOCK_KEY);
+      await sleep(POLL_INTERVAL);
+    }
+  }
 };

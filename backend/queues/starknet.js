@@ -2,8 +2,8 @@ import { Queue } from "bullmq";
 import queueConfig from "./index.js";
 
 export const starknetQueue = new Queue("starknet-transactions", queueConfig);
-starknetQueue.on("waiting", (jobId) =>
-  console.log(`⏳ Starknet Job ${JSON.stringify(jobId)} waiting in queue`)
+starknetQueue.on("waiting", (job) =>
+  console.log(`⏳ Starknet Job ${JSON.stringify(job)} waiting in queue`)
 );
 starknetQueue.on("active", (job) =>
   console.log(`⚙️ Starknet Processing job ${job.id}`)

@@ -1,3 +1,4 @@
+import { ethers } from "ethers";
 import * as evm from "./services/evm.js";
 import * as starknet from "./services/starknet.js";
 
@@ -7,6 +8,26 @@ export const chains = {
   LSK: "lisk",
   FLOW: "flow",
   U2U: "u2u",
+};
+
+export const formatChainAmount = (chain, amount) => {
+  if (amount === null || amount === undefined) return "0";
+  const bigAmount = BigInt(amount.toString());
+  const chainKey = chain.trim().toLowerCase();
+
+  switch (chainKey) {
+    case "base":
+    case "u2u":
+      return ethers.formatEther(bigAmount);
+    case "lisk":
+      return (Number(bigAmount) / 1e8).toFixed(8);
+    case "flow":
+      return (Number(bigAmount) / 1e8).toFixed(8);
+    case "starknet":
+      return (Number(bigAmount) / 1e18).toFixed(6);
+    default:
+      throw new Error(`Unsupported chain for formatting: ${chain}`);
+  }
 };
 
 export const register = async (chain, tag) => {

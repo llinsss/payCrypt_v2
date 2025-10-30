@@ -14,7 +14,6 @@ export const updateTokenPrices = async () => {
 
     const tokens = await db("tokens").select("id", "token");
 
-    // Create tasks with throttling
     const tasks = tokens.map((token) =>
       limit(async () => {
         try {
@@ -37,7 +36,6 @@ export const updateTokenPrices = async () => {
       })
     );
 
-    // Run all tasks with concurrency control
     const results = await Promise.allSettled(tasks);
 
     const successCount = results.filter((r) => r.status === "fulfilled").length;
@@ -55,7 +53,6 @@ export const updateNgnRate = async () => {
   try {
     console.log("⏳ Fetching USD->NGN rate...");
 
-    // Call the exchange API with USD
     const data = await exchangerateapi.rate("USD");
 
     if (!data || !data.NGN) {
@@ -65,7 +62,6 @@ export const updateNgnRate = async () => {
     const ngnValue = Number.parseFloat(data.NGN);
 
     if (!Number.isNaN(ngnValue)) {
-      // Save to Redis with 6h expiry
       await redis.setEx(NGN_KEY, SIX_HOURS, ngnValue.toString());
 
       console.log(`✅ Cached NGN rate: ${ngnValue}`);

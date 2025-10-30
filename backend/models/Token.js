@@ -13,6 +13,10 @@ const Token = {
   async findById(id) {
     return await db("tokens").where({ id }).first();
   },
+  
+  async findByIds(ids) {
+    return await db("tokens").whereIn("id", ids);
+  },
 
   async getAll(limit = 10, offset = 0) {
     return await db("tokens")

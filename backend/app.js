@@ -84,13 +84,13 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // API routes
-updateTokenPrices();
+// updateTokenPrices();
 
-updateNgnRate();
+// updateNgnRate();
 
-setInterval(updateNgnRate, SIX_HOURS * 1000);
+// setInterval(updateNgnRate, SIX_HOURS * 1000);
 
-setInterval(updateTokenPrices, 60 * 60 * 1000);
+// setInterval(updateTokenPrices, 60 * 60 * 1000);
 
 // setInterval(listenForDeposits, 2000);
 
