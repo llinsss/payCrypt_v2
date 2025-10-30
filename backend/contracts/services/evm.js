@@ -26,5 +26,5 @@ export const getTagAddress = async (chain, tag) => {
 
 export const getTagBalance = async (chain, tag) => {
   const evmContract = evm.getEvmChain(chain);
-  return await evmContract.contract.getTagBalance(tag);
+  return await evmContract.contract.getTagBalance(tag, ethers.ZeroAddress);
 };

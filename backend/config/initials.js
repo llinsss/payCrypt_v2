@@ -27,12 +27,12 @@ export const updateTokenPrices = async () => {
               updated_at: new Date(),
             });
 
-            console.log(`✅ Updated ${token.symbol}: ${price}`);
+            console.log(`✅ Updated ${token.token}: ${price}`);
           } else {
-            console.warn(`⚠️ Skipping ${token.symbol}, invalid price`);
+            console.warn(`⚠️ Skipping ${token.token}, invalid price`);
           }
         } catch (err) {
-          console.error(`❌ Error updating ${token.symbol}:`, err.message);
+          console.error(`❌ Error updating ${token.token}:`, err.message);
         }
       })
     );
