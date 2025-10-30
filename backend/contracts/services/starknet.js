@@ -1,5 +1,8 @@
+import { shortString } from "starknet";
+import * as starknet from "../tokens/starknet.js";
+
 export const createTagAddress = async (tag) => {
-  const contract = await this.getContract();
+  const contract = await starknet.getContract();
   const feltTag = shortString.encodeShortString(tag);
   const tx = await contract.register_tag(feltTag);
   await this.provider.waitForTransaction(tx.transaction_hash);

@@ -1,4 +1,4 @@
-import { Account, Contract, RpcProvider, shortString } from "starknet";
+import { Account, Contract, RpcProvider } from "starknet";
 import { mainABI } from "../../abis/StarknetContractABI.js";
 
 const config = {

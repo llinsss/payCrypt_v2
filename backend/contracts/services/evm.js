@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { base, lisk, u2u, flow } from "../chains";
+import { base, lisk, u2u, flow } from "../chains.js";
 
 export const getContract = (chain) => {
   const contracts = { base, lisk, u2u, flow };
