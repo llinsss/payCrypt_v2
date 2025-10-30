@@ -2,6 +2,7 @@ import upload from "../services/external/cloudinary.js";
 import { failure, success } from "../utils/response.js";
 import * as vtu from "../services/external/vtu.js";
 import redis from "../config/redis.js";
+import * as contract from "../contracts/index.js";
 
 const CACHE_TTL_LONG = 60 * 24 * 30;
 const CACHE_TTL_SHORT = 60 * 24;
@@ -19,6 +20,37 @@ export const upload_file = async (req, res, next) => {
       return success(res, "successful", data.secure_url, 200);
     }
     return failure(res, "Failed to upload file", null, 400);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const register_tag = async (req, res, next) => {
+  try {
+    const { chain, tag } = req.body;
+    const data = await contract.register(chain, tag);
+    console.log(data)
+    return success(res, "successful", data, 200);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const get_tag_address = async (req, res, next) => {
+  try {
+    const { chain, tag } = req.body;
+    const data = await contract.tag_address(chain, tag);
+    return success(res, "successful", data, 200);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const get_tag_balance = async (req, res, next) => {
+  try {
+    const { chain, tag } = req.body;
+    const data = await contract.tag_balance(chain, tag);
+    return success(res, "successful", data, 200);
   } catch (err) {
     next(err);
   }

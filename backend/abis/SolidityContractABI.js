@@ -20,9 +20,9 @@ export const mainABI = [
       },
       {
         indexed: true,
-        internalType: "address",
+        internalType: "string",
         name: "from",
-        type: "address",
+        type: "string",
       },
       {
         indexed: false,
@@ -218,12 +218,6 @@ export const mainABI = [
         name: "tag",
         type: "string",
       },
-      {
-        indexed: true,
-        internalType: "address",
-        name: "owner",
-        type: "address",
-      },
     ],
     name: "TagRegistered",
     type: "event",
@@ -258,7 +252,12 @@ export const mainABI = [
     inputs: [
       {
         internalType: "string",
-        name: "tag",
+        name: "receiverTag",
+        type: "string",
+      },
+      {
+        internalType: "string",
+        name: "sendersTag",
         type: "string",
       },
       {
@@ -274,7 +273,7 @@ export const mainABI = [
     ],
     name: "deposit",
     outputs: [],
-    stateMutability: "payable",
+    stateMutability: "nonpayable",
     type: "function",
   },
   {
@@ -322,12 +321,12 @@ export const mainABI = [
         type: "string",
       },
     ],
-    name: "getTagBalance",
+    name: "getTagAddress",
     outputs: [
       {
-        internalType: "uint256",
+        internalType: "address",
         name: "",
-        type: "uint256",
+        type: "address",
       },
     ],
     stateMutability: "view",
@@ -358,25 +357,6 @@ export const mainABI = [
     type: "function",
   },
   {
-    inputs: [
-      {
-        internalType: "string",
-        name: "tag",
-        type: "string",
-      },
-    ],
-    name: "getUserChainAddress",
-    outputs: [
-      {
-        internalType: "address",
-        name: "",
-        type: "address",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
     inputs: [],
     name: "owner",
     outputs: [
@@ -395,11 +375,6 @@ export const mainABI = [
         internalType: "string",
         name: "tag",
         type: "string",
-      },
-      {
-        internalType: "address",
-        name: "_owner",
-        type: "address",
       },
     ],
     name: "register",
@@ -535,35 +510,6 @@ export const mainABI = [
     type: "function",
   },
   {
-    inputs: [
-      {
-        internalType: "address",
-        name: "token",
-        type: "address",
-      },
-      {
-        internalType: "address",
-        name: "to",
-        type: "address",
-      },
-      {
-        internalType: "uint256",
-        name: "amount",
-        type: "uint256",
-      },
-    ],
-    name: "withdrawERC20FromContract",
-    outputs: [
-      {
-        internalType: "bool",
-        name: "",
-        type: "bool",
-      },
-    ],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
     inputs: [],
     name: "withdrawFeeBasisPoints",
     outputs: [
@@ -582,6 +528,16 @@ export const mainABI = [
         internalType: "address",
         name: "to",
         type: "address",
+      },
+      {
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
       },
     ],
     name: "withdrawFromContract",

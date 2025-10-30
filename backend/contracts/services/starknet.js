@@ -1,23 +1,24 @@
 import { shortString } from "starknet";
-import * as starknet from "../tokens/starknet.js";
+import * as starknet from "../starknet.js";
 
 export const createTagAddress = async (tag) => {
-  const contract = await starknet.getContract();
+  const starknetContract = starknet.getStarknetChain();
   const feltTag = shortString.encodeShortString(tag);
-  const tx = await contract.register_tag(feltTag);
-  await this.provider.waitForTransaction(tx.transaction_hash);
-  const newTag = await contract.get_tag_wallet_address(feltTag);
+  const call = await starknetContract.contract.populate("register_tag", [tag]);
+  const tx = await starknetContract.safeExecute(call);
+  await starknetContract.provider.waitForTransaction(tx.transaction_hash);
+  const newTag = await starknetContract.contract.get_tag_wallet_address(tag);
   return newTag && newTag !== "0x0" ? `0x${BigInt(newTag).toString(16)}` : null;
 };
 
 export const getTagAddress = async (tag) => {
-  const contract = await this.getContract();
+  const starknetContract = starknet.getStarknetChain();
   const feltTag = shortString.encodeShortString(tag);
-  return await contract.get_tag_wallet_address(feltTag);
+  return await starknetContract.contract.get_tag_wallet_address(tag);
 };
 
 export const getTagBalance = async (tag) => {
-  const contract = await this.getContract();
+  const starknetContract = starknet.getStarknetChain();
   const feltTag = shortString.encodeShortString(tag);
-  return await contract.getTagBalance(feltTag);
+  return await starknetContract.contract.get_tag_wallet_balance(tag, starknetContract.config.tokenAddress);
 };

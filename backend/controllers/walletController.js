@@ -7,7 +7,7 @@ import {
   Notification,
   Wallet,
 } from "../models/index.js";
-import { starknet, lisk, base, flow, u2u } from "../contracts/chains.js";
+import { starknet, evm } from "../contracts/chains.js";
 import { from18Decimals, to18Decimals } from "../utils/amount.js";
 import secureRandomString from "../utils/random-string.js";
 import redis from "../config/redis.js";
