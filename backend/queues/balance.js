@@ -2,8 +2,8 @@ import { Queue } from "bullmq";
 import queueConfig from "./index.js";
 
 export const balanceQueue = new Queue("balance-setup", queueConfig);
-balanceQueue.on("waiting", (jobId) =>
-  console.log(`⏳ Balance Job ${JSON.stringify(jobId)} waiting in queue`)
+balanceQueue.on("waiting", (job) =>
+  console.log(`⏳ Balance Job ${JSON.stringify(job)} waiting in queue`)
 );
 balanceQueue.on("active", (job) =>
   console.log(`⚙️ Balance Processing job ${job.id}`)

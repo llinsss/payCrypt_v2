@@ -12,6 +12,6 @@ export const balanceWorker = new Worker(
   },
   {
     connection: redisConnection,
-    concurrency: 5, // number of jobs processed in parallel
+    concurrency: 5,
   }
 );

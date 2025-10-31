@@ -24,6 +24,10 @@ const User = {
     return await db("users").where({ id }).first();
   },
 
+  async findByIds(ids) {
+    return await db("users").whereIn("id", ids);
+  },
+
   async create(userData) {
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     const [id] = await db("users").insert({

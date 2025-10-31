@@ -48,7 +48,21 @@ const Balance = {
       .offset(offset)
       .orderBy("balances.created_at", "desc");
   },
-
+  async findByUserId(userId) {
+    return await db("balances")
+      .select(
+        "balances.*",
+        "users.email as user_email",
+        "users.tag as user_tag",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "tokens.logo_url as token_logo_url",
+        "tokens.price as token_price"
+      )
+      .leftJoin("users", "balances.user_id", "users.id")
+      .leftJoin("tokens", "balances.token_id", "tokens.id")
+      .where("balances.user_id", userId);
+  },
   async getByUser(userId, limit = 10, offset = 0) {
     return await db("balances")
       .select(

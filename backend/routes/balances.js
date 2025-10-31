@@ -6,6 +6,7 @@ import {
   updateBalance,
   deleteBalance,
   getBalanceByUser,
+  updateUserBalance,
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -14,6 +15,7 @@ const router = express.Router();
 router.post("/", authenticate, createBalance);
 router.get("/all", authenticate, getBalances);
 router.get("/", authenticate, getBalanceByUser);
+router.get("/sync", authenticate, updateUserBalance);
 router.get("/:id", authenticate, getBalanceById);
 router.put("/:id", authenticate, updateBalance);
 router.delete("/:id", authenticate, deleteBalance);

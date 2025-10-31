@@ -1,30 +1,38 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { apiClient } from "../utils/api";
 
-export function useIntervalApi(endpoint: string, intervalMs = 10000) {
+/**
+ * Custom hook to repeatedly call an API endpoint at a given interval.
+ * @param endpoint API endpoint to poll.
+ * @param intervalMs Interval in milliseconds (default: 10s).
+ */
+export function useIntervalApi(endpoint: string, intervalMs = 10_000) {
+  const isMounted = useRef(true);
+
   useEffect(() => {
-    let isMounted = true;
+    isMounted.current = true;
 
     const fetchData = async () => {
       try {
-        await apiClient.get(endpoint);
-        if (isMounted) {
-          console.log("API call successful:", endpoint);
+        const res = await apiClient.get(endpoint);
+        if (isMounted.current) {
+          console.log("✅ API call successful:", endpoint, res);
         }
       } catch (err) {
-        console.error("API call failed:", err);
+        if (isMounted.current) {
+          console.error("❌ API call failed:", err);
+        }
       }
     };
 
-    // Call immediately once
+    // Initial call and interval
     fetchData();
+    const intervalId = setInterval(fetchData, intervalMs);
 
-    // Call repeatedly
-    const interval = setInterval(fetchData, intervalMs);
-
+    // Cleanup
     return () => {
-      isMounted = false;
-      clearInterval(interval);
+      isMounted.current = false;
+      clearInterval(intervalId);
     };
   }, [endpoint, intervalMs]);
 }

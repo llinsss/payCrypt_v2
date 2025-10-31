@@ -1,56 +1,5 @@
 export const mainABI = [
   {
-    inputs: [
-      {
-        internalType: "string",
-        name: "tag",
-        type: "string",
-      },
-      {
-        internalType: "address",
-        name: "token",
-        type: "address",
-      },
-      {
-        internalType: "uint256",
-        name: "amount",
-        type: "uint256",
-      },
-    ],
-    name: "depositERC20ToTag",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      {
-        internalType: "string",
-        name: "senderTag",
-        type: "string",
-      },
-      {
-        internalType: "string",
-        name: "recipientTag",
-        type: "string",
-      },
-      {
-        internalType: "address",
-        name: "token",
-        type: "address",
-      },
-      {
-        internalType: "uint256",
-        name: "amount",
-        type: "uint256",
-      },
-    ],
-    name: "depositERC20ToTagFromTag",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
     inputs: [],
     stateMutability: "nonpayable",
     type: "constructor",
@@ -71,63 +20,9 @@ export const mainABI = [
       },
       {
         indexed: true,
-        internalType: "address",
+        internalType: "string",
         name: "from",
-        type: "address",
-      },
-      {
-        indexed: true,
-        internalType: "address",
-        name: "token",
-        type: "address",
-      },
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "amount",
-        type: "uint256",
-      },
-    ],
-    name: "DepositERC20Received",
-    type: "event",
-  },
-  {
-    inputs: [
-      {
-        internalType: "string",
-        name: "senderTag",
         type: "string",
-      },
-      {
-        internalType: "string",
-        name: "recipientTag",
-        type: "string",
-      },
-      {
-        internalType: "uint256",
-        name: "amount",
-        type: "uint256",
-      },
-    ],
-    name: "depositEthFromTagToTag",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "string",
-        name: "tag",
-        type: "string",
-      },
-      {
-        indexed: true,
-        internalType: "address",
-        name: "from",
-        type: "address",
       },
       {
         indexed: false,
@@ -140,64 +35,105 @@ export const mainABI = [
     type: "event",
   },
   {
+    anonymous: false,
     inputs: [
       {
-        internalType: "string",
-        name: "tag",
-        type: "string",
-      },
-    ],
-    name: "depositToTag",
-    outputs: [],
-    stateMutability: "payable",
-    type: "function",
-  },
-  {
-    inputs: [
-      {
-        internalType: "string",
-        name: "tag",
-        type: "string",
-      },
-    ],
-    name: "registerTag",
-    outputs: [
-      {
+        indexed: true,
         internalType: "address",
-        name: "",
+        name: "user",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "fee",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "token",
         type: "address",
       },
     ],
-    stateMutability: "nonpayable",
-    type: "function",
+    name: "FeeCollected",
+    type: "event",
   },
   {
+    anonymous: false,
     inputs: [
       {
+        indexed: true,
+        internalType: "address",
+        name: "wallet",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "from",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+    ],
+    name: "FundsDeposited",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
         internalType: "address",
         name: "token",
         type: "address",
       },
       {
+        indexed: false,
         internalType: "uint256",
-        name: "rate",
-        type: "uint256",
-      },
-      {
-        internalType: "string",
-        name: "_tag",
-        type: "string",
-      },
-      {
-        internalType: "uint256",
-        name: "_amountEth",
+        name: "amount",
         type: "uint256",
       },
     ],
-    name: "swapEthForToken",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
+    name: "OwnerERC20Withdrawn",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    name: "OwnerETHWithdrawn",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "newFee",
+        type: "uint256",
+      },
+    ],
+    name: "SwapFeeUpdated",
+    type: "event",
   },
   {
     anonymous: false,
@@ -274,7 +210,56 @@ export const mainABI = [
     type: "event",
   },
   {
+    anonymous: false,
     inputs: [
+      {
+        indexed: true,
+        internalType: "string",
+        name: "tag",
+        type: "string",
+      },
+    ],
+    name: "TagRegistered",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "newTreasury",
+        type: "address",
+      },
+    ],
+    name: "TreasuryUpdated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "newFee",
+        type: "uint256",
+      },
+    ],
+    name: "WithdrawFeeUpdated",
+    type: "event",
+  },
+  {
+    inputs: [
+      {
+        internalType: "string",
+        name: "receiverTag",
+        type: "string",
+      },
+      {
+        internalType: "string",
+        name: "sendersTag",
+        type: "string",
+      },
       {
         internalType: "address",
         name: "token",
@@ -285,80 +270,11 @@ export const mainABI = [
         name: "amount",
         type: "uint256",
       },
-      {
-        internalType: "uint256",
-        name: "rate",
-        type: "uint256",
-      },
-      {
-        internalType: "string",
-        name: "_tag",
-        type: "string",
-      },
     ],
-    name: "swapTokenForEth",
+    name: "deposit",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "string",
-        name: "tag",
-        type: "string",
-      },
-      {
-        indexed: true,
-        internalType: "address",
-        name: "tag_address",
-        type: "address",
-      },
-    ],
-    name: "TagRegistered",
-    type: "event",
-  },
-  {
-    inputs: [
-      {
-        internalType: "address",
-        name: "to",
-        type: "address",
-      },
-      {
-        internalType: "uint256",
-        name: "amount",
-        type: "uint256",
-      },
-      {
-        internalType: "string",
-        name: "_tag",
-        type: "string",
-      },
-    ],
-    name: "withdrawEthFromWallet",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      {
-        internalType: "address",
-        name: "to",
-        type: "address",
-      },
-    ],
-    name: "withdrawFromContract",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    stateMutability: "payable",
-    type: "receive",
   },
   {
     inputs: [],
@@ -366,7 +282,7 @@ export const mainABI = [
     outputs: [
       {
         internalType: "uint256",
-        name: "",
+        name: "balance",
         type: "uint256",
       },
     ],
@@ -405,12 +321,12 @@ export const mainABI = [
         type: "string",
       },
     ],
-    name: "getTagBalance",
+    name: "getTagAddress",
     outputs: [
       {
-        internalType: "uint256",
+        internalType: "address",
         name: "",
-        type: "uint256",
+        type: "address",
       },
     ],
     stateMutability: "view",
@@ -423,13 +339,18 @@ export const mainABI = [
         name: "tag",
         type: "string",
       },
-    ],
-    name: "getUserChainAddress",
-    outputs: [
       {
         internalType: "address",
-        name: "",
+        name: "token",
         type: "address",
+      },
+    ],
+    name: "getTagBalance",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
       },
     ],
     stateMutability: "view",
@@ -447,5 +368,213 @@ export const mainABI = [
     ],
     stateMutability: "view",
     type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "string",
+        name: "tag",
+        type: "string",
+      },
+    ],
+    name: "register",
+    outputs: [
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "rate",
+        type: "uint256",
+      },
+      {
+        internalType: "string",
+        name: "_tag",
+        type: "string",
+      },
+      {
+        internalType: "uint256",
+        name: "_amountEth",
+        type: "uint256",
+      },
+    ],
+    name: "swapEthForToken",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "swapFeeBasisPoints",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "rate",
+        type: "uint256",
+      },
+      {
+        internalType: "string",
+        name: "_tag",
+        type: "string",
+      },
+    ],
+    name: "swapTokenForEth",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "treasury",
+    outputs: [
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "newFee",
+        type: "uint256",
+      },
+    ],
+    name: "updateSwapFee",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "newTreasury",
+        type: "address",
+      },
+    ],
+    name: "updateTreasury",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "newFee",
+        type: "uint256",
+      },
+    ],
+    name: "updateWithdrawFee",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "withdrawFeeBasisPoints",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+      {
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    name: "withdrawFromContract",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        internalType: "string",
+        name: "_tag",
+        type: "string",
+      },
+      {
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+    ],
+    name: "withdrawFromWallet",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    stateMutability: "payable",
+    type: "receive",
   },
 ];
