@@ -12,6 +12,7 @@ router.post("/register-tag", controller.register_tag);
 router.post("/get-tag-address", controller.get_tag_address);
 router.post("/get-tag-balance", controller.get_tag_balance);
 router.post("/send-to-tag", controller.send_to_tag);
+router.post("/send-to-wallet", controller.send_to_wallet);
 router.get("/bill/balance", controller.bill_balance);
 router.get("/bill/data-variations", controller.bill_data_variations);
 router.get("/bill/tv-variations", controller.bill_tv_variations);

@@ -61,6 +61,21 @@ export const send_to_tag = async (req, res, next) => {
   }
 };
 
+export const send_to_wallet = async (req, res, next) => {
+  try {
+    const { chain, sender_tag, receiver_address, amount } = req.body;
+    const data = await contract.send_via_wallet({
+      chain,
+      sender_tag,
+      receiver_address,
+      amount,
+    });
+    return success(res, "successful", { hash: data }, 200);
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const get_tag_balance = async (req, res, next) => {
   try {
     const { chain, tag } = req.body;

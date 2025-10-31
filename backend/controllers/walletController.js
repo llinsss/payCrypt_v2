@@ -222,6 +222,7 @@ export const send_to_wallet = async (req, res) => {
     const usdValue = amount * usdPrice;
     const reference = secureRandomString(16);
     const chain = contract.chains[token.symbol];
+    const sender_tag = user.tag;
     const sender_address = balance.address;
     const payload = {
       chain,
