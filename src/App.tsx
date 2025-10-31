@@ -54,7 +54,7 @@ const PrivateLayout: React.FC = () => {
   const isAdmin = user.role === "admin";
 
   useEffect(() => {
-    const startBalancePoller = async () => {
+    const syncBalances = async () => {
       try {
         await apiClient.get("/balances/sync");
         console.log("✅ Balance sync triggered");
@@ -64,10 +64,10 @@ const PrivateLayout: React.FC = () => {
     };
 
     // Run immediately once
-    startBalancePoller();
+    syncBalances();
 
     // Repeat every 10 seconds
-    const intervalId = setInterval(startBalancePoller, 30000);
+    const intervalId = setInterval(syncBalances, 30000);
 
     // Cleanup when app unmounts
     return () => clearInterval(intervalId);

@@ -6,14 +6,13 @@ import { User, Balance, Token } from "../models/index.js";
 import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
-// simple chunker
+
 const chunk = (arr, size) =>
   arr.reduce(
     (acc, _, i) => (i % size ? acc : [...acc, arr.slice(i, i + size)]),
     []
   );
 
-// generic retry
 const withRetry = async (fn, retries = MAX_RETRIES, delay = 2000) => {
   for (let i = 0; i < retries; i++) {
     try {
@@ -207,9 +206,11 @@ export const updateUserBalance = async (req, res) => {
             if (!token) return;
             const chain = contract.chains[token.symbol];
             try {
-              const onchainValue = await (chain == "starknet"
-                ? starknet.getTagBalance(user.tag)
-                : evm.getTagBalance(chain, user.tag));
+              const onchainValue = await withRetry(() =>
+                chain == "starknet"
+                  ? starknet.getTagBalance(user.tag)
+                  : evm.getTagBalance(chain, user.tag)
+              );
 
               const dbValue = Number(balance.amount);
               console.log(
