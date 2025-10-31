@@ -52,6 +52,7 @@ const PrivateLayout: React.FC = () => {
   }
 
   const isAdmin = user.role === "admin";
+  
   useEffect(() => {
     const startBalancePoller = async () => {
       try {

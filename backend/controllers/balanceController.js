@@ -6,6 +6,25 @@ import { User, Balance, Token } from "../models/index.js";
 import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
+// simple chunker
+const chunk = (arr, size) =>
+  arr.reduce(
+    (acc, _, i) => (i % size ? acc : [...acc, arr.slice(i, i + size)]),
+    []
+  );
+
+// generic retry
+const withRetry = async (fn, retries = MAX_RETRIES, delay = 2000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      console.warn(`⚠️ Retry ${i + 1}/${retries} failed: ${err.message}`);
+      await sleep(delay * (i + 1));
+    }
+  }
+};
 
 export const createBalance = async (req, res) => {
   try {
