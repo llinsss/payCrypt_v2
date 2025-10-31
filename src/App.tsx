@@ -52,7 +52,7 @@ const PrivateLayout: React.FC = () => {
   }
 
   const isAdmin = user.role === "admin";
-  
+
   useEffect(() => {
     const startBalancePoller = async () => {
       try {
@@ -67,7 +67,7 @@ const PrivateLayout: React.FC = () => {
     startBalancePoller();
 
     // Repeat every 10 seconds
-    const intervalId = setInterval(startBalancePoller, 10000);
+    const intervalId = setInterval(startBalancePoller, 30000);
 
     // Cleanup when app unmounts
     return () => clearInterval(intervalId);
