@@ -126,7 +126,7 @@ export const send_to_tag = async (req, res) => {
     const reference = secureRandomString(16);
 
     const txHash = await contract.send_via_tag({
-      chain,
+      chain: contract.chains[token.symbol],
       sender_tag: user.tag,
       receiver_tag,
       amount: transferAmount,
