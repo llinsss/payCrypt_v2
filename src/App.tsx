@@ -52,13 +52,27 @@ const PrivateLayout: React.FC = () => {
   }
 
   const isAdmin = user.role === "admin";
-
   useEffect(() => {
     const startBalancePoller = async () => {
-      await apiClient.get("/balances/sync");
-    }
-    setInterval(startBalancePoller, 10000)
-  }, [])
+      try {
+        await apiClient.get("/balances/sync");
+        console.log("✅ Balance sync triggered");
+      } catch (err) {
+        console.error("❌ Balance sync failed:", err);
+      }
+    };
+
+    // Run immediately once
+    startBalancePoller();
+
+    // Repeat every 10 seconds
+    const intervalId = setInterval(startBalancePoller, 10000);
+
+    // Cleanup when app unmounts
+    return () => clearInterval(intervalId);
+  }, []);
+
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <Toaster position="top-center" reverseOrder={false} />
