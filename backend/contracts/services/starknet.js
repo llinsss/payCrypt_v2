@@ -123,7 +123,7 @@ export const sendToTag = async ({
     return null;
   } catch (error) {
     const message = error?.message || "";
-    // console.error("❌ STARKNET - Failed to send to tag:", message);
+    console.error("❌ STARKNET - Failed to send to tag:", message);
     return null;
   }
 };
