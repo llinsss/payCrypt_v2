@@ -124,13 +124,16 @@ export const send_to_tag = async (req, res) => {
     const usdPrice = token.price ?? 1;
     const usdValue = transferAmount * usdPrice;
     const reference = secureRandomString(16);
-
-    const txHash = await contract.send_via_tag({
+    const payload = {
       chain: contract.chains[token.symbol],
       sender_tag: user.tag,
       receiver_tag,
       amount: transferAmount,
-    });
+    };
+
+    const txHash = await contract.send_via_tag(payload);
+
+    console.log(payload, txHash);
 
     if (!txHash) {
       return res.status(422).json({ error: "Failed to transfer" });

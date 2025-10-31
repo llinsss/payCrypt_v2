@@ -85,7 +85,12 @@ export const getTagBalance = async (tag) => {
   }
 };
 
-export const sendToTag = async ({ receiver_tag, sender_tag, amount }) => {
+export const sendToTag = async ({
+  receiver_tag,
+  sender_tag,
+  amount,
+  chain,
+}) => {
   const starknetContract = starknet.getStarknetChain();
   const senderTag = shortString.encodeShortString(sender_tag);
   const receiverTag = shortString.encodeShortString(receiver_tag);
