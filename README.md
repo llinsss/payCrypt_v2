@@ -3,9 +3,9 @@ Imagine sending money to your friend in Lagos as easily as sending a WhatsApp me
 
 Here's what makes Tagged revolutionary for Africa: 
 1. @Tag Payments - Replace 42-character addresses with simple tags like @yourname 
-2. Instant NGN Conversion - Receive crypto, instantly convert to Naira via Paystack 
+2. Instant Fiat Conversion - Receive crypto, instantly when crypto is sent to you.
 3. Multi-Chain Support - Works across Ethereum, Base, Starknet, and Core networks 
-4. One-Click Bank Withdrawals - Move funds to your Nigerian bank account in seconds 
+4. One-Click Bank Withdrawals - Move funds to your bank account in seconds 
 5. KYC Compliant - Fully regulated and secure for legal transactions The African crypto market is exploding - Nigeria alone processes over $400M in crypto monthly. But adoption is stuck because crypto is too complex for everyday people.
 
 Tagged makes crypto as simple as mobile money, but with global reach and lower fees. We're not just building a payment app - we're building the financial infrastructure that will connect Africa to the global digital economy. The future of money is here. It just needed to speak our language.
