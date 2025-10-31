@@ -133,8 +133,6 @@ export const send_to_tag = async (req, res) => {
 
     const txHash = await contract.send_via_tag(payload);
 
-    console.log(payload, txHash);
-
     if (!txHash) {
       return res.status(422).json({ error: "Failed to transfer" });
     }
