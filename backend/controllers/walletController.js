@@ -192,8 +192,8 @@ export const send_to_tag = async (req, res) => {
 export const send_to_wallet = async (req, res) => {
   try {
     const { id } = req.user;
-    const { receiver_address, amount, balance_id } = req.body;
-
+    const { receiver_address, amount: _amount, balance_id } = req.body;
+    const amount = Number(_amount);
     if (!amount || !balance_id) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -210,9 +210,7 @@ export const send_to_wallet = async (req, res) => {
     if (!balance) return res.status(400).json({ error: "Balance not found" });
     if (balance.user_id !== id)
       return res.status(403).json({ error: "Unauthorized" });
-
-    const transferAmount = Number(amount);
-    if (transferAmount > Number(balance.amount)) {
+    if (amount > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
     }
 
@@ -221,63 +219,20 @@ export const send_to_wallet = async (req, res) => {
 
     const timestamp = new Date();
     const usdPrice = token.price ?? 1;
-    const usdValue = transferAmount * usdPrice;
+    const usdValue = amount * usdPrice;
     const reference = secureRandomString(16);
-    let txHash = null;
+    const chain = contract.chains[token.symbol];
+    const sender_address = balance.address;
+    const payload = {
+      chain,
+      sender_tag,
+      receiver_address,
+      amount,
+    };
+    const txHash = await contract.send_via_wallet(payload);
 
-    // ====== ⚡ Handle StarkNet ======
-    if (token.symbol === "STRK") {
-      const contract = await starknet.getContract();
-      const senderTag = shortString.encodeShortString(user.tag);
-      const receiverAddress = receiver_address;
-      const transferValue = to18Decimals(transferAmount.toString());
-
-      const tx = await contract.withdraw_from_wallet(
-        String(process.env.STARKNET_TOKEN_ADDRESS),
-        senderTag,
-        receiverAddress,
-        transferValue
-      );
-
-      await starknet.provider.waitForTransaction(tx.transaction_hash);
-      txHash = tx.transaction_hash;
-
-      if (!txHash)
-        return res
-          .status(422)
-          .json({ error: "Failed to transfer on StarkNet" });
-    }
-
-    // ====== ⚡ Handle EVM Chains ======
-    else {
-      let contract = null;
-      if (token.symbol === "U2U") {
-        const { contract: _contract } = u2u;
-        contract = _contract;
-      }
-      if (token.symbol === "LSK") {
-        const { contract: _contract } = lisk;
-        contract = _contract;
-      }
-      if (token.symbol === "BASE") {
-        const { contract: _contract } = base;
-        contract = _contract;
-      }
-      if (token.symbol === "FLOW") {
-        const { contract: _contract } = flow;
-        contract = _contract;
-      }
-
-      const tx = await contract.withdrawEthFromWallet(
-        receiver_address,
-        ethers.parseUnits(transferAmount.toString(), 18),
-        user.tag
-      );
-      const receipt = await tx.wait();
-      txHash = receipt.hash;
-
-      if (!txHash)
-        return res.status(422).json({ error: "Failed to transfer on EVM" });
+    if (!txHash) {
+      return res.status(422).json({ error: "Failed to transfer" });
     }
 
     // ====== ⛓ Common database updates ======
@@ -291,16 +246,16 @@ export const send_to_wallet = async (req, res) => {
         type: "debit",
         tx_hash: txHash,
         usd_value: usdValue,
-        amount: transferAmount,
+        amount: amount,
         timestamp,
-        from_address: user.tag,
+        from_address: sender_address,
         to_address: receiver_address,
         description: "Fund transfer",
       }),
       Notification.create({
         user_id: user.id,
         title: "Fund transfer",
-        body: `You transferred ${transferAmount} ${token.symbol} to ${receiver_address}`,
+        body: `You transferred ${amount} ${token.symbol} to ${receiver_address}`,
       }),
     ]);
     if (recipient) {
@@ -314,16 +269,16 @@ export const send_to_wallet = async (req, res) => {
           type: "credit",
           tx_hash: txHash,
           usd_value: usdValue,
-          amount: transferAmount,
+          amount: amount,
           timestamp,
-          from_address: user.tag,
+          from_address: sender_address,
           to_address: receiver_address,
           description: "Fund received",
         }),
         Notification.create({
           user_id: recipient.id,
           title: "Fund received",
-          body: `You received ${transferAmount} ${token.symbol} from ${user.tag}`,
+          body: `You received ${amount} ${token.symbol} from ${sender_address}`,
         }),
       ]);
     }

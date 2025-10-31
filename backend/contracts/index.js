@@ -61,3 +61,11 @@ export const send_via_tag = async (payload) => {
     return await evm.sendToTag(payload);
   }
 };
+
+export const send_via_wallet = async (payload) => {
+  if (payload.chain === "starknet") {
+    return await starknet.sendToWallet(payload);
+  } else {
+    return await evm.sendToWallet(payload);
+  }
+};

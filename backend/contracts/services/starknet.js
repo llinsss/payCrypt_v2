@@ -99,7 +99,6 @@ export const sendToTag = async ({
   try {
     const balance = await getTagBalance(sender_tag);
     if (balance < amount) throw new Error("Insufficient wallet balance");
-    console.log(balance);
 
     const call = await starknetContract.contract.populate("deposit_to_tag", [
       receiverTag,
@@ -108,24 +107,48 @@ export const sendToTag = async ({
       tokenAddress,
     ]);
     const tx = await starknetContract.safeExecute(call);
-    console.log(tx);
-    const finalize = await starknetContract.provider.waitForTransaction(
-      tx.transaction_hash
-    );
-    console.log(finalize);
+    await starknetContract.provider.waitForTransaction(tx.transaction_hash);
     const txHash = tx.transaction_hash;
     if (txHash) {
       return txHash;
-      // const new_balance = await getTagBalance(sender_tag);
-      // if (new_balance < balance) {
-      //   return true;
-      // }
-      // return false;
     }
     return null;
   } catch (error) {
     const message = error?.message || "";
-    console.error("❌ STARKNET - Failed to send to tag:", message);
+    // console.error("❌ STARKNET - Failed to send to tag:", message);
+    return null;
+  }
+};
+
+export const sendToWallet = async ({
+  chain,
+  sender_tag,
+  receiver_address,
+  amount,
+}) => {
+  const starknetContract = starknet.getStarknetChain();
+  const receiverAddress = receiver_address;
+  const senderTag = shortString.encodeShortString(sender_tag);
+  const transferValue = to18Decimals(amount.toString());
+  const tokenAddress = starknetContract.config.tokenAddress;
+  try {
+    const balance = await getTagBalance(sender_tag);
+    if (balance < amount) throw new Error("Insufficient wallet balance");
+
+    const call = await starknetContract.contract.populate(
+      "withdraw_from_wallet",
+      [tokenAddress, senderTag, receiverAddress, transferValue]
+    );
+    const tx = await starknetContract.safeExecute(call);
+    await starknetContract.provider.waitForTransaction(tx.transaction_hash);
+    const txHash = tx.transaction_hash;
+    if (txHash) {
+      return txHash;
+    }
+    return null;
+  } catch (error) {
+    const message = error?.message || "";
+    // console.error("❌ STARKNET - Failed to send to tag:", message);
     return null;
   }
 };

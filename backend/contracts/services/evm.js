@@ -93,11 +93,39 @@ export const sendToTag = async ({
     const receipt = await tx.wait();
     if (receipt) {
       return receipt?.transactionHash;
-      // const new_balance = await getTagBalance(chain, sender_tag);
-      // if (new_balance < balance) {
-      //   return true;
-      // }
-      // return false;
+    }
+    return null;
+  } catch (error) {
+    const message = error?.message || "";
+    // console.error(`❌ ${chain.toUpperCase()} Failed to create tag:`, message);
+    return null;
+  }
+};
+
+export const sendToWallet = async ({
+  chain,
+  sender_tag,
+  receiver_address,
+  amount,
+}) => {
+  const evmContract = evm.getEvmChain(chain);
+  const senderTag = sender_tag;
+  const receiverAddress = receiver_address;
+  const transferValue = ethers.parseUnits(amount.toString(), 18);
+  const tokenAddress = ethers.ZeroAddress;
+  try {
+    const balance = await getTagBalance(chain, sender_tag);
+    if (balance > amount) throw new Error("Insufficient wallet balance");
+
+    const tx = await evmContract.contract.withdrawFromWallet(
+      receiverAddress,
+      transferValue,
+      senderTag,
+      tokenAddress
+    );
+    const receipt = await tx.wait();
+    if (receipt) {
+      return receipt?.transactionHash;
     }
     return null;
   } catch (error) {
