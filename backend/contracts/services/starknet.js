@@ -108,6 +108,7 @@ export const sendToTag = async ({
       tokenAddress,
     ]);
     const tx = await starknetContract.safeExecute(call);
+    console.log(tx)
     await starknetContract.provider.waitForTransaction(tx.transaction_hash);
     const txHash = tx.transaction_hash;
     if (txHash) {
