@@ -160,13 +160,13 @@ export const updateUserBalance = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) return;
-    const balances = await Balance.findByUserId(req.user.id);
+    const balances = await Balance.findByUserId(user.id);
     if (!balances.length) {
       return;
     }
     await Promise.all(
       balances.map(async (balance) => {
-        if (!balance.token_symbol) return;
+        if (!balance.token_price || !balance.token_symbol) return;
         const chain = contract.chains[balance.token_symbol];
         try {
           const onchainValue = await (chain == "starknet"
