@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -31,7 +31,7 @@ import AdminUsers from "./components/Admin/AdminUsers";
 import AdminPayouts from "./components/Admin/AdminPayouts";
 import KYCForm from "./components/KYC/KYCForm";
 import ApiTest from "./components/Test/ApiTest";
-import { useIntervalApi } from "./hooks/useIntervalApi";
+import { apiClient } from "./utils/api";
 
 // Private app layout with auth guard
 const PrivateLayout: React.FC = () => {
@@ -39,7 +39,6 @@ const PrivateLayout: React.FC = () => {
   const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
-  useIntervalApi("/balances/sync", 10000);
   if (isLoading) {
     return (
       <div className="min-h-screen grid place-items-center">
@@ -54,6 +53,12 @@ const PrivateLayout: React.FC = () => {
 
   const isAdmin = user.role === "admin";
 
+  useEffect(() => {
+    const startBalancePoller = async () => {
+      await apiClient.get("/balances/sync");
+    }
+    setInterval(startBalancePoller, 10000)
+  }, [])
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <Toaster position="top-center" reverseOrder={false} />
