@@ -71,14 +71,14 @@ export const getTagBalance = async (chain, tag) => {
 
 export const sendToTag = async ({
   chain,
-  receiver_tag,
   sender_tag,
+  receiver_tag,
   amount,
 }) => {
   const evmContract = evm.getEvmChain(chain);
   const senderTag = sender_tag;
   const receiverTag = receiver_tag;
-  const transferValue = ethers.parseUnits(transferAmount.toString(), 18);
+  const transferValue = ethers.parseUnits(amount.toString(), 18);
   const tokenAddress = ethers.ZeroAddress;
   try {
     const balance = await getTagBalance(chain, sender_tag);

@@ -91,8 +91,9 @@ export const deleteWallet = async (req, res) => {
 export const send_to_tag = async (req, res) => {
   try {
     const { id } = req.user;
-    const { receiver_tag, amount, balance_id } = req.body;
+    const { receiver_tag, amount: _amount, balance_id } = req.body;
 
+    const amount = Number(_amount);
     if (!receiver_tag || !amount || !balance_id) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -112,8 +113,7 @@ export const send_to_tag = async (req, res) => {
     if (balance.user_id !== id)
       return res.status(403).json({ error: "Unauthorized" });
 
-    const transferAmount = Number(amount);
-    if (transferAmount > Number(balance.amount)) {
+    if (amount > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
     }
 
@@ -122,15 +122,16 @@ export const send_to_tag = async (req, res) => {
 
     const timestamp = new Date();
     const usdPrice = token.price ?? 1;
-    const usdValue = transferAmount * usdPrice;
+    const usdValue = amount * usdPrice;
     const reference = secureRandomString(16);
+    const chain = contract.chains[token.symbol];
+    const sender_tag = user.tag;
     const payload = {
-      chain: contract.chains[token.symbol],
-      sender_tag: user.tag,
+      chain,
+      sender_tag,
       receiver_tag,
-      amount: transferAmount,
+      amount,
     };
-
     const txHash = await contract.send_via_tag(payload);
 
     if (!txHash) {
