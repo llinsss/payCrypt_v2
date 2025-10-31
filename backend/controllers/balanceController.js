@@ -160,18 +160,14 @@ export const updateUserBalance = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) return;
-    const balances = await Balance.getAll();
+    const balances = await Balance.findByUserId(req.user.id);
     if (!balances.length) {
       return;
     }
-    const tokenIds = [...new Set(balances.map((b) => b.token_id))];
-    const tokens = await Token.findByIds(tokenIds);
-    const tokenMap = new Map(tokens.map((t) => [t.id, t]));
     await Promise.all(
       balances.map(async (balance) => {
-        const token = tokenMap.get(balance.token_id);
-        if (!token) return;
-        const chain = contract.chains[token.symbol];
+        if (!balance.token_symbol) return;
+        const chain = contract.chains[balance.token_symbol];
         try {
           const onchainValue = await (chain == "starknet"
             ? starknet.getTagBalance(user.tag)
