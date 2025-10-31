@@ -181,12 +181,12 @@ export const updateUserBalance = async (req, res) => {
           if (Math.abs(onchainValue - dbValue) < 1e-10) return;
           await Balance.update(balance.id, {
             amount: onchainValue,
-            usd_value: token.price * onchainValue,
+            usd_value: balance.token_price * onchainValue,
           });
         } catch (err) {
           console.warn(
             `❌ Poll error for ${user?.tag || "unknown"} (${
-              token?.symbol || "?"
+              balance.token_symbol || "?"
             }): ${err.message}`
           );
         }
