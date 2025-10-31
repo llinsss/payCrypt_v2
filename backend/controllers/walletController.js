@@ -7,14 +7,14 @@ import {
   Notification,
   Wallet,
 } from "../models/index.js";
-import { starknet, evm } from "../contracts/chains.js";
 import { from18Decimals, to18Decimals } from "../utils/amount.js";
 import secureRandomString from "../utils/random-string.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
-import dotenv from "dotenv";
 import { ethers } from "ethers";
-dotenv.config();
+import * as contract from "../contracts/index.js";
+import * as evm from "../contracts/services/evm.js";
+import * as starknet from "../contracts/services/starknet.js";
 
 export const getWalletByUserId = async (req, res) => {
   try {
@@ -124,61 +124,16 @@ export const send_to_tag = async (req, res) => {
     const usdPrice = token.price ?? 1;
     const usdValue = transferAmount * usdPrice;
     const reference = secureRandomString(16);
-    let txHash = null;
 
-    // ====== ⚡ Handle StarkNet ======
-    if (token.symbol === "STRK") {
-      const contract = await starknet.getContract();
-      const senderTag = shortString.encodeShortString(user.tag);
-      const receiverTag = shortString.encodeShortString(receiver_tag);
-      const transferValue = to18Decimals(transferAmount.toString());
+    const txHash = await contract.send_via_tag({
+      chain,
+      sender_tag: user.tag,
+      receiver_tag,
+      amount: transferAmount,
+    });
 
-      const tx = await contract.deposit_to_tag(
-        receiverTag,
-        senderTag,
-        transferValue,
-        String(process.env.STARKNET_TOKEN_ADDRESS)
-      );
-
-      await starknet.provider.waitForTransaction(tx.transaction_hash);
-      txHash = tx.transaction_hash;
-
-      if (!txHash)
-        return res
-          .status(422)
-          .json({ error: "Failed to transfer on StarkNet" });
-    }
-
-    // ====== ⚡ Handle EVM Chains ======
-    else {
-      let contract = null;
-      if (token.symbol === "U2U") {
-        const { contract: _contract } = u2u;
-        contract = _contract;
-      }
-      if (token.symbol === "LSK") {
-        const { contract: _contract } = lisk;
-        contract = _contract;
-      }
-      if (token.symbol === "BASE") {
-        const { contract: _contract } = base;
-        contract = _contract;
-      }
-      if (token.symbol === "FLOW") {
-        const { contract: _contract } = flow;
-        contract = _contract;
-      }
-
-      const tx = await contract.depositEthFromTagToTag(
-        user.tag,
-        receiver_tag,
-        ethers.parseUnits(transferAmount.toString(), 18)
-      );
-      const receipt = await tx.wait();
-      txHash = receipt.hash;
-
-      if (!txHash)
-        return res.status(422).json({ error: "Failed to transfer on EVM" });
+    if (!txHash) {
+      return res.status(422).json({ error: "Failed to transfer" });
     }
 
     // ====== ⛓ Common database updates ======

@@ -1,6 +1,7 @@
 import { shortString } from "starknet";
 import * as starknet from "../starknet.js";
 import { formatChainAmount } from "../index.js";
+import { to18Decimals } from "../../utils/amount.js";
 
 export const createTagAddress = async (tag) => {
   const starknetContract = starknet.getStarknetChain();
@@ -15,17 +16,21 @@ export const createTagAddress = async (tag) => {
     ]);
     const tx = await starknetContract.safeExecute(call);
     await starknetContract.provider.waitForTransaction(tx.transaction_hash);
-    const newTag = await starknetContract.contract.get_tag_wallet_address(
-      feltTag
-    );
-    if (!newTag) return null;
-    const walletAddress =
-      typeof newTag === "bigint"
-        ? `0x${newTag.toString(16)}`
-        : newTag.toString().startsWith("0x")
-        ? newTag
-        : `0x${BigInt(newTag).toString(16)}`;
-    return walletAddress !== "0x0" ? walletAddress : null;
+    const txHash = tx.transaction_hash;
+    if (txHash) {
+      const newTag = await starknetContract.contract.get_tag_wallet_address(
+        feltTag
+      );
+      if (!newTag) return null;
+      const walletAddress =
+        typeof newTag === "bigint"
+          ? `0x${newTag.toString(16)}`
+          : newTag.toString().startsWith("0x")
+          ? newTag
+          : `0x${BigInt(newTag).toString(16)}`;
+      return walletAddress !== "0x0" ? walletAddress : null;
+    }
+    return null;
   } catch (error) {
     const message = error?.message || "";
     // console.error("❌ STARKNET - Failed to create tag:", message);
@@ -77,5 +82,40 @@ export const getTagBalance = async (tag) => {
     const message = error?.message || "";
     // console.error("❌ STARKNET - Failed to fetch tag balance:", message);
     return 0;
+  }
+};
+
+export const sendToTag = async ({ receiver_tag, sender_tag, amount }) => {
+  const starknetContract = starknet.getStarknetChain();
+  const senderTag = shortString.encodeShortString(sender_tag);
+  const receiverTag = shortString.encodeShortString(receiver_tag);
+  const transferValue = to18Decimals(amount.toString());
+  const tokenAddress = starknetContract.config.tokenAddress;
+  try {
+    const balance = await getTagBalance(sender_tag);
+    if (balance > amount) throw new Error("Insufficient wallet balance");
+
+    const call = await starknetContract.contract.populate("deposit_to_tag", [
+      receiverTag,
+      senderTag,
+      transferValue,
+      tokenAddress,
+    ]);
+    const tx = await starknetContract.safeExecute(call);
+    await starknetContract.provider.waitForTransaction(tx.transaction_hash);
+    const txHash = tx.transaction_hash;
+    if (txHash) {
+      return txHash;
+      // const new_balance = await getTagBalance(sender_tag);
+      // if (new_balance < balance) {
+      //   return true;
+      // }
+      // return false;
+    }
+    return null;
+  } catch (error) {
+    const message = error?.message || "";
+    // console.error("❌ STARKNET - Failed to send to tag:", message);
+    return null;
   }
 };

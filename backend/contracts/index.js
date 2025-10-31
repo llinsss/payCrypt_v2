@@ -53,3 +53,11 @@ export const tag_balance = async (chain, tag) => {
     return await evm.getTagBalance(chain, tag);
   }
 };
+
+export const send_via_tag = async (payload) => {
+  if (payload.chain === "starknet") {
+    return await starknet.sendToTag(payload);
+  } else {
+    return await evm.sendToTag(payload);
+  }
+};
