@@ -133,6 +133,7 @@ export const send_to_tag = async (req, res) => {
       amount,
     };
     const txHash = await contract.send_via_tag(payload);
+    console.log("Hash:", txHash)
 
     if (!txHash) {
       return res.status(422).json({ error: "Failed to transfer" });
@@ -231,6 +232,7 @@ export const send_to_wallet = async (req, res) => {
       amount,
     };
     const txHash = await contract.send_via_wallet(payload);
+    console.log("Hash:", txHash)
 
     if (!txHash) {
       return res.status(422).json({ error: "Failed to transfer" });
