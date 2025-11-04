@@ -94,7 +94,7 @@ export const sendToTag = async ({
     const receipt = await tx.wait();
     console.log("Receipt: ", receipt);
     if (receipt) {
-      return receipt?.transactionHash;
+      return receipt?.hash;
     }
     return null;
   } catch (error) {
