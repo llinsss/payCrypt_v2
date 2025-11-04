@@ -33,7 +33,7 @@ export const createTagAddress = async (tag) => {
     return null;
   } catch (error) {
     const message = error?.message || "";
-    // console.error("❌ STARKNET - Failed to create tag:", message);
+    console.error("❌ STARKNET - Failed to create tag:", message);
     return null;
   }
 };
@@ -62,7 +62,7 @@ export const getTagAddress = async (tag) => {
       console.warn(`⚠️ STARKNET - Tag '${tag}' not found.`);
       return null;
     }
-    // console.error("❌ STARKNET - Failed to fetch tag address:", message);
+    console.error("❌ STARKNET - Failed to fetch tag address:", message);
     return null;
   }
 };
@@ -80,7 +80,7 @@ export const getTagBalance = async (tag) => {
     return formatChainAmount("starknet", balance);
   } catch (error) {
     const message = error?.message || "";
-    // console.error("❌ STARKNET - Failed to fetch tag balance:", message);
+    console.error("❌ STARKNET - Failed to fetch tag balance:", message);
     return 0;
   }
 };
@@ -115,7 +115,7 @@ export const sendToTag = async ({
     return null;
   } catch (error) {
     const message = error?.message || "";
-    // console.error("❌ STARKNET - Failed to send to tag:", message);
+    console.error("❌ STARKNET - Failed to send to tag:", message);
     return null;
   }
 };
@@ -148,7 +148,7 @@ export const sendToWallet = async ({
     return null;
   } catch (error) {
     const message = error?.message || "";
-    // console.error("❌ STARKNET - Failed to send to tag:", message);
+    console.error("❌ STARKNET - Failed to send to tag:", message);
     return null;
   }
 };

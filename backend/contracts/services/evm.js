@@ -20,7 +20,7 @@ export const createTagAddress = async (chain, tag) => {
     return null;
   } catch (error) {
     const message = error?.message || "";
-    // console.error(`❌ ${chain.toUpperCase()} Failed to create tag:`, message);
+    console.error(`❌ ${chain.toUpperCase()} Failed to create tag:`, message);
     return null;
   }
 };
@@ -41,10 +41,10 @@ export const getTagAddress = async (chain, tag) => {
     ) {
       console.warn(`⚠️ Tag '${tag}' not found.`);
     }
-    // console.error(
-    //   `❌ ${chain.toUpperCase()} Failed to fetch tag address:`,
-    //   error
-    // );
+    console.error(
+      `❌ ${chain.toUpperCase()} Failed to fetch tag address:`,
+      error
+    );
     return null;
   }
 };
@@ -61,10 +61,10 @@ export const getTagBalance = async (chain, tag) => {
     return formatChainAmount(chain, balance);
   } catch (error) {
     const message = error?.message || "";
-    // console.error(
-    //   `❌ ${chain.toUpperCase()} Failed to fetch tag balance:`,
-    //   message
-    // );
+    console.error(
+      `❌ ${chain.toUpperCase()} Failed to fetch tag balance:`,
+      message
+    );
     return 0;
   }
 };
@@ -97,7 +97,7 @@ export const sendToTag = async ({
     return null;
   } catch (error) {
     const message = error?.message || "";
-    // console.error(`❌ ${chain.toUpperCase()} Failed to create tag:`, message);
+    console.error(`❌ ${chain.toUpperCase()} Failed to send to tag:`, message);
     return null;
   }
 };
@@ -130,7 +130,7 @@ export const sendToWallet = async ({
     return null;
   } catch (error) {
     const message = error?.message || "";
-    // console.error(`❌ ${chain.toUpperCase()} Failed to create tag:`, message);
+    console.error(`❌ ${chain.toUpperCase()} Failed to send to tag:`, message);
     return null;
   }
 };
