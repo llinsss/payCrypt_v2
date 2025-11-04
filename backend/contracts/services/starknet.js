@@ -98,6 +98,7 @@ export const sendToTag = async ({
   const tokenAddress = starknetContract.config.tokenAddress;
   try {
     const balance = await getTagBalance(sender_tag);
+    console.log(chain + " Balance For " + senderTag + ": " + balance);
     if (balance < amount) throw new Error("Insufficient wallet balance");
 
     const call = await starknetContract.contract.populate("deposit_to_tag", [
@@ -133,6 +134,7 @@ export const sendToWallet = async ({
   const tokenAddress = starknetContract.config.tokenAddress;
   try {
     const balance = await getTagBalance(sender_tag);
+    console.log(chain + " Balance For " + senderTag + ": " + balance);
     if (balance < amount) throw new Error("Insufficient wallet balance");
 
     const call = await starknetContract.contract.populate(

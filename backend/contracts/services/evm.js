@@ -82,6 +82,7 @@ export const sendToTag = async ({
   const tokenAddress = ethers.ZeroAddress;
   try {
     const balance = await getTagBalance(chain, sender_tag);
+    console.log(chain + " Balance For " + senderTag + ": " + balance);
     if (balance > amount) throw new Error("Insufficient wallet balance");
 
     const tx = await evmContract.contract.deposit(
@@ -115,6 +116,7 @@ export const sendToWallet = async ({
   const tokenAddress = ethers.ZeroAddress;
   try {
     const balance = await getTagBalance(chain, sender_tag);
+    console.log(chain + " Balance For " + senderTag + ": " + balance);
     if (balance > amount) throw new Error("Insufficient wallet balance");
 
     const tx = await evmContract.contract.withdrawFromWallet(
