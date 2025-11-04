@@ -83,7 +83,7 @@ export const sendToTag = async ({
   try {
     const balance = await getTagBalance(chain, sender_tag);
     console.log(chain + " Balance For " + senderTag + ": " + balance);
-    if (balance > amount) throw new Error("Insufficient wallet balance");
+    if (balance < amount) throw new Error("Insufficient wallet balance");
 
     const tx = await evmContract.contract.deposit(
       receiverTag,
@@ -117,7 +117,7 @@ export const sendToWallet = async ({
   try {
     const balance = await getTagBalance(chain, sender_tag);
     console.log(chain + " Balance For " + senderTag + ": " + balance);
-    if (balance > amount) throw new Error("Insufficient wallet balance");
+    if (balance < amount) throw new Error("Insufficient wallet balance");
 
     const tx = await evmContract.contract.withdrawFromWallet(
       receiverAddress,
