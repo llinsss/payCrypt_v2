@@ -104,6 +104,7 @@ const AdminDashboard: React.FC = () => {
           changeType="positive"
           icon={Activity}
           iconColor="text-amber-600"
+        />
       </div>
 
       {/* Business Development Milestones */}
@@ -203,11 +204,10 @@ const AdminDashboard: React.FC = () => {
             <div key={chain.name} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-medium text-gray-900">{chain.name}</span>
-                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                  chain.status === 'healthy' 
-                    ? 'text-emerald-600 bg-emerald-50' 
+                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${chain.status === 'healthy'
+                    ? 'text-emerald-600 bg-emerald-50'
                     : 'text-amber-600 bg-amber-50'
-                }`}>
+                  }`}>
                   {chain.status}
                 </span>
               </div>
