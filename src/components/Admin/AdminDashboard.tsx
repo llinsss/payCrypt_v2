@@ -2,7 +2,7 @@ import React from 'react';
 import { Users, DollarSign, TrendingUp, Activity } from 'lucide-react';
 import StatsCard from '../Dashboard/StatsCard';
 import TransactionTable from '../Dashboard/TransactionTable';
-import { mockTransactions, formatCurrency } from '../../utils/mockData';
+import { formatCurrency } from '../../utils/mockData';
 import { UserTransaction } from '../../interfaces';
 
 const AdminDashboard: React.FC = () => {
@@ -205,8 +205,8 @@ const AdminDashboard: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <span className="font-medium text-gray-900">{chain.name}</span>
                 <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${chain.status === 'healthy'
-                    ? 'text-emerald-600 bg-emerald-50'
-                    : 'text-amber-600 bg-amber-50'
+                  ? 'text-emerald-600 bg-emerald-50'
+                  : 'text-amber-600 bg-amber-50'
                   }`}>
                   {chain.status}
                 </span>
