@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const config = {
-  client: "mysql2",
+  client: "pg",
   connection: {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
