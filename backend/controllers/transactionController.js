@@ -1,4 +1,5 @@
 import Transaction from "../models/Transaction.js";
+import User from "../models/User.js";
 
 export const createTransaction = async (req, res) => {
   try {
@@ -95,6 +96,56 @@ export const deleteTransaction = async (req, res) => {
 
     await Transaction.delete(id);
     res.json({ message: "Transaction deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getTransactionsByTag = async (req, res) => {
+  try {
+    const { tag } = req.params;
+    const {
+      limit = 20,
+      offset = 0,
+      from,
+      to,
+      type,
+      sortBy = "created_at",
+      sortOrder = "desc",
+    } = req.query;
+
+    const user = await User.findByTag(tag);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const parsedLimit = Math.min(Math.max(Number.parseInt(limit) || 20, 1), 100);
+    const parsedOffset = Math.max(Number.parseInt(offset) || 0, 0);
+
+    const options = {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      from: from || null,
+      to: to || null,
+      type: type || null,
+      sortBy,
+      sortOrder,
+    };
+
+    const [transactions, total] = await Promise.all([
+      Transaction.getByTag(user.id, options),
+      Transaction.countByTag(user.id, options),
+    ]);
+
+    res.json({
+      data: transactions,
+      pagination: {
+        total,
+        limit: parsedLimit,
+        offset: parsedOffset,
+        hasMore: parsedOffset + transactions.length < total,
+      },
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
