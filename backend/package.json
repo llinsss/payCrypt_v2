@@ -14,7 +14,8 @@
         "migrate:status": "knex migrate:status",
         "seed": "knex seed:run",
         "seed:make": "knex seed:make",
-        "db:reset": "knex migrate:rollback --all && knex migrate:latest && knex seed:run"
+        "db:reset": "knex migrate:rollback --all && knex migrate:latest && knex seed:run",
+        "test:db": "node scripts/test-db-setup.js"
     },
     "dependencies": {
         "@bull-board/api": "^6.13.0",
