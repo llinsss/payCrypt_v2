@@ -8,6 +8,7 @@ import morgan from "morgan";
 import hpp from "hpp";
 import xss from "xss-clean";
 import basicAuth from "express-basic-auth";
+import swaggerUi from "swagger-ui-express";
 
 import mongoSanitize from "express-mongo-sanitize";
 
@@ -16,6 +17,8 @@ import indexRoutes from "./routes/index.js";
 import generalRoutes from "./routes/general.js";
 
 import bullBoardRouter from "./bullboard.js";
+
+import swaggerSpec from "./config/swagger.js";
 
 // Import routes
 
@@ -94,11 +97,29 @@ app.use(express.urlencoded({ extended: true }));
 
 // setInterval(listenForDeposits, 2000);
 
+// --- Swagger API Documentation ---
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    explorer: true,
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "TaggedPay API Documentation",
+  })
+);
+
+// Serve swagger spec as JSON
+app.get("/api-docs.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerSpec);
+});
+
 // --- Routes ---
 app.get("/", (req, res) => {
   res.status(200).json({
     status: "success",
-    message: "Welcome to Tagg@d API service 🚀",
+    message: "Welcome to Tagg@d API service",
+    documentation: "/api-docs",
     environment: process.env.NODE_ENV,
   });
 });
