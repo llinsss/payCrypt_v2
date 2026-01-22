@@ -48,6 +48,9 @@
         "pino-pretty": "^13.1.2",
         "redis": "^5.8.2",
         "starknet": "^7.6.4",
+        "stellar-sdk": "^13.3.0",
+        "winston": "^3.19.0",
+        "winston-daily-rotate-file": "^5.0.0",
         "xss-clean": "^0.1.4"
     },
     "devDependencies": {
