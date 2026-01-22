@@ -48,7 +48,10 @@
         "pino": "^10.1.0",
         "pino-pretty": "^13.1.2",
         "redis": "^5.8.2",
-        "starknet": "^7.6.4"
+        "starknet": "^7.6.4",
+        "swagger-jsdoc": "^6.2.8",
+        "swagger-ui-express": "^5.0.0",
+        "xss-clean": "^0.1.4"
     },
     "devDependencies": {
         "nodemon": "^3.0.1"
