@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Tagged webhook system allows external applications to receive real-time notifications when events occur in the platform. This enables integration with third-party services, automation workflows, and custom monitoring solutions.
+The TaggedPay webhook system allows external applications to receive real-time notifications when events occur in the platform. This enables integration with third-party services, automation workflows, and custom monitoring solutions.
 
 ## Features
 
@@ -161,7 +161,7 @@ All webhook notifications are sent as HTTP POST requests with the following form
 
 ## Signature Verification
 
-Each webhook request includes an `X-Webhook-Signature` header containing an HMAC-SHA256 signature. **You should always verify this signature** to ensure the request came from Tagged.
+Each webhook request includes an `X-Webhook-Signature` header containing an HMAC-SHA256 signature. **You should always verify this signature** to ensure the request came from TaggedPay.
 
 ### Verification Example (Node.js)
 
@@ -231,7 +231,7 @@ def webhook():
 
 ## Retry Logic
 
-If your webhook endpoint fails to respond or returns an error status code (non-2xx), Tagged will automatically retry delivery with exponential backoff:
+If your webhook endpoint fails to respond or returns an error status code (non-2xx), TaggedPay will automatically retry delivery with exponential backoff:
 
 - **Attempt 1**: Immediate
 - **Attempt 2**: After 1 minute
