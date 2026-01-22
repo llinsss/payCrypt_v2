@@ -103,8 +103,11 @@ app.get("/", (req, res) => {
   });
 });
 
+import tagRoutes from "./routes/tagRoutes.js";
+
 app.use("/", generalRoutes);
 app.use("/api", indexRoutes);
+app.use("/api/tags", tagRoutes);
 
 app.use(
   "/admin/running-queues",
