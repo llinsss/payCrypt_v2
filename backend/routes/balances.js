@@ -7,6 +7,7 @@ import {
   deleteBalance,
   getBalanceByUser,
   updateUserBalance,
+  getBalanceByTag,
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -326,5 +327,7 @@ router.put("/:id", authenticate, updateBalance);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.delete("/:id", authenticate, deleteBalance);
+router.get("/tag/:tag", getBalanceByTag);
+
 
 export default router;

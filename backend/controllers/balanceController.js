@@ -193,8 +193,53 @@ export const updateUserBalance = async (req, res) => {
       })
     );
 
-    console.log("✅ Polling cycle complete.");
+    console.log(" Polling cycle complete.");
   } catch (err) {
     console.error("💥 Poller error:", err.message);
+  }
+};
+
+export const getBalanceByTag = async (req, res) => {
+  try {
+    const { tag } = req.params;
+
+    
+    const cacheKey = `balances:tag:${tag}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+
+    
+    const user = await db("users").where({ tag }).first();
+    if (!user) {
+      return res.status(404).json({
+        tag,
+        balances: [],
+        message: "Tag not found",
+      });
+    }
+
+    
+    const balances = await Balance.getByUser(user.id);
+
+    // 4️⃣ Format response (IMPORTANT)
+    const responseBalances = balances.map((b) => ({
+      asset: b.token_symbol,
+      balance: Number(b.amount).toFixed(7),
+      usdValue: Number(b.usd_value),
+    }));
+
+    const response = {
+      tag,
+      balances: responseBalances,
+    };
+
+    
+    await redis.set(cacheKey, JSON.stringify(response), "EX", 60);
+
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
