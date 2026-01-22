@@ -6,10 +6,11 @@ import {
   updateTransaction,
   deleteTransaction,
   getTransactionByUser,
+  getTransactionsByTag,
 } from "../controllers/transactionController.js";
 import { authenticate } from "../middleware/auth.js";
-import { validate } from "../middleware/validation.js";
-import { transactionSchema } from "../schemas/transaction.js";
+import { validate, validateQuery } from "../middleware/validation.js";
+import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
 
 const router = express.Router();
 
@@ -104,6 +105,50 @@ router.post("/", authenticate, validate(transactionSchema), createTransaction);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.get("/", authenticate, getTransactionByUser);
+
+/**
+ * @swagger
+ * /api/transactions/tag/{tag}:
+ *   get:
+ *     summary: Get transactions by user tag
+ *     description: Retrieves all transactions for a specific user tag (public endpoint)
+ *     tags: [Transactions]
+ *     security: []
+ *     parameters:
+ *       - in: path
+ *         name: tag
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User tag
+ *         example: "johndoe"
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of records per page
+ *     responses:
+ *       200:
+ *         description: List of transactions for the tag
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Transaction'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
 
 /**
  * @swagger
