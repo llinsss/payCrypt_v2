@@ -358,7 +358,5 @@ router.put("/:id", authenticate, updateBalance);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.delete("/:id", authenticate, deleteBalance);
-router.get("/tag/:tag", getBalanceByTag);
-
 
 export default router;

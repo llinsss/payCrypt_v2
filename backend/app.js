@@ -101,11 +101,6 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Sanitize all request inputs
 app.use(sanitizeRequest);
 
-import { performanceMonitor } from "./middleware/performance.js";
-import logger, { stream } from "./utils/logger.js";
-
-// ... imports ...
-
 // Logging (only in development)
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev", { stream }));

@@ -56,6 +56,7 @@ const router = express.Router();
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
+// Apply payment rate limiter: 100 per hour per API key/user
 router.post("/", authenticate, paymentLimiter, validate(transactionSchema), createTransaction);
 
 /**
