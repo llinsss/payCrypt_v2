@@ -1,5 +1,7 @@
 import { Injectable, ConflictException, Logger, InternalServerErrorException } from '@nestjs/common';
 import { StellarService } from '../stellar/stellar.service';
+import { WebhookService } from '../webhooks/webhook.service';
+import { WebhookEventType } from '../webhooks/interfaces/webhook-event.interface';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { AccountResponse } from './interfaces/account-response.interface';
 
@@ -17,7 +19,10 @@ export class AccountsService {
     private readonly logger = new Logger(AccountsService.name);
     private readonly tagMap: Map<string, StoredAccount> = new Map();
 
-    constructor(private readonly stellarService: StellarService) { }
+    constructor(
+        private readonly stellarService: StellarService,
+        private readonly webhookService: WebhookService,
+    ) { }
 
     /**
      * Creates a new Stellar account with the given @tag
@@ -61,6 +66,17 @@ export class AccountsService {
         this.tagMap.set(normalizedTag, storedAccount);
 
         this.logger.log(`Account created successfully for @${normalizedTag}`);
+
+        // Trigger webhook event for account creation
+        await this.webhookService.triggerEvent(
+            WebhookEventType.ACCOUNT_CREATED,
+            {
+                accountTag: normalizedTag,
+                publicKey,
+                balance,
+                createdAt: storedAccount.createdAt,
+            },
+        );
 
         return {
             success: true,
