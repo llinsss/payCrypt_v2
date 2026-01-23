@@ -89,4 +89,44 @@ export class StellarService {
             throw error;
         }
     }
+
+    /**
+     * Sends XLM from one account to another
+     * @param sourceSecret The secret key of the sender
+     * @param destinationPublic The public key of the receiver
+     * @param amount The amount of XLM to send
+     * @returns The transaction result hash
+     */
+    async sendPayment(
+        sourceSecret: string,
+        destinationPublic: string,
+        amount: string,
+    ): Promise<string> {
+        try {
+            const sourceKeypair = StellarSdk.Keypair.fromSecret(sourceSecret);
+            const sourceAccount = await this.server.loadAccount(sourceKeypair.publicKey());
+
+            const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+                fee: StellarSdk.BASE_FEE,
+                networkPassphrase: StellarSdk.Networks.TESTNET,
+            })
+                .addOperation(
+                    StellarSdk.Operation.payment({
+                        destination: destinationPublic,
+                        asset: StellarSdk.Asset.native(),
+                        amount: amount,
+                    }),
+                )
+                .setTimeout(StellarSdk.TimeoutInfinite)
+                .build();
+
+            transaction.sign(sourceKeypair);
+
+            const result = await this.server.submitTransaction(transaction);
+            return result.hash;
+        } catch (error) {
+            this.logger.error(`Payment failed: ${error.message}`);
+            throw error;
+        }
+    }
 }
