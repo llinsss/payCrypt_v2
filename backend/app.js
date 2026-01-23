@@ -55,10 +55,18 @@ app.use(compression());
 // Request body parsing
 app.use(express.json({ limit: "10kb" })); // protect from large payload attacks
 
+import { performanceMonitor } from "./middleware/performance.js";
+import logger, { stream } from "./utils/logger.js";
+
+// ... imports ...
+
 // Logging (only in development)
 if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
+  app.use(morgan("dev", { stream }));
 }
+
+// Performance Monitoring
+app.use(performanceMonitor);
 
 // Rate limiting
 const limiter = rateLimit({
