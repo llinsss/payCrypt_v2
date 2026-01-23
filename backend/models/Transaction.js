@@ -95,8 +95,9 @@ const Transaction = {
       .sum("usd_value as amount");
   },
 
-  async update(id, transactionData) {
-    await db("transactions")
+  async update(id, transactionData, trx = null) {
+    const query = trx || db;
+    await query("transactions")
       .where({ id })
       .update({
         ...transactionData,

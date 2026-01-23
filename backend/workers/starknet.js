@@ -4,7 +4,7 @@ import redis, { redisConnection } from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import secureRandomString from "../utils/random-string.js";
 
-export const starknetWorker = new Worker(
+export const starknetWorker = redisConnection ? new Worker(
   "starknet-transactions",
   async (job) => {
     const event = job.data;
@@ -58,6 +58,7 @@ export const starknetWorker = new Worker(
         usd_value,
         from_address: sender,
         to_address: recipient,
+
         timestamp,
         description: "Deposit received on StarkNet",
         extra: JSON.stringify(event),
@@ -118,6 +119,7 @@ export const starknetWorker = new Worker(
       await db("notifications").insert({
         user_id: user.id,
         title: "Withdrawal",
+
         body: `Withdrawal of ${crypto_value} ${_token.symbol} completed`,
       });
     }
@@ -125,12 +127,16 @@ export const starknetWorker = new Worker(
   {
     connection: redisConnection,
   }
-);
+) : null;
 
-starknetWorker.on("completed", (job) => {
-  console.log(`✅ Starknet job completed: ${job.id}`);
-});
-starknetWorker.on("failed", (job, err) => {
-  console.error(`❌ Starknet job failed: ${job.id}`, err);
-});
-console.log("📬 Starknet worker initialized");
+if (starknetWorker) {
+  starknetWorker.on("completed", (job) => {
+    console.log(`✅ Starknet job completed: ${job.id}`);
+  });
+  starknetWorker.on("failed", (job, err) => {
+    console.error(`❌ Starknet job failed: ${job.id}`, err);
+  });
+  console.log("📬 Starknet worker initialized");
+} else {
+  console.warn("⚠️ Starknet worker not available (Redis not connected)");
+}

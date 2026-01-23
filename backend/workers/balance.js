@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import { createUserBalance } from "../controllers/balanceController.js";
 
-export const balanceWorker = new Worker(
+export const balanceWorker = redisConnection ? new Worker(
   "balance-setup",
   async (job) => {
     const { user_id, tag } = job.data;
@@ -14,4 +14,15 @@ export const balanceWorker = new Worker(
     connection: redisConnection,
     concurrency: 5,
   }
-);
+) : null;
+
+if (balanceWorker) {
+  balanceWorker.on("completed", (job) => {
+    console.log(`✅ Balance worker completed job ${job.id}`);
+  });
+  balanceWorker.on("failed", (job, err) => {
+    console.error(`💥 Balance worker failed job ${job.id}:`, err.message);
+  });
+} else {
+  console.warn("⚠️ Balance worker not available (Redis not connected)");
+}

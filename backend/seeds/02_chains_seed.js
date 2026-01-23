@@ -44,6 +44,14 @@ export const seed = async (knex) => {
         rpc_url: "https://rpc-mainnet.u2u.xyz",
         block_explorer: "https://u2uscan.xyz",
       },
+      {
+        id: 6,
+        symbol: "XLM",
+        name: "Stellar",
+        native_currency: { name: "Stellar Lumens", symbol: "XLM" },
+        rpc_url: "https://horizon.stellar.org",
+        block_explorer: "https://stellar.expert/explorer/public",
+      },
     ]);
   }
 };

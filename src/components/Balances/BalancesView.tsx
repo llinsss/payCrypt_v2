@@ -113,18 +113,18 @@ const BalancesView: React.FC = () => {
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
               <StatCard
                 label="Total Deposited"
-                value={masked(
+                value={String(masked(
                   formatCurrency(summary?.total_deposit || 0),
                   "••••••"
-                )}
+                ))}
                 color="from-green-400 to-emerald-500"
               />
               <StatCard
                 label="Total Withdrawn"
-                value={masked(
+                value={String(masked(
                   formatCurrency(summary?.total_withdrawal || 0),
                   "••••••"
-                )}
+                ))}
                 color="from-orange-400 to-red-500"
               />
               <div className="hidden lg:block">
@@ -339,7 +339,7 @@ const AssetCard: React.FC<{
 
           <div className="text-right">
             <div className="text-sm font-medium text-gray-600">
-              {hideBalances ? "••••" : formatCurrency(balance.token_price || 0)}
+              {hideBalances ? "••••" : formatCurrency(Number(balance.token_price || 0))}
             </div>
             <div className="text-xs text-gray-500">Price</div>
           </div>

@@ -19,15 +19,15 @@ const PORT = process.env.PORT || 3000;
     } else {
       console.log("✅ No new migrations to run");
     }
-
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(
-        `📬 Bull Board: http://localhost:${PORT}/admin/running-queues`
-      );
-    });
   } catch (err) {
-    console.error("❌ Server startup failed:", err);
-    process.exit(1);
+    console.error("⚠️ Database connection failed:", err.message);
+    console.warn("🚀 Starting server without database migrations");
   }
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(
+      `📬 Bull Board: http://localhost:${PORT}/admin/running-queues`
+    );
+  });
 })();
