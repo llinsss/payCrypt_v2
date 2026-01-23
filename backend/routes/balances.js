@@ -10,6 +10,7 @@ import {
   getBalanceByTag,
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
+import { balanceQueryLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
@@ -91,7 +92,7 @@ router.post("/", authenticate, createBalance);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/all", authenticate, getBalances);
+router.get("/all", authenticate, balanceQueryLimiter, getBalances);
 
 /**
  * @swagger
@@ -143,7 +144,7 @@ router.get("/all", authenticate, getBalances);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/", authenticate, getBalanceByUser);
+router.get("/", authenticate, balanceQueryLimiter, getBalanceByUser);
 
 /**
  * @swagger
@@ -175,6 +176,36 @@ router.get("/", authenticate, getBalanceByUser);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.get("/sync", authenticate, updateUserBalance);
+
+/**
+ * @swagger
+ * /api/balances/tag/{tag}:
+ *   get:
+ *     summary: Get balances by user tag
+ *     description: Retrieves token balances for a specific user tag (public endpoint)
+ *     tags: [Balances]
+ *     security: []
+ *     parameters:
+ *       - in: path
+ *         name: tag
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User tag
+ *         example: "johndoe"
+ *     responses:
+ *       200:
+ *         description: List of balances for the tag
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Balance'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/tag/:tag", balanceQueryLimiter, getBalanceByTag);
 
 /**
  * @swagger
@@ -219,7 +250,7 @@ router.get("/sync", authenticate, updateUserBalance);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/:id", authenticate, getBalanceById);
+router.get("/:id", authenticate, balanceQueryLimiter, getBalanceById);
 
 /**
  * @swagger
@@ -327,7 +358,5 @@ router.put("/:id", authenticate, updateBalance);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.delete("/:id", authenticate, deleteBalance);
-router.get("/tag/:tag", getBalanceByTag);
-
 
 export default router;

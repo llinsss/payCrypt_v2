@@ -2,6 +2,7 @@ import express from "express";
 import { register, login } from "../controllers/authController.js";
 import { validate } from "../middleware/validation.js";
 import { authSchemas } from "../schemas/auth.js";
+import { accountCreationLimiter, loginLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
@@ -71,7 +72,8 @@ const router = express.Router();
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/register", validate(authSchemas.register), register);
+// Apply account creation rate limiter: 5 per hour per IP
+router.post("/register", accountCreationLimiter, validate(authSchemas.register), register);
 
 /**
  * @swagger
@@ -121,6 +123,7 @@ router.post("/register", validate(authSchemas.register), register);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/login", validate(authSchemas.login), login);
+// Apply login rate limiter: 10 failed attempts per 15 minutes
+router.post("/login", loginLimiter, validate(authSchemas.login), login);
 
 export default router;

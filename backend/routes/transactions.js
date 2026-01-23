@@ -11,6 +11,7 @@ import {
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
+import { paymentLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
@@ -52,7 +53,8 @@ const router = express.Router();
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticate, validate(transactionSchema), createTransaction);
+// Apply payment rate limiter: 100 per hour per API key/user
+router.post("/", authenticate, paymentLimiter, validate(transactionSchema), createTransaction);
 
 /**
  * @swagger
@@ -247,7 +249,7 @@ router.get("/:id", authenticate, getTransactionById);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.put("/:id", authenticate, validate(transactionSchema), updateTransaction);
+router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), updateTransaction);
 
 /**
  * @swagger
@@ -295,6 +297,6 @@ router.put("/:id", authenticate, validate(transactionSchema), updateTransaction)
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.delete("/:id", authenticate, deleteTransaction);
+router.delete("/:id", authenticate, paymentLimiter, deleteTransaction);
 
 export default router;
