@@ -34,6 +34,27 @@ class TagController {
         }
     }
 
+    async check(req, res) {
+        try {
+            const { tag } = req.params;
+
+            // Basic validation
+            if (!/^[a-zA-Z0-9_]{3,20}$/.test(tag)) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Tag must be alphanumeric with underscores, 3-20 characters long'
+                });
+            }
+
+            const result = await TagService.checkAvailability(tag);
+
+            res.status(200).json(result);
+        } catch (error) {
+            console.error('Check Tag Error:', error);
+            res.status(500).json({ status: 'error', message: 'Internal server error' });
+        }
+    }
+
     async resolve(req, res) {
         try {
             const { tag } = req.params;
