@@ -17,7 +17,11 @@ interface RegisterFormData {
   acceptTerms: boolean;
 }
 
-const Login: React.FC = () => {
+interface LoginFormProps {
+  onSwitchToRegister: () => void;
+}
+
+const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -409,4 +413,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login;
+export default LoginForm;

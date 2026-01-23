@@ -54,6 +54,16 @@ export const seed = async (knex) => {
         chain: "U2U Solaris Mainnet",
         price: 0.0213,
       },
+      {
+        id: 6,
+        address: "native",
+        symbol: "XLM",
+        name: "Stellar Lumens",
+        decimals: 7,
+        logo_url: "xlm.svg",
+        chain: "Stellar",
+        price: 0.09,
+      },
     ]);
   }
 };

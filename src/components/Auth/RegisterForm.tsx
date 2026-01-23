@@ -12,6 +12,8 @@ interface RegisterFormData {
   acceptTerms: boolean;
 }
 
+// RegisterData type is defined in src/types/auth.ts
+
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
 }
@@ -39,7 +41,12 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
     try {
       setError("");
       const generatedAddress = generateWallet();
-      await registerUser(data.tag, data.email, data.password, generatedAddress);
+      await registerUser({
+        tag: data.tag,
+        email: data.email,
+        password: data.password,
+        address: generatedAddress,
+      });
       navigate("/");
     } catch (err) {
       setError("Registration failed. Please try again.");

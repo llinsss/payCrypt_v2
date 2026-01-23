@@ -1,6 +1,6 @@
 import { redisConnection } from "../config/redis.js";
 
-const queueConfig = {
+const queueConfig = redisConnection ? {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 3,
@@ -11,5 +11,6 @@ const queueConfig = {
     removeOnComplete: 100,
     removeOnFail: false,
   },
-};
+} : null;
+
 export default queueConfig;

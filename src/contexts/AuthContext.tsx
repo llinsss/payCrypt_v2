@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { authApi, mapBackendUserToAuthUser } from "../utils/authApi";
-import { AuthUser, AuthContextType, RegisterData } from "../types/auth";
+import { AuthUser, AuthContextType } from "../types/auth";
 import { ApiError } from "../utils/api";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -111,3 +111,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
+
+interface RegisterData {
+  tag: string;
+  email: string;
+  password: string;
+  address: string;
+}

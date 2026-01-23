@@ -7,6 +7,9 @@ import {
   deleteTransaction,
   getTransactionByUser,
   getTransactionsByTag,
+  processPayment,
+  getPaymentLimits,
+  getPaymentHistory
 } from "../controllers/transactionController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
@@ -298,5 +301,10 @@ router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), up
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.delete("/:id", authenticate, paymentLimiter, deleteTransaction);
+
+// Payment operations
+router.post("/payment", authenticate, processPayment);
+router.get("/payment/limits", getPaymentLimits);
+router.get("/tag/:tag/history", getPaymentHistory);
 
 export default router;
