@@ -9,10 +9,12 @@ import chainRoutes from "./chains.js";
 import walletRoutes from "./wallets.js";
 import bankAccountRoutes from "./bank-accounts.js";
 import notificationRoutes from "./notifications.js";
-import paymentRoutes from "./payments.js";
+import healthRoutes from "./health.js";
+import apiKeysRoutes from "./apiKeys.js";
 
 const router = express.Router();
 
+router.use("/health", healthRoutes);
 router.use("/auth", authRoutes);
 router.use("/balances", balancesRoutes);
 router.use("/users", userRoutes);
@@ -23,6 +25,6 @@ router.use("/chains", chainRoutes);
 router.use("/wallets", walletRoutes);
 router.use("/bank-accounts", bankAccountRoutes);
 router.use("/notifications", notificationRoutes);
-router.use("/payments", paymentRoutes);
+router.use("/api-keys", apiKeysRoutes);
 
 export default router;
