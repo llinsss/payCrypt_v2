@@ -9,6 +9,7 @@ import chainRoutes from "./chains.js";
 import walletRoutes from "./wallets.js";
 import bankAccountRoutes from "./bank-accounts.js";
 import notificationRoutes from "./notifications.js";
+import paymentRoutes from "./payments.js";
 
 const router = express.Router();
 
@@ -22,5 +23,6 @@ router.use("/chains", chainRoutes);
 router.use("/wallets", walletRoutes);
 router.use("/bank-accounts", bankAccountRoutes);
 router.use("/notifications", notificationRoutes);
+router.use("/payments", paymentRoutes);
 
 export default router;
