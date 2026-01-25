@@ -14,16 +14,15 @@ import {
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
+import { paymentLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
-// Transaction CRUD operations
-router.post("/", authenticate, validate(transactionSchema), createTransaction);
 router.get("/", authenticate, getTransactionByUser);
 router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
 router.get("/:id", authenticate, getTransactionById);
-router.put("/:id", authenticate, validate(transactionSchema), updateTransaction);
-router.delete("/:id", authenticate, deleteTransaction);
+router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), updateTransaction);
+router.delete("/:id", authenticate, paymentLimiter, deleteTransaction);
 
 // Payment operations
 router.post("/payment", authenticate, processPayment);
