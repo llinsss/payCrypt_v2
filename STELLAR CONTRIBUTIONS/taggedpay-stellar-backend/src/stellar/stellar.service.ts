@@ -6,7 +6,6 @@ import { getStellarConfig } from '../config/stellar.config';
 @Injectable()
 export class StellarService {
     private logger = new Logger(StellarService.name);
-    // FIX: Changed from StellarSdk.Server to StellarSdk.Horizon.Server to match the correct import path
     private readonly server: StellarSdk.Horizon.Server;
     private readonly networkPassphrase: string;
     private readonly network: 'testnet' | 'mainnet';
