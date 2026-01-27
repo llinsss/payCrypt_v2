@@ -1,5 +1,7 @@
 import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
+import PaymentService from "../services/PaymentService.js";
+import { processPaymentSchema, transactionHistoryQuerySchema } from "../schemas/payment.js";
 
 export const createTransaction = async (req, res) => {
   try {
@@ -148,5 +150,128 @@ export const getTransactionsByTag = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Process @tag-to-@tag payment with comprehensive validation
+ * POST /api/transactions/payment
+ * Body: { senderTag, recipientTag, amount, asset, assetIssuer, memo, senderSecret, additionalSecrets }
+ */
+export const processPayment = async (req, res) => {
+  try {
+    // Validate request body
+    const { error, value } = processPaymentSchema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: true
+    });
+
+    if (error) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: error.details.map(d => ({
+          field: d.path.join('.'),
+          message: d.message
+        }))
+      });
+    }
+
+    const { senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, senderSecret, additionalSecrets = [] } = value;
+    const userId = req.user.id;
+
+    // Combine secrets
+    const secrets = [senderSecret, ...additionalSecrets];
+
+    // Process the payment
+    const result = await PaymentService.processPayment({
+      senderTag,
+      recipientTag,
+      amount,
+      asset,
+      assetIssuer,
+      memo,
+      secrets,
+      userId
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Payment processed successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('Payment processing error:', error);
+    
+    // Determine appropriate HTTP status code
+    let statusCode = 400;
+    if (error.message.includes('not found')) {
+      statusCode = 404;
+    } else if (error.message.includes('Insufficient funds')) {
+      statusCode = 402; // Payment Required
+    } else if (error.message.includes('network')) {
+      statusCode = 503; // Service Unavailable
+    }
+
+    res.status(statusCode).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get payment limits and configuration
+ * GET /api/transactions/payment/limits
+ */
+export const getPaymentLimits = async (req, res) => {
+  try {
+    const limits = PaymentService.getPaymentLimits();
+    res.json({
+      success: true,
+      data: limits
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get transaction history for a @tag
+ * GET /api/transactions/tag/:tag/history
+ */
+export const getPaymentHistory = async (req, res) => {
+  try {
+    const { tag } = req.params;
+    const { error, value } = transactionHistoryQuerySchema.validate(req.query);
+
+    if (error) {
+      return res.status(400).json({
+        error: 'Invalid query parameters',
+        details: error.message
+      });
+    }
+
+    const transactions = await PaymentService.getTransactionHistory(tag, value);
+
+    res.json({
+      success: true,
+      data: transactions,
+      count: transactions.length
+    });
+  } catch (error) {
+    if (error.message.includes('not found')) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 };

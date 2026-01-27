@@ -45,10 +45,25 @@ export const setVTUToken = async () => {
   }
 };
 
+let vtuClient = null;
 const getVtuClient = async () => {
+  if (vtuClient) return vtuClient;
   const token = await getVTUToken();
-  return createApiClient(process.env.VTU_API_URL, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  if (token) {
+    vtuClient = createApiClient(process.env.VTU_API_URL, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  }
+  return vtuClient;
 };
-export const vtu = await getVtuClient();
+export const vtu = {
+  async get(url, config) {
+    const client = await getVtuClient();
+    return client ? client.get(url, config) : null;
+  },
+  async post(url, data, config) {
+    const client = await getVtuClient();
+    return client ? client.post(url, data, config) : null;
+  },
+  // Add other methods as needed
+};
