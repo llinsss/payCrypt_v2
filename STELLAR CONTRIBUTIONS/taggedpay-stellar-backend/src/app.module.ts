@@ -42,4 +42,3 @@ import configuration from './config/configuration';
   providers: [AppService],
 })
 export class AppModule { }
-
