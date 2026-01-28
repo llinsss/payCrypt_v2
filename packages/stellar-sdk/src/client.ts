@@ -4,18 +4,18 @@ import { AccountsResource } from './resources/accounts';
 import { PaymentsResource } from './resources/payments';
 import { BalancesResource } from './resources/balances';
 import { TransactionsResource } from './resources/transactions';
-import type { TaggedPayStellarConfig } from './types';
+import type { TaggedStellarConfig } from './types';
 
 /**
- * TaggedPay Stellar SDK Client
+ * Tagged Stellar SDK Client
  *
- * The main entry point for interacting with the TaggedPay Stellar API.
+ * The main entry point for interacting with the Tagged Stellar API.
  *
  * @example
  * ```typescript
- * import { TaggedPayStellar } from '@taggedpay/stellar-sdk';
+ * import { TaggedStellar } from '@taggedpay/stellar-sdk';
  *
- * const client = new TaggedPayStellar({
+ * const client = new TaggedStellar({
  *   apiKey: 'your-api-key',
  *   baseUrl: 'https://api.taggedpay.xyz'
  * });
@@ -33,7 +33,7 @@ import type { TaggedPayStellarConfig } from './types';
  * const transactions = await client.transactions.list();
  * ```
  */
-export class TaggedPayStellar {
+export class TaggedStellar {
   private readonly http: HttpClient;
 
   /**
@@ -57,12 +57,12 @@ export class TaggedPayStellar {
   public readonly transactions: TransactionsResource;
 
   /**
-   * Create a new TaggedPayStellar client instance
+   * Create a new TaggedStellar client instance
    *
    * @param config - Client configuration options
    * @throws ConfigurationError if required configuration is missing
    */
-  constructor(config: TaggedPayStellarConfig) {
+  constructor(config: TaggedStellarConfig) {
     // Validate required configuration
     if (!config.apiKey) {
       throw new ConfigurationError('API key is required');

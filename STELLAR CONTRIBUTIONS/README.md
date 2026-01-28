@@ -1,9 +1,9 @@
 # STELLAR CONTRIBUTIONS
 
-This folder contains open-source contributions for TaggedPay's Stellar blockchain integration.
+This folder contains open-source contributions for Tagged's Stellar blockchain integration.
 
 ## Purpose
-Enable community developers to contribute to TaggedPay's Stellar ecosystem while maintaining security and control over the core platform.
+Enable community developers to contribute to Tagged's Stellar ecosystem while maintaining security and control over the core platform.
 
 ## Structure
 
@@ -49,7 +49,7 @@ GET  /api/v1/transactions/:tag # Get transaction history
 ✅ Performance optimizations  
 
 ### What's Protected
-❌ Core TaggedPay business logic  
+❌ Core Tagged business logic  
 ❌ User authentication systems  
 ❌ KYC/compliance features  
 ❌ Main application codebase  
@@ -88,4 +88,4 @@ GET  /api/v1/transactions/:tag # Get transaction history
 
 ---
 
-**Note**: This is a controlled open-source environment. All contributions are reviewed by the TaggedPay team before merging.
+**Note**: This is a controlled open-source environment. All contributions are reviewed by the Tagged team before merging.

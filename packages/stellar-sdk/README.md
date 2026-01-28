@@ -1,27 +1,27 @@
-# @taggedpay/stellar-sdk
+# @tagged/stellar-sdk
 
-TypeScript/JavaScript client library for easy integration with the TaggedPay Stellar API.
+TypeScript/JavaScript client library for easy integration with the Tagged Stellar API.
 
 ## Installation
 
 ```bash
-npm install @taggedpay/stellar-sdk
+npm install @tagged/stellar-sdk
 ```
 
 Or with yarn:
 
 ```bash
-yarn add @taggedpay/stellar-sdk
+yarn add @tagged/stellar-sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { TaggedPayStellar } from '@taggedpay/stellar-sdk';
+import { TaggedStellar } from '@tagged/stellar-sdk';
 
-const client = new TaggedPayStellar({
+const client = new TaggedStellar({
   apiKey: 'your-api-key',
-  baseUrl: 'https://api.taggedpay.xyz'
+  baseUrl: 'https://api.tagged.xyz'
 });
 
 // Create an account
@@ -41,7 +41,7 @@ const balances = await client.balances.get();
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `apiKey` | `string` | **required** | Your API key for authentication |
-| `baseUrl` | `string` | `https://api.taggedpay.xyz` | Base URL for the API |
+| `baseUrl` | `string` | `https://api.tagged.xyz` | Base URL for the API |
 | `timeout` | `number` | `30000` | Request timeout in milliseconds |
 | `retries` | `number` | `3` | Number of retries for failed requests |
 | `retryDelay` | `number` | `1000` | Initial delay between retries (ms) |
@@ -50,9 +50,9 @@ const balances = await client.balances.get();
 ### Example with all options
 
 ```typescript
-const client = new TaggedPayStellar({
+const client = new TaggedStellar({
   apiKey: 'your-api-key',
-  baseUrl: 'https://api.taggedpay.xyz',
+  baseUrl: 'https://api.tagged.xyz',
   timeout: 60000,
   retries: 5,
   retryDelay: 500,
@@ -198,7 +198,7 @@ The SDK provides detailed error classes for different error scenarios:
 
 ```typescript
 import {
-  TaggedPayError,
+  TaggedError,
   ApiError,
   AuthenticationError,
   AuthorizationError,
@@ -208,7 +208,7 @@ import {
   NetworkError,
   TimeoutError,
   ConfigurationError
-} from '@taggedpay/stellar-sdk';
+} from '@tagged/stellar-sdk';
 
 try {
   await client.accounts.get('nonexistent');
@@ -233,7 +233,7 @@ try {
 
 ### Error Properties
 
-All errors extend `TaggedPayError` with these properties:
+All errors extend `TaggedError` with these properties:
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -253,7 +253,7 @@ import type {
   Transaction,
   PaymentResult,
   PaginationOptions
-} from '@taggedpay/stellar-sdk';
+} from '@tagged/stellar-sdk';
 
 // Use types in your code
 async function getBalance(): Promise<Balance[]> {
