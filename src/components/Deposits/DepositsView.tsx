@@ -85,14 +85,14 @@ const DepositsView: React.FC = () => {
       try {
         await navigator.share({
           title: "Send me crypto!",
-          text: `Send crypto to my TaggedPay tag: ${userTag}`,
+          text: `Send crypto to my Tagged tag: ${userTag}`,
           url: window.location.origin,
         });
       } catch (error) {
         console.error("Error sharing:", error);
       }
     } else {
-      copyToClipboard(`Send crypto to my TaggedPay tag: ${userTag}`, "share");
+      copyToClipboard(`Send crypto to my Tagged tag: ${userTag}`, "share");
     }
   }, [userTag, copyToClipboard]);
 
@@ -219,7 +219,7 @@ const TagDepositView: React.FC<{
 
       <div className="text-center mb-8">
         <div className="text-sm font-medium text-blue-100 mb-3">
-          Your TaggedPay Tag
+          Your Tagged Tag
         </div>
         <div className="text-4xl font-bold font-mono bg-white/10 rounded-2xl py-4 px-6 inline-block">
           {userTag}
