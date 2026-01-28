@@ -102,12 +102,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
             )}
           </div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {isLogin ? "Welcome to TaggedPay" : "Join TaggedPay"}
+            {isLogin ? "Welcome to Tagged" : "Join Tagged"}
           </h2>
           <p className="text-gray-600 mt-2">
             {isLogin
-              ? "Sign in to your TaggedPay account"
-              : "Create your TaggedPay account"}
+              ? "Sign in to your Tagged account"
+              : "Create your Tagged account"}
           </p>
         </div>
 
