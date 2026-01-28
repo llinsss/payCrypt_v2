@@ -47,9 +47,9 @@ const emailTemplate = (title, body) => `<!DOCTYPE html>
   <div class="content">
     <h1>${title}</h1>
     <p>${body}</p>
-    <p>Cheers,<br/>Llins from TaggedPay</p>
+    <p>Cheers,<br/>Llins from Tagged</p>
   </div>
-  <div class="footer">TaggedPay • support@taggedpay.xyz</div>
+  <div class="footer">Tagged • support@taggedpay.xyz</div>
 </div>
 </body>
 </html>`;
@@ -59,7 +59,7 @@ export const sendEmail = async (to, title, body) => {
     const html = emailTemplate(title, body);
 
     const info = await transporter.sendMail({
-      from: `TaggedPay <${process.env.FROM_EMAIL || "support@taggedpay.xyz"}>`,
+      from: `Tagged <${process.env.FROM_EMAIL || "support@taggedpay.xyz"}>`,
       to,
       subject: title,
       html,
