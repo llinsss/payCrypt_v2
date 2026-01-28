@@ -325,7 +325,7 @@ const SplitPaymentView: React.FC = () => {
                         Recipient {index + 1}
                       </div>
                       <div className="text-sm text-gray-500">
-                        Enter their TaggedPay tag
+                        Enter their Tagged tag
                       </div>
                     </div>
                   </div>
@@ -343,7 +343,7 @@ const SplitPaymentView: React.FC = () => {
                   <div>
                     <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
                       <Users className="w-4 h-4 text-blue-500" />
-                      <span>TaggedPay Tag</span>
+                      <span>Tagged Tag</span>
                     </label>
                     <div className="relative">
                       <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
