@@ -1,5 +1,5 @@
 // Main client export
-export { TaggedPayStellar } from './client';
+export { TaggedStellar } from './client';
 
 // Resource exports
 export { AccountsResource } from './resources/accounts';
@@ -9,7 +9,7 @@ export { TransactionsResource } from './resources/transactions';
 
 // Error exports
 export {
-  TaggedPayError,
+  TaggedError,
   ApiError,
   AuthenticationError,
   AuthorizationError,
@@ -24,7 +24,7 @@ export {
 // Type exports
 export type {
   // Configuration types
-  TaggedPayStellarConfig,
+  TaggedStellarConfig,
   HttpClientConfig,
   RequestOptions,
 

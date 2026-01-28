@@ -141,7 +141,7 @@ export class WebhookDeliveryService {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Webhook-Signature': signature,
-                    'User-Agent': 'TaggedPay-Webhook/1.0',
+                    'User-Agent': 'Tagged-Webhook/1.0',
                 },
                 body: JSON.stringify(payload),
             });

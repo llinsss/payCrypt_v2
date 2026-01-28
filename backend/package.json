@@ -2,7 +2,7 @@
     "name": "paycrypt-backend",
     "version": "1.0.0",
     "type": "module",
-    "description": "TaggedPay Backend",
+    "description": "Tagged Backend",
     "main": "server.js",
     "scripts": {
         "dev": "nodemon server.js",

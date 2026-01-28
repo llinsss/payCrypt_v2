@@ -3,9 +3,9 @@
 // ============================================================================
 
 /**
- * Configuration options for the TaggedPayStellar client
+ * Configuration options for the TaggedStellar client
  */
-export interface TaggedPayStellarConfig {
+export interface TaggedStellarConfig {
   /** API key for authentication */
   apiKey: string;
   /** Base URL for the API (default: https://api.taggedpay.xyz) */

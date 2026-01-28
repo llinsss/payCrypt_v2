@@ -1,7 +1,7 @@
 {
-  "name": "@taggedpay/stellar-sdk",
+  "name": "@tagged/stellar-sdk",
   "version": "1.0.0",
-  "description": "TypeScript/JavaScript client library for easy integration with the TaggedPay Stellar API",
+  "description": "TypeScript/JavaScript client library for easy integration with the Tagged Stellar API",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -25,13 +25,13 @@
   },
   "keywords": [
     "stellar",
-    "taggedpay",
+    "tagged",
     "sdk",
     "blockchain",
     "payments",
     "cryptocurrency"
   ],
-  "author": "TaggedPay",
+  "author": "Tagged",
   "license": "MIT",
   "repository": {
     "type": "git",

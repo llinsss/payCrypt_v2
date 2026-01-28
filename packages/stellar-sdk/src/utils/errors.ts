@@ -1,7 +1,7 @@
 /**
- * Base error class for TaggedPay Stellar SDK errors
+ * Base error class for Tagged Stellar SDK errors
  */
-export class TaggedPayError extends Error {
+export class TaggedError extends Error {
   public readonly code: string;
   public readonly statusCode?: number;
   public readonly details?: Record<string, unknown>;
@@ -13,14 +13,14 @@ export class TaggedPayError extends Error {
     details?: Record<string, unknown>
   ) {
     super(message);
-    this.name = 'TaggedPayError';
+    this.name = 'TaggedError';
     this.code = code;
     this.statusCode = statusCode;
     this.details = details;
 
     // Maintains proper stack trace for where the error was thrown
     if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, TaggedPayError);
+      Error.captureStackTrace(this, TaggedError);
     }
   }
 }
@@ -28,7 +28,7 @@ export class TaggedPayError extends Error {
 /**
  * Error thrown when API returns an error response
  */
-export class ApiError extends TaggedPayError {
+export class ApiError extends TaggedError {
   constructor(
     message: string,
     statusCode: number,
@@ -42,7 +42,7 @@ export class ApiError extends TaggedPayError {
 /**
  * Error thrown when authentication fails
  */
-export class AuthenticationError extends TaggedPayError {
+export class AuthenticationError extends TaggedError {
   constructor(message: string = 'Authentication failed') {
     super(message, 'AUTHENTICATION_ERROR', 401);
     this.name = 'AuthenticationError';
@@ -52,7 +52,7 @@ export class AuthenticationError extends TaggedPayError {
 /**
  * Error thrown when authorization fails
  */
-export class AuthorizationError extends TaggedPayError {
+export class AuthorizationError extends TaggedError {
   constructor(message: string = 'Access denied') {
     super(message, 'AUTHORIZATION_ERROR', 403);
     this.name = 'AuthorizationError';
@@ -62,7 +62,7 @@ export class AuthorizationError extends TaggedPayError {
 /**
  * Error thrown when a resource is not found
  */
-export class NotFoundError extends TaggedPayError {
+export class NotFoundError extends TaggedError {
   constructor(message: string = 'Resource not found') {
     super(message, 'NOT_FOUND', 404);
     this.name = 'NotFoundError';
@@ -72,7 +72,7 @@ export class NotFoundError extends TaggedPayError {
 /**
  * Error thrown when validation fails
  */
-export class ValidationError extends TaggedPayError {
+export class ValidationError extends TaggedError {
   public readonly errors: Record<string, string[]>;
 
   constructor(
@@ -88,7 +88,7 @@ export class ValidationError extends TaggedPayError {
 /**
  * Error thrown when rate limit is exceeded
  */
-export class RateLimitError extends TaggedPayError {
+export class RateLimitError extends TaggedError {
   public readonly retryAfter?: number;
 
   constructor(message: string = 'Rate limit exceeded', retryAfter?: number) {
@@ -101,7 +101,7 @@ export class RateLimitError extends TaggedPayError {
 /**
  * Error thrown when a network error occurs
  */
-export class NetworkError extends TaggedPayError {
+export class NetworkError extends TaggedError {
   constructor(message: string = 'Network error occurred') {
     super(message, 'NETWORK_ERROR');
     this.name = 'NetworkError';
@@ -111,7 +111,7 @@ export class NetworkError extends TaggedPayError {
 /**
  * Error thrown when request times out
  */
-export class TimeoutError extends TaggedPayError {
+export class TimeoutError extends TaggedError {
   constructor(message: string = 'Request timed out') {
     super(message, 'TIMEOUT_ERROR');
     this.name = 'TimeoutError';
@@ -121,7 +121,7 @@ export class TimeoutError extends TaggedPayError {
 /**
  * Error thrown when configuration is invalid
  */
-export class ConfigurationError extends TaggedPayError {
+export class ConfigurationError extends TaggedError {
   constructor(message: string) {
     super(message, 'CONFIGURATION_ERROR');
     this.name = 'ConfigurationError';
