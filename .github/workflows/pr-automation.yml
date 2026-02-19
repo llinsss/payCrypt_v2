@@ -37,7 +37,7 @@ jobs:
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_BODY="${{ github.event.pull_request.body }}"
           
-          ISSUE_NUM=$(echo "$PR_TITLE $PR_BODY" | grep -oP '(?<=#)\d+' | head -1)
+          ISSUE_NUM=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
           
           if [ -z "$ISSUE_NUM" ]; then
             echo "issue_number=none" >> $GITHUB_OUTPUT
@@ -53,24 +53,22 @@ jobs:
           
           if [ "${{ steps.extract.outputs.issue_number }}" == "none" ]; then
             IS_VALID=false
-            ERRORS="${ERRORS}\n- PR must reference an issue number"
+            ERRORS="${ERRORS}- PR must reference an issue (e.g., 'Fixes #123')\n"
           fi
           
           BACKEND_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '^backend/' | wc -l)
           if [ "$BACKEND_FILES" -eq 0 ]; then
             IS_VALID=false
-            ERRORS="${ERRORS}\n- PR must modify files in backend/"
+            ERRORS="${ERRORS}- PR must modify files in backend/\n"
           fi
           
           if ! echo "${{ github.event.pull_request.title }}" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci)(\(.+\))?: .+'; then
             IS_VALID=false
-            ERRORS="${ERRORS}\n- PR title must follow conventional commits"
+            ERRORS="${ERRORS}- PR title must follow conventional commits (e.g., 'feat: add feature')\n"
           fi
           
           echo "is_valid=$IS_VALID" >> $GITHUB_OUTPUT
-          echo "errors<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$ERRORS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
 
       - name: Comment validation errors
         if: steps.validate.outputs.is_valid == 'false'
@@ -78,11 +76,13 @@ jobs:
         with:
           script: |
             const errors = `${{ steps.validate.outputs.errors }}`;
+            if (!errors) return;
+            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `## ❌ PR Validation Failed\n\nPlease fix:\n${errors}`
+              body: `## ❌ PR Validation Failed\n\nPlease fix:\n${errors}\n\n**Guidelines:**\n- Reference issue: \`Fixes #123\`\n- Use conventional commits: \`feat:\`, \`fix:\`, etc.\n- Modify \`backend/\` files`
             });
 
       - name: Add validation label
@@ -195,40 +195,35 @@ jobs:
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '^backend/')
           
           ISSUES=0
-          WARNINGS=0
           SUGGESTIONS=""
           
           if echo "$CHANGED_FILES" | xargs grep -n "console.log" 2>/dev/null; then
             ISSUES=$((ISSUES + 1))
-            SUGGESTIONS="${SUGGESTIONS}\n- Remove console.log statements"
+            SUGGESTIONS="${SUGGESTIONS}- Remove console.log statements\n"
           fi
           
           if echo "$CHANGED_FILES" | xargs grep -niE "(password|secret|api_key|token)\s*=\s*['\"][^'\"]+['\"]" 2>/dev/null; then
             ISSUES=$((ISSUES + 1))
-            SUGGESTIONS="${SUGGESTIONS}\n- ⚠️ Possible hardcoded credentials"
+            SUGGESTIONS="${SUGGESTIONS}- ⚠️ Possible hardcoded credentials\n"
           fi
           
           echo "issues=$ISSUES" >> $GITHUB_OUTPUT
-          echo "warnings=$WARNINGS" >> $GITHUB_OUTPUT
-          echo "suggestions<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$SUGGESTIONS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "suggestions=$SUGGESTIONS" >> $GITHUB_OUTPUT
 
       - name: Post code review
         uses: actions/github-script@v7
         with:
           script: |
-            const issues = parseInt('${{ steps.analyze.outputs.issues }}');
-            const warnings = parseInt('${{ steps.analyze.outputs.warnings }}');
+            const issues = parseInt('${{ steps.analyze.outputs.issues }}') || 0;
             const suggestions = `${{ steps.analyze.outputs.suggestions }}`;
             
             let reviewBody = '## 🤖 Automated Code Review\n\n';
             
-            if (issues === 0 && warnings === 0) {
+            if (issues === 0) {
               reviewBody += '✅ No issues found!\n';
             } else {
-              reviewBody += `**Issues:** ${issues}\n**Warnings:** ${warnings}\n\n`;
-              if (suggestions) reviewBody += '**Suggestions:**\n' + suggestions + '\n';
+              reviewBody += `**Issues found:** ${issues}\n\n`;
+              if (suggestions) reviewBody += '**Suggestions:**\n' + suggestions;
             }
             
             await github.rest.issues.createComment({
@@ -240,7 +235,7 @@ jobs:
             
             const labels = [];
             if (issues > 0) labels.push('needs-changes');
-            if (issues === 0 && warnings === 0) labels.push('ready-for-review');
+            if (issues === 0) labels.push('ready-for-review');
             
             if (labels.length > 0) {
               await github.rest.issues.addLabels({
