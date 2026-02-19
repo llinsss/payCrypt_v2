@@ -37,7 +37,11 @@ jobs:
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_BODY="${{ github.event.pull_request.body }}"
           
-          ISSUE_NUM=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+          # Extract issue number from title or body
+          ISSUE_NUM=$(echo "$PR_TITLE" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+          if [ -z "$ISSUE_NUM" ]; then
+            ISSUE_NUM=$(echo "$PR_BODY" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+          fi
           
           if [ -z "$ISSUE_NUM" ]; then
             echo "issue_number=none" >> $GITHUB_OUTPUT
