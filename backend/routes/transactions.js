@@ -14,6 +14,7 @@ import {
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
+import { processPaymentSchema } from "../schemas/payment.js";
 import { paymentLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
@@ -25,7 +26,7 @@ router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), up
 router.delete("/:id", authenticate, paymentLimiter, deleteTransaction);
 
 // Payment operations
-router.post("/payment", authenticate, processPayment);
+router.post("/payment", authenticate, paymentLimiter, validate(processPaymentSchema), processPayment);
 router.get("/payment/limits", getPaymentLimits);
 router.get("/tag/:tag/history", getPaymentHistory);
 

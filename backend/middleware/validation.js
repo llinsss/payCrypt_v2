@@ -21,18 +21,28 @@ const sanitizeValue = (value) => {
 };
 
 /**
- * Validate request body against Joi schema
+ * Format Joi validation errors into a consistent array of { field, message } objects.
+ */
+const formatErrors = (joiError) =>
+  joiError.details.map((d) => ({
+    field: d.context?.key ?? d.path.join("."),
+    message: d.message.replace(/['"]/g, ""),
+  }));
+
+/**
+ * Validate request body against a Joi schema.
+ * Returns all validation errors at once (abortEarly: false).
  */
 export const validate = (schema) => {
   return (req, res, next) => {
     const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
       stripUnknown: true,
     });
-    
+
     if (error) {
       return res.status(400).json({
-        error: error.details[0].message,
-        field: error.details[0].context.key,
+        errors: formatErrors(error),
       });
     }
 
@@ -43,18 +53,19 @@ export const validate = (schema) => {
 };
 
 /**
- * Validate query parameters against Joi schema
+ * Validate query parameters against a Joi schema.
+ * Returns all validation errors at once (abortEarly: false).
  */
 export const validateQuery = (schema) => {
   return (req, res, next) => {
     const { error, value } = schema.validate(req.query, {
+      abortEarly: false,
       stripUnknown: true,
     });
-    
+
     if (error) {
       return res.status(400).json({
-        error: error.details[0].message,
-        field: error.details[0].context.key,
+        errors: formatErrors(error),
       });
     }
 
@@ -65,18 +76,19 @@ export const validateQuery = (schema) => {
 };
 
 /**
- * Validate URL parameters
+ * Validate URL parameters against a Joi schema.
+ * Returns all validation errors at once (abortEarly: false).
  */
 export const validateParams = (schema) => {
   return (req, res, next) => {
     const { error, value } = schema.validate(req.params, {
+      abortEarly: false,
       stripUnknown: true,
     });
-    
+
     if (error) {
       return res.status(400).json({
-        error: error.details[0].message,
-        field: error.details[0].context.key,
+        errors: formatErrors(error),
       });
     }
 

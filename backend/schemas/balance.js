@@ -1,13 +1,61 @@
 import Joi from "joi";
 
-export const balanceSchema = Joi.object({
-  user_id: Joi.any().allow("", null),
-  token: Joi.any().allow("", null),
-  symbol: Joi.any().allow("", null),
-  chain: Joi.any().allow("", null),
-  amount: Joi.any().allow("", null),
-  usd_value: Joi.any().allow("", null),
-  tag: Joi.any().allow("", null),
-  address: Joi.any().allow("", null),
-  auto_convert_threshold: Joi.any().allow("", null),
+/**
+ * Schema for creating a new balance entry.
+ */
+export const balanceCreateSchema = Joi.object({
+  token: Joi.string()
+    .required()
+    .messages({
+      "any.required": "Token is required",
+      "string.empty": "Token cannot be empty",
+    }),
+
+  symbol: Joi.string()
+    .uppercase()
+    .max(12)
+    .required()
+    .messages({
+      "string.max": "Symbol must be at most 12 characters",
+      "any.required": "Symbol is required",
+      "string.empty": "Symbol cannot be empty",
+    }),
+
+  chain: Joi.string()
+    .required()
+    .messages({
+      "any.required": "Chain is required",
+      "string.empty": "Chain cannot be empty",
+    }),
+
+  amount: Joi.number()
+    .min(0)
+    .optional()
+    .messages({
+      "number.min": "Amount cannot be negative",
+      "number.base": "Amount must be a number",
+    }),
+
+  usd_value: Joi.number().min(0).optional().messages({
+    "number.min": "USD value cannot be negative",
+    "number.base": "USD value must be a number",
+  }),
+
+  tag: Joi.string().allow("", null).optional(),
+
+  address: Joi.string().allow("", null).optional(),
+
+  auto_convert_threshold: Joi.number()
+    .min(0)
+    .allow(null)
+    .optional()
+    .messages({
+      "number.min": "Auto-convert threshold cannot be negative",
+      "number.base": "Auto-convert threshold must be a number",
+    }),
 });
+
+/**
+ * Alias used in existing route (kept for backwards compatibility).
+ */
+export const balanceSchema = balanceCreateSchema;
