@@ -199,12 +199,12 @@ jobs:
           
           if echo "$CHANGED_FILES" | xargs grep -n "console.log" 2>/dev/null; then
             ISSUES=$((ISSUES + 1))
-            SUGGESTIONS="${SUGGESTIONS}- Remove console.log statements\n"
+            SUGGESTIONS="${SUGGESTIONS}- Remove console.log statements%0A"
           fi
           
           if echo "$CHANGED_FILES" | xargs grep -niE "(password|secret|api_key|token)\s*=\s*['\"][^'\"]+['\"]" 2>/dev/null; then
             ISSUES=$((ISSUES + 1))
-            SUGGESTIONS="${SUGGESTIONS}- ⚠️ Possible hardcoded credentials\n"
+            SUGGESTIONS="${SUGGESTIONS}- ⚠️ Possible hardcoded credentials%0A"
           fi
           
           echo "issues=$ISSUES" >> $GITHUB_OUTPUT
