@@ -1,4 +1,5 @@
 import db from "../config/database.js";
+import WebhookService from "../services/WebhookService.js";
 
 const Transaction = {
   async create(transactionData) {
@@ -42,6 +43,7 @@ const Transaction = {
       .first();
   },
 
+
 async getAll(limit = 10, offset = 0, metadataSearch = null) {
   let query = db("transactions")
     .select(
@@ -71,8 +73,43 @@ async getAll(limit = 10, offset = 0, metadataSearch = null) {
     .orderBy("transactions.created_at", "desc");
 },
 
-  async getByUser(userId, limit = 10, offset = 0) {
-    return await db("transactions")
+  async getAll(limit = 10, offset = 0, options = {}) {
+    const { minAmount = null, maxAmount = null } = options;
+    
+    let query = db("transactions")
+      .select(
+        "transactions.*",
+        "users.email as user_email",
+        "users.tag as user_tag",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "tokens.logo_url as token_logo_url",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol"
+      )
+      .leftJoin("users", "transactions.user_id", "users.id")
+      .leftJoin("tokens", "transactions.token_id", "tokens.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id");
+
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
+    }
+
+    return await query
+      .limit(limit)
+      .offset(offset)
+      .orderBy("transactions.created_at", "desc");
+  },
+
+
+  async getByUser(userId, limit = 10, offset = 0, options = {}) {
+    const { minAmount = null, maxAmount = null } = options;
+    
+    let query = db("transactions")
       .select(
         "transactions.*",
         "users.email as user_email",
@@ -86,7 +123,17 @@ async getAll(limit = 10, offset = 0, metadataSearch = null) {
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
       .leftJoin("chains", "transactions.chain_id", "chains.id")
-      .where("transactions.user_id", userId)
+      .where("transactions.user_id", userId);
+
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
+    }
+
+    return await query
       .limit(limit)
       .offset(offset)
       .orderBy("transactions.created_at", "desc");
@@ -122,6 +169,7 @@ async getAll(limit = 10, offset = 0, metadataSearch = null) {
   },
 
   async update(id, transactionData, trx = null) {
+
   const query = trx || db;
 
   if (transactionData.metadata !== undefined) {
@@ -147,6 +195,30 @@ async getAll(limit = 10, offset = 0, metadataSearch = null) {
   return this.findById(id);
 },
 
+    const oldTransaction = await this.findById(id);
+    const query = trx || db;
+    
+    await query("transactions")
+      .where({ id })
+      .update({
+        ...transactionData,
+        updated_at: db.fn.now(),
+      });
+    
+    const updatedTransaction = await this.findById(id);
+    
+    if (transactionData.status && oldTransaction.status !== transactionData.status) {
+      WebhookService.sendStatusChangeWebhook(
+        updatedTransaction,
+        oldTransaction.status,
+        transactionData.status
+      ).catch(console.error);
+    }
+    
+    return updatedTransaction;
+  },
+
+
   async delete(id) {
     return await db("transactions").where({ id }).del();
   },
@@ -158,6 +230,8 @@ async getAll(limit = 10, offset = 0, metadataSearch = null) {
       from = null,
       to = null,
       type = null,
+      minAmount = null,
+      maxAmount = null,
       sortBy = "created_at",
       sortOrder = "desc",
     } = options;
@@ -190,6 +264,14 @@ async getAll(limit = 10, offset = 0, metadataSearch = null) {
       query = query.where("transactions.type", type);
     }
 
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
+    }
+
     const allowedSortFields = ["created_at", "amount", "usd_value", "type", "status"];
     const sanitizedSortBy = allowedSortFields.includes(sortBy) ? sortBy : "created_at";
     const sanitizedSortOrder = sortOrder === "asc" ? "asc" : "desc";
@@ -201,7 +283,7 @@ async getAll(limit = 10, offset = 0, metadataSearch = null) {
   },
 
   async countByTag(userId, options = {}) {
-    const { from = null, to = null, type = null } = options;
+    const { from = null, to = null, type = null, minAmount = null, maxAmount = null } = options;
 
     let query = db("transactions")
       .where("transactions.user_id", userId)
@@ -217,6 +299,14 @@ async getAll(limit = 10, offset = 0, metadataSearch = null) {
 
     if (type) {
       query = query.where("transactions.type", type);
+    }
+
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
     }
 
     const result = await query.first();

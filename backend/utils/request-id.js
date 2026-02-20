@@ -1,15 +1,11 @@
-import { DateTime } from "luxon";
+import { randomBytes } from 'crypto';
 
-export const generateRequestId = (length = 8) => {
-  const now = DateTime.now().setZone("Africa/Lagos");
-  const datePart = now.toFormat("yyyyLLddHHmm");
+export const generateRequestId = () => {
+  return `req_${Date.now()}_${randomBytes(8).toString('hex')}`;
+};
 
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let randomPart = "";
-  for (let i = 0; i < length; i++) {
-    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-
-  return "req_" + datePart + "_" + randomPart;
+export const requestIdMiddleware = (req, res, next) => {
+  req.id = req.headers['x-request-id'] || generateRequestId();
+  res.setHeader('X-Request-ID', req.id);
+  next();
 };

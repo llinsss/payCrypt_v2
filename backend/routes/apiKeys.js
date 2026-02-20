@@ -10,6 +10,7 @@ import {
 } from "../controllers/apiKeyController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.js";
+import { auditLog } from "../middleware/audit.js";
 import { strictLimiter } from "../config/rateLimiting.js";
 import Joi from "joi";
 
@@ -33,7 +34,7 @@ const updateApiKeySchema = Joi.object({
 });
 
 // Create new API key (strict rate limiting)
-router.post("/", strictLimiter, validate(createApiKeySchema), createApiKey);
+router.post("/", strictLimiter, validate(createApiKeySchema), auditLog("api_keys"), createApiKey);
 
 // Get all API keys
 router.get("/", getApiKeys);
@@ -45,12 +46,12 @@ router.get("/:keyId", getApiKey);
 router.get("/:keyId/stats", getApiKeyStats);
 
 // Update API key
-router.patch("/:keyId", validate(updateApiKeySchema), updateApiKey);
+router.patch("/:keyId", validate(updateApiKeySchema), auditLog("api_keys"), updateApiKey);
 
 // Rotate API key (create new, revoke old)
-router.post("/:keyId/rotate", strictLimiter, rotateApiKey);
+router.post("/:keyId/rotate", strictLimiter, auditLog("api_keys"), rotateApiKey);
 
 // Revoke API key
-router.delete("/:keyId", revokeApiKey);
+router.delete("/:keyId", auditLog("api_keys"), revokeApiKey);
 
 export default router;

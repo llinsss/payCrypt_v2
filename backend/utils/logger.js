@@ -4,8 +4,10 @@ import path from 'path';
 
 const { combine, timestamp, json, printf, colorize } = winston.format;
 
-const logFormat = printf(({ level, message, timestamp, ...metadata }) => {
-  let msg = `${timestamp} [${level}] : ${message}`;
+const logFormat = printf(({ level, message, timestamp, requestId, ...metadata }) => {
+  let msg = `${timestamp} [${level}]`;
+  if (requestId) msg += ` [${requestId}]`;
+  msg += ` : ${message}`;
   if (Object.keys(metadata).length > 0) {
     msg += JSON.stringify(metadata);
   }
