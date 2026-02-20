@@ -16,7 +16,9 @@
         "seed:make": "knex seed:make",
         "db:reset": "knex migrate:rollback --all && knex migrate:latest && knex seed:run",
         "test:db": "node scripts/test-db-setup.js",
-        "test": "node --experimental-vm-modules $(pnpm bin)/jest --testPathPattern=tests/ --forceExit"
+        "test": "node --experimental-vm-modules $(pnpm bin)/jest --testPathPattern=tests/ --forceExit",
+        "benchmark:balance": "node scripts/benchmark-balance-queries.js",
+        "verify:indexes": "node scripts/verify-balance-indexes.js"
     },
     "jest": {
         "testEnvironment": "node",
