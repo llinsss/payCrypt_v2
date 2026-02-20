@@ -13,6 +13,7 @@ import healthRoutes from "./health.js";
 import apiKeysRoutes from "./apiKeys.js";
 import scheduledPaymentRoutes from "./scheduledPayments.js";
 import disputeRoutes from "./disputes.js";
+import auditLogRoutes from "./auditLogs.js";
 
 const router = express.Router();
 
@@ -30,5 +31,6 @@ router.use("/notifications", notificationRoutes);
 router.use("/api-keys", apiKeysRoutes);
 router.use("/scheduled-payments", scheduledPaymentRoutes);
 router.use("/disputes", disputeRoutes);
+router.use("/audit-logs", auditLogRoutes);
 
 export default router;
