@@ -19,16 +19,11 @@ export const createTransaction = async (req, res) => {
 
 export const getTransactions = async (req, res) => {
   try {
-
-    const { page = 1, limit = 10, metadataSearch = null } = req.query;
+    const { page = 1, limit = 10, metadataSearch = null, min_amount, max_amount } = req.query;
 
     const parsedLimit = Number.parseInt(limit);
     const parsedPage = Number.parseInt(page);
     const offset = (parsedPage - 1) * parsedLimit;
-
-    const { page = 1, limit = 10, min_amount, max_amount } = req.query;
-    const offset = (page - 1) * limit;
-
 
     // Validate amount range parameters
     let minAmount = null;
@@ -53,15 +48,10 @@ export const getTransactions = async (req, res) => {
     }
 
     const transactions = await Transaction.getAll(
-
       parsedLimit,
       offset,
-      metadataSearch
-
-      Number.parseInt(limit),
-      Number.parseInt(offset),
+      metadataSearch,
       { minAmount, maxAmount }
-
     );
 
     res.json(transactions);
