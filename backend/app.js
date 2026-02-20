@@ -12,6 +12,8 @@ import mongoSanitize from "express-mongo-sanitize";
 import indexRoutes from "./routes/index.js";
 import generalRoutes from "./routes/general.js";
 import bullBoardRouter from "./bullboard.js";
+import swaggerJsdoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
 
 import {
   SIX_HOURS,
@@ -143,6 +145,46 @@ app.use(
     challenge: true,
   }),
   bullBoardRouter.getRouter()
+);
+
+// Swagger Documentation setup
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "Tagg@d API",
+      version: "1.0.0",
+      description: "API documentation for the Tagg@d backend",
+    },
+    servers: [
+      {
+        url: `http://localhost:${process.env.PORT || 5002}`,
+        description: "Development Server",
+      },
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
+    },
+  },
+  apis: ["./routes/*.js"], // Path to the API docs
+};
+
+const swaggerDocs = swaggerJsdoc(swaggerOptions);
+
+app.use(
+  "/api-docs",
+  basicAuth({
+    users: { admin: process.env.SWAGGER_ADMIN_PASS || "tagg@d" },
+    challenge: true,
+  }),
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerDocs)
 );
 
 // ===== ERROR HANDLING =====
