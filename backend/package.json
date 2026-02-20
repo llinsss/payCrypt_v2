@@ -16,7 +16,7 @@
         "seed:make": "knex seed:make",
         "db:reset": "knex migrate:rollback --all && knex migrate:latest && knex seed:run",
         "test:db": "node scripts/test-db-setup.js",
-        "test": "node --experimental-vm-modules $(pnpm bin)/jest --testPathPattern=tests/ --forceExit"
+        "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit"
     },
     "jest": {
         "testEnvironment": "node",
@@ -56,7 +56,8 @@
         "redis": "^5.8.2",
         "sanitize-html": "^2.17.1",
         "speakeasy": "^2.0.0",
-        "starknet": "^7.6.4"
+        "starknet": "^7.6.4",
+        "xss-clean": "^0.1.4"
     },
     "devDependencies": {
         "@jest/globals": "^29.0.0",
