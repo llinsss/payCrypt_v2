@@ -65,6 +65,7 @@ const corsOptions = {
   optionsSuccessStatus: 200,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-request-id"],
+  exposedHeaders: ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"],
   maxAge: 3600,
 };
 app.use(cors(corsOptions));

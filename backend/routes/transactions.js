@@ -11,7 +11,7 @@ import {
   getPaymentLimits,
   getPaymentHistory
 } from "../controllers/transactionController.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, userRateLimiter } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
@@ -20,14 +20,14 @@ import { paymentLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
-router.get("/", authenticate, getTransactionByUser);
+router.get("/", authenticate, userRateLimiter, getTransactionByUser);
 router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
-router.get("/:id", authenticate, getTransactionById);
-router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
-router.delete("/:id", authenticate, paymentLimiter, auditLog("transactions"), deleteTransaction);
+router.get("/:id", authenticate, userRateLimiter, getTransactionById);
+router.put("/:id", authenticate, userRateLimiter, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
+router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, auditLog("transactions"), deleteTransaction);
 
 // Payment operations
-router.post("/payment", authenticate, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
+router.post("/payment", authenticate, userRateLimiter, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
 router.get("/payment/limits", getPaymentLimits);
 router.get("/tag/:tag/history", getPaymentHistory);
 
