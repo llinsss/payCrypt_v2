@@ -8,6 +8,7 @@ import hpp from "hpp";
 import xss from "xss-clean";
 import basicAuth from "express-basic-auth";
 import mongoSanitize from "express-mongo-sanitize";
+import transactionTagRoutes from "./routes/transactionTagRoutes.js";
 
 import indexRoutes from "./routes/index.js";
 import generalRoutes from "./routes/general.js";
@@ -221,3 +222,5 @@ app.use((error, req, res, next) => {
 });
 
 export default app;
+
+app.use("/api/transaction-tags", transactionTagRoutes);
