@@ -19,12 +19,35 @@ export const createTransaction = async (req, res) => {
 
 export const getTransactions = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, min_amount, max_amount } = req.query;
     const offset = (page - 1) * limit;
+
+    // Validate amount range parameters
+    let minAmount = null;
+    let maxAmount = null;
+
+    if (min_amount !== undefined) {
+      minAmount = parseFloat(min_amount);
+      if (isNaN(minAmount) || minAmount < 0) {
+        return res.status(400).json({ error: "Invalid min_amount. Must be a positive number." });
+      }
+    }
+
+    if (max_amount !== undefined) {
+      maxAmount = parseFloat(max_amount);
+      if (isNaN(maxAmount) || maxAmount < 0) {
+        return res.status(400).json({ error: "Invalid max_amount. Must be a positive number." });
+      }
+    }
+
+    if (minAmount !== null && maxAmount !== null && minAmount > maxAmount) {
+      return res.status(400).json({ error: "min_amount cannot be greater than max_amount." });
+    }
 
     const transactions = await Transaction.getAll(
       Number.parseInt(limit),
-      Number.parseInt(offset)
+      Number.parseInt(offset),
+      { minAmount, maxAmount }
     );
     res.json(transactions);
   } catch (error) {
@@ -35,7 +58,31 @@ export const getTransactions = async (req, res) => {
 export const getTransactionByUser = async (req, res) => {
   try {
     const { id } = req.user;
-    const transactions = await Transaction.getByUser(id);
+    const { min_amount, max_amount } = req.query;
+
+    // Validate amount range parameters
+    let minAmount = null;
+    let maxAmount = null;
+
+    if (min_amount !== undefined) {
+      minAmount = parseFloat(min_amount);
+      if (isNaN(minAmount) || minAmount < 0) {
+        return res.status(400).json({ error: "Invalid min_amount. Must be a positive number." });
+      }
+    }
+
+    if (max_amount !== undefined) {
+      maxAmount = parseFloat(max_amount);
+      if (isNaN(maxAmount) || maxAmount < 0) {
+        return res.status(400).json({ error: "Invalid max_amount. Must be a positive number." });
+      }
+    }
+
+    if (minAmount !== null && maxAmount !== null && minAmount > maxAmount) {
+      return res.status(400).json({ error: "min_amount cannot be greater than max_amount." });
+    }
+
+    const transactions = await Transaction.getByUser(id, 10, 0, { minAmount, maxAmount });
     res.json(transactions);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -112,6 +159,8 @@ export const getTransactionsByTag = async (req, res) => {
       from,
       to,
       type,
+      min_amount,
+      max_amount,
       sortBy = "created_at",
       sortOrder = "desc",
     } = req.query;
@@ -119,6 +168,28 @@ export const getTransactionsByTag = async (req, res) => {
     const user = await User.findByTag(tag);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
+    }
+
+    // Validate amount range parameters
+    let minAmount = null;
+    let maxAmount = null;
+
+    if (min_amount !== undefined) {
+      minAmount = parseFloat(min_amount);
+      if (isNaN(minAmount) || minAmount < 0) {
+        return res.status(400).json({ error: "Invalid min_amount. Must be a positive number." });
+      }
+    }
+
+    if (max_amount !== undefined) {
+      maxAmount = parseFloat(max_amount);
+      if (isNaN(maxAmount) || maxAmount < 0) {
+        return res.status(400).json({ error: "Invalid max_amount. Must be a positive number." });
+      }
+    }
+
+    if (minAmount !== null && maxAmount !== null && minAmount > maxAmount) {
+      return res.status(400).json({ error: "min_amount cannot be greater than max_amount." });
     }
 
     const parsedLimit = Math.min(Math.max(Number.parseInt(limit) || 20, 1), 100);
@@ -130,6 +201,8 @@ export const getTransactionsByTag = async (req, res) => {
       from: from || null,
       to: to || null,
       type: type || null,
+      minAmount,
+      maxAmount,
       sortBy,
       sortOrder,
     };
