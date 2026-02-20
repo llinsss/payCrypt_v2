@@ -1,10 +1,10 @@
-exports.up = function (knex) {
+export const up = function (knex) {
   return knex.schema.alterTable('transactions', function (table) {
     table.jsonb('metadata').nullable();
   });
 };
 
-exports.down = function (knex) {
+export const down = function (knex) {
   return knex.schema.alterTable('transactions', function (table) {
     table.dropColumn('metadata');
   });
