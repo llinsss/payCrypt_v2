@@ -4,10 +4,27 @@ import { getExplorerLink } from "../utils/explorer.js";
 
 const Transaction = {
   async create(transactionData) {
-    const [id] = await db("transactions").insert(transactionData);
+    // Validate metadata if provided
+    if (transactionData.metadata !== undefined) {
+      const metadata = transactionData.metadata;
+
+      if (typeof metadata !== "object" || Array.isArray(metadata)) {
+        throw new Error("Metadata must be a valid JSON object");
+      }
+
+      const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+      if (size > 2048) {
+        throw new Error("Metadata exceeds 2KB limit");
+      }
+    }
+
+    const [id] = await db("transactions").insert({
+      ...transactionData,
+      metadata: transactionData.metadata || null
+    });
+
     return this.findById(id);
   },
-
   async findById(id) {
     const transaction = await db("transactions")
       .select(
@@ -37,7 +54,8 @@ const Transaction = {
     return transaction;
   },
 
-  async getAll(limit = 10, offset = 0, options = {}) {
+
+  async getAll(limit = 10, offset = 0, metadataSearch = null, options = {}) {
     const { minAmount = null, maxAmount = null } = options;
 
     let query = db("transactions")
@@ -55,6 +73,13 @@ const Transaction = {
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
       .leftJoin("chains", "transactions.chain_id", "chains.id");
+
+    if (metadataSearch) {
+      query = query.whereRaw(
+        "transactions.metadata::text ILIKE ?",
+        [`%${metadataSearch}%`]
+      );
+    }
 
     if (minAmount !== null) {
       query = query.where("transactions.usd_value", ">=", minAmount);
@@ -74,6 +99,7 @@ const Transaction = {
       explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
     }));
   },
+
 
   async getByUser(userId, limit = 10, offset = 0, options = {}) {
     const { minAmount = null, maxAmount = null } = options;
@@ -147,6 +173,18 @@ const Transaction = {
     const oldTransaction = await this.findById(id);
     const query = trx || db;
 
+    if (transactionData.metadata !== undefined) {
+      const metadata = transactionData.metadata;
+
+      if (typeof metadata !== "object" || Array.isArray(metadata)) {
+        throw new Error("Metadata must be a valid JSON object");
+      }
+
+      const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+      if (size > 2048) {
+        throw new Error("Metadata exceeds 2KB limit");
+      }
+    }
     await query("transactions")
       .where({ id })
       .update({
@@ -167,9 +205,11 @@ const Transaction = {
     return updatedTransaction;
   },
 
+
   async delete(id) {
     return await db("transactions").where({ id }).del();
   },
+
 
   async getByTag(userId, options = {}) {
     const {
@@ -235,6 +275,7 @@ const Transaction = {
       explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
     }));
   },
+
 
   async countByTag(userId, options = {}) {
     const { from = null, to = null, type = null, minAmount = null, maxAmount = null } = options;
