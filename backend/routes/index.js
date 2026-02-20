@@ -11,6 +11,8 @@ import bankAccountRoutes from "./bank-accounts.js";
 import notificationRoutes from "./notifications.js";
 import healthRoutes from "./health.js";
 import apiKeysRoutes from "./apiKeys.js";
+import scheduledPaymentRoutes from "./scheduledPayments.js";
+import disputeRoutes from "./disputes.js";
 import auditLogRoutes from "./auditLogs.js";
 
 const router = express.Router();
@@ -27,6 +29,8 @@ router.use("/wallets", walletRoutes);
 router.use("/bank-accounts", bankAccountRoutes);
 router.use("/notifications", notificationRoutes);
 router.use("/api-keys", apiKeysRoutes);
+router.use("/scheduled-payments", scheduledPaymentRoutes);
+router.use("/disputes", disputeRoutes);
 router.use("/audit-logs", auditLogRoutes);
 
 export default router;
