@@ -70,6 +70,13 @@ export const processPaymentSchema = Joi.object({
     .default([])
     .messages({
       'array.base': 'Additional secrets must be an array'
+    }),
+
+  idempotencyKey: Joi.string()
+    .max(255)
+    .allow(null, '')
+    .messages({
+      'string.max': 'Idempotency key must be 255 characters or less'
     })
 }).unknown(false);
 

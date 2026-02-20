@@ -2,28 +2,36 @@ import db from "../config/database.js";
 import WebhookService from "../services/WebhookService.js";
 
 const Transaction = {
-  async create(transactionData) {
-  // Validate metadata if provided
-  if (transactionData.metadata !== undefined) {
-    const metadata = transactionData.metadata;
+  async create(transactionData, trx = null) {
+    // Validate metadata if provided
+    if (transactionData.metadata !== undefined) {
+      const metadata = transactionData.metadata;
 
-    if (typeof metadata !== "object" || Array.isArray(metadata)) {
-      throw new Error("Metadata must be a valid JSON object");
+      if (typeof metadata !== "object" || Array.isArray(metadata)) {
+        throw new Error("Metadata must be a valid JSON object");
+      }
+
+      const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+      if (size > 2048) {
+        throw new Error("Metadata exceeds 2KB limit");
+      }
     }
 
-    const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
-    if (size > 2048) {
-      throw new Error("Metadata exceeds 2KB limit");
-    }
-  }
+    const query = trx || db;
+    const [id] = await query("transactions").insert({
+      ...transactionData,
+      metadata: transactionData.metadata || null
+    });
 
-  const [id] = await db("transactions").insert({
-    ...transactionData,
-    metadata: transactionData.metadata || null
-  });
+    return this.findById(id);
+  },
 
-  return this.findById(id);
-},
+  async findByIdempotencyKey(idempotencyKey, trx = null) {
+    const query = trx || db;
+    return await query("transactions")
+      .where({ idempotency_key: idempotencyKey })
+      .first();
+  },
   async findById(id) {
     return await db("transactions")
       .select(
