@@ -1,4 +1,5 @@
 import Notification from "../models/Notification.js";
+import NotificationPreference from "../models/NotificationPreference.js";
 
 export const getNotificationByUserId = async (req, res) => {
   try {
@@ -81,4 +82,43 @@ export const deleteNotification = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+};
+
+export const getPreferences = async (req, res) => {
+  try {
+    const preferences = await NotificationPreference.getOrCreate(req.user.id);
+    res.json(preferences);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updatePreferences = async (req, res) => {
+  try {
+    const allowedFields = [
+      "email_enabled",
+      "sms_enabled",
+      "push_enabled",
+      "transaction_notifications",
+      "payment_notifications",
+      "security_notifications",
+      "marketing_notifications",
+    ];
+
+    const updates = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    const preferences = await NotificationPreference.update(req.user.id, updates);
+    res.json(preferences);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const checkPreference = async (userId, type, channel) => {
+  return await NotificationPreference.shouldNotify(userId, type, channel);
 };
