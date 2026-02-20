@@ -2,10 +2,27 @@ import db from "../config/database.js";
 
 const Transaction = {
   async create(transactionData) {
-    const [id] = await db("transactions").insert(transactionData);
-    return this.findById(id);
-  },
+  // Validate metadata if provided
+  if (transactionData.metadata !== undefined) {
+    const metadata = transactionData.metadata;
 
+    if (typeof metadata !== "object" || Array.isArray(metadata)) {
+      throw new Error("Metadata must be a valid JSON object");
+    }
+
+    const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+    if (size > 2048) {
+      throw new Error("Metadata exceeds 2KB limit");
+    }
+  }
+
+  const [id] = await db("transactions").insert({
+    ...transactionData,
+    metadata: transactionData.metadata || null
+  });
+
+  return this.findById(id);
+},
   async findById(id) {
     return await db("transactions")
       .select(
@@ -25,25 +42,34 @@ const Transaction = {
       .first();
   },
 
-  async getAll(limit = 10, offset = 0) {
-    return await db("transactions")
-      .select(
-        "transactions.*",
-        "users.email as user_email",
-        "users.tag as user_tag",
-        "tokens.name as token_name",
-        "tokens.symbol as token_symbol",
-        "tokens.logo_url as token_logo_url",
-        "chains.name as chain_name",
-        "chains.symbol as chain_symbol"
-      )
-      .leftJoin("users", "transactions.user_id", "users.id")
-      .leftJoin("tokens", "transactions.token_id", "tokens.id")
-      .leftJoin("chains", "transactions.chain_id", "chains.id")
-      .limit(limit)
-      .offset(offset)
-      .orderBy("transactions.created_at", "desc");
-  },
+async getAll(limit = 10, offset = 0, metadataSearch = null) {
+  let query = db("transactions")
+    .select(
+      "transactions.*",
+      "users.email as user_email",
+      "users.tag as user_tag",
+      "tokens.name as token_name",
+      "tokens.symbol as token_symbol",
+      "tokens.logo_url as token_logo_url",
+      "chains.name as chain_name",
+      "chains.symbol as chain_symbol"
+    )
+    .leftJoin("users", "transactions.user_id", "users.id")
+    .leftJoin("tokens", "transactions.token_id", "tokens.id")
+    .leftJoin("chains", "transactions.chain_id", "chains.id");
+
+  if (metadataSearch) {
+    query = query.whereRaw(
+      "transactions.metadata::text ILIKE ?",
+      [`%${metadataSearch}%`]
+    );
+  }
+
+  return await query
+    .limit(limit)
+    .offset(offset)
+    .orderBy("transactions.created_at", "desc");
+},
 
   async getByUser(userId, limit = 10, offset = 0) {
     return await db("transactions")
@@ -96,15 +122,30 @@ const Transaction = {
   },
 
   async update(id, transactionData, trx = null) {
-    const query = trx || db;
-    await query("transactions")
-      .where({ id })
-      .update({
-        ...transactionData,
-        updated_at: db.fn.now(),
-      });
-    return this.findById(id);
-  },
+  const query = trx || db;
+
+  if (transactionData.metadata !== undefined) {
+    const metadata = transactionData.metadata;
+
+    if (typeof metadata !== "object" || Array.isArray(metadata)) {
+      throw new Error("Metadata must be a valid JSON object");
+    }
+
+    const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+    if (size > 2048) {
+      throw new Error("Metadata exceeds 2KB limit");
+    }
+  }
+
+  await query("transactions")
+    .where({ id })
+    .update({
+      ...transactionData,
+      updated_at: db.fn.now(),
+    });
+
+  return this.findById(id);
+},
 
   async delete(id) {
     return await db("transactions").where({ id }).del();
