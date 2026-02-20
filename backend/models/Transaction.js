@@ -1,4 +1,5 @@
 import db from "../config/database.js";
+import WebhookService from "../services/WebhookService.js";
 
 const Transaction = {
   async create(transactionData) {
@@ -120,14 +121,27 @@ const Transaction = {
   },
 
   async update(id, transactionData, trx = null) {
+    const oldTransaction = await this.findById(id);
     const query = trx || db;
+    
     await query("transactions")
       .where({ id })
       .update({
         ...transactionData,
         updated_at: db.fn.now(),
       });
-    return this.findById(id);
+    
+    const updatedTransaction = await this.findById(id);
+    
+    if (transactionData.status && oldTransaction.status !== transactionData.status) {
+      WebhookService.sendStatusChangeWebhook(
+        updatedTransaction,
+        oldTransaction.status,
+        transactionData.status
+      ).catch(console.error);
+    }
+    
+    return updatedTransaction;
   },
 
   async delete(id) {
