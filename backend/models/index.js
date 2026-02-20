@@ -12,6 +12,8 @@ import StellarAccount from "./StellarAccount.js";
 import StellarTransaction from "./StellarTransaction.js";
 import Webhook from "./Webhook.js";
 import WebhookEvent from "./WebhookEvent.js";
+import ScheduledPayment from "./ScheduledPayment.js";
+import AuditLog from "./AuditLog.js";
 
 export {
   User,
@@ -28,4 +30,6 @@ export {
   StellarTransaction,
   Webhook,
   WebhookEvent,
+  ScheduledPayment,
+  AuditLog,
 };
