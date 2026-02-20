@@ -12,7 +12,7 @@ router.post("/register", accountCreationLimiter, validate(authSchemas.register),
 
 router.post("/login", loginLimiter, validate(authSchemas.login), auditLog("auth"), login);
 router.post("/2fa/setup", authenticate, auditLog("auth"), setup2FA);
-router.post("/2fa/enable", authenticate, auditLog("auth"), enable2FA);
-router.post("/2fa/verify", authenticate, auditLog("auth"), verify2FA);
+router.post("/2fa/enable", authenticate, validate(authSchemas.twoFactorToken), auditLog("auth"), enable2FA);
+router.post("/2fa/verify", authenticate, validate(authSchemas.twoFactorToken), auditLog("auth"), verify2FA);
 
 export default router;
