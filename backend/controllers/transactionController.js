@@ -339,8 +339,9 @@ export const processPayment = async (req, res) => {
       });
     }
 
-    const { senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, notes, senderSecret, additionalSecrets = [] } = value;
+    const { senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, senderSecret, additionalSecrets = [], idempotencyKey } = value;
     const userId = req.user.id;
+    const idempotencyKeyFromHeader = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
 
     // Combine secrets
     const secrets = [senderSecret, ...additionalSecrets];
@@ -355,7 +356,8 @@ export const processPayment = async (req, res) => {
       memo,
       notes,
       secrets,
-      userId
+      userId,
+      idempotencyKey: idempotencyKey || idempotencyKeyFromHeader || null
     });
 
     res.status(201).json({

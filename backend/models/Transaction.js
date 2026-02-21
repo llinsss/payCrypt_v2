@@ -48,7 +48,7 @@ const invalidateUserLists = async (userId) => {
 };
 
 const Transaction = {
-  async create(transactionData) {
+  async create(transactionData, trx = null) {
     // Validate metadata if provided
     if (transactionData.metadata !== undefined) {
       const metadata = transactionData.metadata;

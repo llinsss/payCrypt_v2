@@ -72,11 +72,11 @@ export const processPaymentSchema = Joi.object({
       'array.base': 'Additional secrets must be an array'
     }),
 
-  notes: Joi.string()
-    .max(1000)
+  idempotencyKey: Joi.string()
+    .max(255)
     .allow(null, '')
     .messages({
-      'string.max': 'Notes must be 1000 characters or less'
+      'string.max': 'Idempotency key must be 255 characters or less'
     })
 }).unknown(false);
 
