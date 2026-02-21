@@ -61,6 +61,7 @@
 - `POST /api/transactions/payment` - Process payment
 - `GET /api/transactions/payment/limits` - Get limits
 - `GET /api/transactions/tag/:tag/history` - Get history
+- `GET /api/transactions/:id/receipt` - Download a completed transaction receipt (PDF)
 
 ### 5. Documentation
 

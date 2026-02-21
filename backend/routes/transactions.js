@@ -3,13 +3,16 @@ import {
   createTransaction,
   getTransactions,
   getTransactionById,
+  getTransactionReceipt,
   updateTransaction,
   deleteTransaction,
+  restoreTransaction,
   getTransactionByUser,
   getTransactionsByTag,
   processPayment,
   getPaymentLimits,
-  getPaymentHistory
+  getPaymentHistory,
+  updateTransactionNote
 } from "../controllers/transactionController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
@@ -58,56 +61,12 @@ router.get("/", authenticate, getTransactionByUser);
  *         description: List of transactions based on tag
  */
 router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
-
-/**
- * @swagger
- * /api/transactions/{id}:
- *   get:
- *     summary: Get transaction by ID
- *     tags: [Transactions]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Transaction details
- *   put:
- *     summary: Update transaction
- *     tags: [Transactions]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Transaction updated
- *   delete:
- *     summary: Delete transaction
- *     tags: [Transactions]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Transaction deleted
- */
+router.get("/:id/receipt", authenticate, getTransactionReceipt);
 router.get("/:id", authenticate, getTransactionById);
 router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
+router.patch("/:id/note", authenticate, validate(transactionSchema), auditLog("transactions"), updateTransactionNote);
 router.delete("/:id", authenticate, paymentLimiter, auditLog("transactions"), deleteTransaction);
+router.post("/:id/restore", authenticate, auditLog("transactions"), restoreTransaction);
 
 // Payment operations
 /**
