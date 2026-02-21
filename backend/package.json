@@ -25,6 +25,7 @@
         "transform": {}
     },
     "dependencies": {
+        "@apollo/server": "^4.13.0",
         "@bull-board/api": "^6.13.0",
         "@bull-board/express": "^6.13.0",
         "@stellar/stellar-sdk": "^14.5.0",
@@ -32,6 +33,7 @@
         "axios": "^1.11.0",
         "bcrypt": "^5.1.0",
         "bignumber.js": "^9.3.1",
+        "body-parser": "^2.2.2",
         "bull-board": "^1.7.2",
         "bullmq": "^5.61.0",
         "cloudinary": "^2.8.0",
@@ -45,6 +47,8 @@
         "express-mongo-sanitize": "^2.2.0",
         "express-rate-limit": "^6.8.1",
         "fs": "^0.0.1-security",
+        "graphql": "^16.12.0",
+        "graphql-query-complexity": "^1.1.0",
         "helmet": "^7.2.0",
         "hpp": "^0.2.3",
         "ip-range-check": "^0.2.0",
@@ -62,7 +66,14 @@
         "redis": "^5.8.2",
         "sanitize-html": "^2.17.1",
         "socket.io": "^4.8.3",
-        "starknet": "^7.6.4"
+        "speakeasy": "^2.0.0",
+        "starknet": "^7.6.4",
+        "stellar-sdk": "^13.3.0",
+        "swagger-jsdoc": "^6.2.8",
+        "swagger-ui-express": "^5.0.1",
+        "winston": "^3.19.0",
+        "winston-daily-rotate-file": "^5.0.0",
+        "xss-clean": "^0.1.4"
     },
     "devDependencies": {
         "@jest/globals": "^29.0.0",
