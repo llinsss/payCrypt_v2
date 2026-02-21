@@ -226,6 +226,25 @@ Retrieves transaction history for a @tag.
 }
 ```
 
+### Download Transaction Receipt
+
+**GET** `/api/transactions/:id/receipt`
+
+Downloads a PDF receipt for a completed transaction owned by the authenticated user.
+
+#### Response
+
+- Content type: `application/pdf`
+- Content disposition: `attachment; filename="receipt-{id}.pdf"`
+
+#### Status Codes
+
+- `200` - Receipt generated and returned as PDF
+- `400` - Transaction exists but is not completed
+- `403` - Authenticated user does not own the transaction
+- `404` - Transaction not found
+- `500` - Receipt generation failed
+
 ## Fee Calculation
 
 The system calculates fees as follows:

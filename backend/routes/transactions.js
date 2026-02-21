@@ -3,6 +3,7 @@ import {
   createTransaction,
   getTransactions,
   getTransactionById,
+  getTransactionReceipt,
   updateTransaction,
   deleteTransaction,
   getTransactionByUser,
@@ -22,6 +23,7 @@ const router = express.Router();
 
 router.get("/", authenticate, getTransactionByUser);
 router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
+router.get("/:id/receipt", authenticate, getTransactionReceipt);
 router.get("/:id", authenticate, getTransactionById);
 router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
 router.delete("/:id", authenticate, paymentLimiter, auditLog("transactions"), deleteTransaction);
