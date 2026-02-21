@@ -23,6 +23,8 @@ router.get("/bill/airtime-services", controller.bill_airtime_services);
 router.get("/bill/data-services", controller.bill_data_services);
 router.post("/bill/requery", controller.bill_requery);
 router.post("/bill/verify-customer", controller.bill_verify_customer);
+router.get("/exchange-rates", controller.get_exchange_rates);
+router.get("/convert", controller.convert_currency);
 // Health check endpoint
 router.get("/health", (req, res) => {
   res.status(200).json({
