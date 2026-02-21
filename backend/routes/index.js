@@ -16,6 +16,7 @@ import disputeRoutes from "./disputes.js";
 import auditLogRoutes from "./auditLogs.js";
 import performanceRoutes from "./performance.js";
 import analyticsRoutes from "./analytics.js";
+import webhookRoutes from "./webhooks.js";
 
 const router = express.Router();
 
@@ -37,5 +38,6 @@ router.use("/scheduled-payments", scheduledPaymentRoutes);
 router.use("/disputes", disputeRoutes);
 router.use("/audit-logs", auditLogRoutes);
 router.use("/analytics", analyticsRoutes);
+router.use("/webhooks", webhookRoutes);
 
 export default router;
