@@ -6,7 +6,7 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
 const createRedisClient = (name) => {
   const client = createClient({ url: redisUrl });
-  
+
   client.on("connect", () => console.log(`✅ Redis ${name} connected`));
   client.on("error", (err) => {
     console.error(`❌ Redis ${name} error`, err);
@@ -45,6 +45,19 @@ const publish = async (channel, message) => {
     console.warn("⚠️ Redis connection failed, running with limited functionality:", error.message);
   }
 })();
+
+// ===== CACHE METRICS =====
+const metrics = { hits: 0, misses: 0 };
+
+export const recordCacheHit = () => { metrics.hits++; };
+export const recordCacheMiss = () => { metrics.misses++; };
+export const getCacheMetrics = () => ({
+  hits: metrics.hits,
+  misses: metrics.misses,
+  ratio: metrics.hits + metrics.misses === 0
+    ? 0
+    : (metrics.hits / (metrics.hits + metrics.misses)).toFixed(4),
+});
 
 export { redisConnection, subClient, publish };
 export default redis;

@@ -1,6 +1,51 @@
 import db from "../config/database.js";
 import WebhookService from "../services/WebhookService.js";
 import { getExplorerLink } from "../utils/explorer.js";
+import redis, { recordCacheHit, recordCacheMiss } from "../config/redis.js";
+
+
+const TTL_TRANSACTION = 5 * 60;  
+const TTL_USER_LIST = 2 * 60;  
+
+const CacheKeys = {
+  byId: (id) => `txn:id:${id}`,
+  byUser: (userId, limit, offset, options) =>
+    `txn:user:${userId}:${limit}:${offset}:${JSON.stringify(options)}`,
+  byUserPrefix: (userId) => `txn:user:${userId}:*`,
+};
+
+
+const cacheGet = async (key) => {
+  try {
+    const val = await redis.get(key);
+    if (val) { recordCacheHit(); return JSON.parse(val); }
+    recordCacheMiss();
+    return null;
+  } catch { return null; }
+};
+
+
+const cacheSet = async (key, value, ttl) => {
+  try {
+    await redis.set(key, JSON.stringify(value), { EX: ttl });
+  } catch { /* silent fail */ }
+};
+
+
+const cacheDel = async (key) => {
+  try { await redis.del(key); } catch { /* silent fail */ }
+};
+const invalidateUserLists = async (userId) => {
+  try {
+    const pattern = CacheKeys.byUserPrefix(userId);
+    let cursor = 0;
+    do {
+      const reply = await redis.scan(cursor, { MATCH: pattern, COUNT: 100 });
+      cursor = reply.cursor;
+      if (reply.keys.length) await redis.del(reply.keys);
+    } while (cursor !== 0);
+  } catch { /* silent fail */ }
+};
 
 const Transaction = {
   async create(transactionData, trx = null) {
@@ -18,22 +63,37 @@ const Transaction = {
       }
     }
 
-    const query = trx || db;
-    const [id] = await query("transactions").insert({
+    // Validate notes if provided
+    if (transactionData.notes !== undefined && transactionData.notes !== null) {
+      if (typeof transactionData.notes !== "string") {
+        throw new Error("Notes must be a string");
+      }
+      if (transactionData.notes.length > 1000) {
+        throw new Error("Notes must be at most 1000 characters");
+      }
+    }
+
+    const [id] = await db("transactions").insert({
       ...transactionData,
       metadata: transactionData.metadata || null
     });
 
+    if (transactionData.user_id) {
+      await invalidateUserLists(transactionData.user_id);
+    }
+
     return this.findById(id);
   },
 
-  async findByIdempotencyKey(idempotencyKey, trx = null) {
-    const query = trx || db;
-    return await query("transactions")
-      .where({ idempotency_key: idempotencyKey })
-      .first();
-  },
   async findById(id) {
+    const cacheKey = CacheKeys.byId(id);
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      console.log(`[Cache HIT] ${cacheKey}`);
+      return cached;
+    }
+    console.log(`[Cache MISS] ${cacheKey}`);
+
     const transaction = await db("transactions")
       .select(
         "transactions.*",
@@ -52,7 +112,16 @@ const Transaction = {
       .where("transactions.id", id)
       .where("transactions.deleted_at", null)
       .first();
+
+    if (transaction) {
+      transaction.explorer_link = getExplorerLink(
+        transaction.chain_name, transaction.tx_hash, transaction.chain_explorer
+      );
+      await cacheSet(cacheKey, transaction, TTL_TRANSACTION);
+    }
+    return transaction;
   },
+
 
   async findByIdWithDeleted(id) {
     return await db("transactions")
@@ -85,7 +154,7 @@ const Transaction = {
 
   async getAll(limit = 10, offset = 0, metadataSearch = null, options = {}) {
     const { minAmount = null, maxAmount = null, noteSearch = null } = options;
-    
+
     let query = db("transactions")
       .select(
         "transactions.*",
@@ -136,7 +205,15 @@ const Transaction = {
 
   async getByUser(userId, limit = 10, offset = 0, options = {}) {
     const { minAmount = null, maxAmount = null, noteSearch = null } = options;
-    
+
+    const cacheKey = CacheKeys.byUser(userId, limit, offset, options);
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      console.log(`[Cache HIT] ${cacheKey}`);
+      return cached;
+    }
+    console.log(`[Cache MISS] ${cacheKey}`);
+
     let query = db("transactions")
       .select(
         "transactions.*",
@@ -172,11 +249,15 @@ const Transaction = {
       .offset(offset)
       .orderBy("transactions.created_at", "desc");
 
-    return transactions.map((tx) => ({
+    const result = transactions.map((tx) => ({
       ...tx,
       explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
     }));
+
+    await cacheSet(cacheKey, result, TTL_USER_LIST);
+    return result;
   },
+
 
   async totalDeposit() {
     return await db("transactions")
@@ -236,7 +317,7 @@ const Transaction = {
         throw new Error("Notes must be at most 1000 characters");
       }
     }
-    
+
     await query("transactions")
       .where({ id })
       .update({
@@ -245,6 +326,10 @@ const Transaction = {
       });
 
     const updatedTransaction = await this.findById(id);
+
+    // Invalidate caches after update
+    await cacheDel(CacheKeys.byId(id));
+    if (updatedTransaction?.user_id) await invalidateUserLists(updatedTransaction.user_id);
 
     if (transactionData.status && oldTransaction.status !== transactionData.status) {
       WebhookService.sendStatusChangeWebhook(
@@ -258,11 +343,20 @@ const Transaction = {
   },
 
 
+
+
   async delete(id) {
-    return await db("transactions")
+     const tx = await this.findById(id);
+    const result = await db("transactions")
       .where({ id })
       .update({ deleted_at: db.fn.now() });
+
+    await cacheDel(CacheKeys.byId(id));
+    if (tx?.user_id) await invalidateUserLists(tx.user_id);
+
+    return result;
   },
+
 
   async restore(id) {
     return await db("transactions")
