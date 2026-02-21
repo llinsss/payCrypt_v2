@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import crypto from "crypto";
+import ipRangeCheck from "ip-range-check";
 
 const ApiKey = {
   /**
@@ -131,14 +132,26 @@ const ApiKey = {
   /**
    * Verify IP is whitelisted for API key
    */
-  async isIpWhitelisted(key, ip) {
-    const apiKey = await this.findByKey(key);
-    if (!apiKey || !apiKey.ip_whitelist) return true; // No whitelist = allow all
+   async isIpWhitelisted(key, ip) {
+  const apiKey = await this.findByKey(key);
 
-    const whitelistedIps = apiKey.ip_whitelist.split(",").map((i) => i.trim());
-    return whitelistedIps.includes(ip);
-  },
+  // No key or no whitelist = allow all
+  if (!apiKey || !apiKey.ip_whitelist) return true;
 
+  const entries = apiKey.ip_whitelist
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  // Support exact IP and CIDR
+  return entries.some((entry) => {
+    try {
+      return ipRangeCheck(ip, entry);
+    } catch (err) {
+      return false;
+    }
+  });
+},
   /**
    * Check if API key has expired
    */

@@ -1,7 +1,16 @@
 import db from "../config/database.js";
+import NotificationPreference from "./NotificationPreference.js";
 
 const Notification = {
   async create(notificationData) {
+    const { user_id, type = "transaction", channel = "push" } = notificationData;
+    
+    // Check preferences before creating
+    const shouldSend = await NotificationPreference.shouldNotify(user_id, type, channel);
+    if (!shouldSend) {
+      return null;
+    }
+
     const [id] = await db("notifications").insert(notificationData);
     return this.findById(id);
   },
