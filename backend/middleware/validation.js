@@ -150,3 +150,34 @@ export const sanitizeRequest = (req, res, next) => {
   req.params = sanitizeValue(req.params);
   next();
 };
+
+/**
+ * Detect and block common SQL injection patterns in requests
+ */
+export const detectSqlInjection = (req, res, next) => {
+  const sqlInjectionPattern = /(union\s+select|select\s+.*\s+from|from\s+information_schema|or\s+1\s*=\s*1|drop\s+table|update\s+.*\s+set|delete\s+from|insert\s+into|exec\s*\(|;\s*--|--\s*$)/i;
+
+  const detectInObject = (obj) => {
+    if (typeof obj === "string") {
+      return sqlInjectionPattern.test(obj);
+    }
+    if (typeof obj === "object" && obj !== null) {
+      return Object.values(obj).some(detectInObject);
+    }
+    return false;
+  };
+
+  const hasSqlInjection =
+    detectInObject(req.body) ||
+    detectInObject(req.query) ||
+    detectInObject(req.params);
+
+  if (hasSqlInjection) {
+    return res.status(403).json({
+      status: "error",
+      message: "Forbidden: Suspicious input detected",
+    });
+  }
+
+  next();
+};

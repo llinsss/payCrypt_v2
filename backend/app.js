@@ -24,7 +24,7 @@ import {
 
 import { performanceMonitor } from "./middleware/performance.js";
 import logger, { stream } from "./utils/logger.js";
-import { sanitizeRequest } from "./middleware/validation.js";
+import { sanitizeRequest, detectSqlInjection } from "./middleware/validation.js";
 
 import {
   globalLimiter,
@@ -103,6 +103,9 @@ app.use(compression({
 // Request body parsing with size limits
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Detect SQL Injection attempts
+app.use(detectSqlInjection);
 
 // Sanitize all request inputs
 app.use(sanitizeRequest);
@@ -196,7 +199,7 @@ app.use(
 // ===== ERROR HANDLING =====
 
 app.all("*", (req, res, next) => {
-  res.status(404).json({ 
+  res.status(404).json({
     message: `Route ${req.originalUrl} not found`,
     path: req.originalUrl,
     method: req.method,
