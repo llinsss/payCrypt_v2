@@ -8,8 +8,6 @@ import hpp from "hpp";
 import xss from "xss-clean";
 import basicAuth from "express-basic-auth";
 import mongoSanitize from "express-mongo-sanitize";
-import transactionTagRoutes from "./routes/transactionTagRoutes.js";
-
 import indexRoutes from "./routes/index.js";
 import generalRoutes from "./routes/general.js";
 import bullBoardRouter from "./bullboard.js";
@@ -24,7 +22,7 @@ import {
 
 import { performanceMonitor } from "./middleware/performance.js";
 import logger, { stream } from "./utils/logger.js";
-import { sanitizeRequest } from "./middleware/validation.js";
+import { sanitizeRequest, detectSqlInjection } from "./middleware/validation.js";
 
 import {
   globalLimiter,
@@ -103,6 +101,9 @@ app.use(compression({
 // Request body parsing with size limits
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Detect SQL Injection attempts
+app.use(detectSqlInjection);
 
 // Sanitize all request inputs
 app.use(sanitizeRequest);
@@ -196,7 +197,7 @@ app.use(
 // ===== ERROR HANDLING =====
 
 app.all("*", (req, res, next) => {
-  res.status(404).json({ 
+  res.status(404).json({
     message: `Route ${req.originalUrl} not found`,
     path: req.originalUrl,
     method: req.method,
@@ -228,4 +229,3 @@ app.use((error, req, res, next) => {
 
 export default app;
 
-app.use("/api/transaction-tags", transactionTagRoutes);
