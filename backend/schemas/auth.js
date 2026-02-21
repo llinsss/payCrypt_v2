@@ -60,4 +60,16 @@ export const authSchemas = {
         "string.empty": "Password cannot be empty",
       }),
   }),
+
+  twoFactorToken: Joi.object({
+    token: Joi.string()
+      .trim()
+      .pattern(/^[A-Za-z0-9]{6,32}$/)
+      .required()
+      .messages({
+        "string.pattern.base": "Token must be 6-32 alphanumeric characters",
+        "any.required": "Token is required",
+        "string.empty": "Token cannot be empty",
+      }),
+  }),
 };
