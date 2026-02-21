@@ -12,7 +12,8 @@ import {
   processPayment,
   getPaymentLimits,
   getPaymentHistory,
-  updateTransactionNote
+  updateTransactionNote,
+  searchTransactions
 } from "../controllers/transactionController.js";
 import { authenticate, userRateLimiter } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
@@ -23,6 +24,7 @@ import { paymentLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
+router.get("/search", authenticate, userRateLimiter, searchTransactions);
 router.get("/", authenticate, userRateLimiter, getTransactionByUser);
 router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
 router.get("/:id", authenticate, userRateLimiter, getTransactionById);
