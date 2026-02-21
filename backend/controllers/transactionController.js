@@ -1,6 +1,7 @@
 import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import PaymentService from "../services/PaymentService.js";
+import ReceiptService from "../services/ReceiptService.js";
 import { processPaymentSchema, transactionHistoryQuerySchema } from "../schemas/payment.js";
 
 export const createTransaction = async (req, res) => {
@@ -19,8 +20,11 @@ export const createTransaction = async (req, res) => {
 
 export const getTransactions = async (req, res) => {
   try {
-    const { page = 1, limit = 10, min_amount, max_amount } = req.query;
-    const offset = (page - 1) * limit;
+    const { page = 1, limit = 10, metadataSearch = null, min_amount, max_amount } = req.query;
+
+    const parsedLimit = Number.parseInt(limit);
+    const parsedPage = Number.parseInt(page);
+    const offset = (parsedPage - 1) * parsedLimit;
 
     // Validate amount range parameters
     let minAmount = null;
@@ -45,10 +49,12 @@ export const getTransactions = async (req, res) => {
     }
 
     const transactions = await Transaction.getAll(
-      Number.parseInt(limit),
-      Number.parseInt(offset),
+      parsedLimit,
+      offset,
+      metadataSearch,
       { minAmount, maxAmount }
     );
+
     res.json(transactions);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -105,6 +111,38 @@ export const getTransactionById = async (req, res) => {
     res.json(transaction);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+export const getTransactionReceipt = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const transaction = await Transaction.findById(id);
+
+    if (!transaction) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    if (transaction.user_id !== req.user.id) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    if (transaction.status !== "completed") {
+      return res.status(400).json({ error: "Receipt only available for completed transactions" });
+    }
+
+    const pdfBuffer = await ReceiptService.generateReceipt(transaction);
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="receipt-${transaction.id}.pdf"`,
+      "Content-Length": String(pdfBuffer.length),
+    });
+
+    return res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Receipt generation failed:", error);
+    return res.status(500).json({ error: "Failed to generate receipt" });
   }
 };
 

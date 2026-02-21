@@ -8,6 +8,7 @@ import hpp from "hpp";
 import xss from "xss-clean";
 import basicAuth from "express-basic-auth";
 import mongoSanitize from "express-mongo-sanitize";
+import transactionTagRoutes from "./routes/transactionTagRoutes.js";
 
 import indexRoutes from "./routes/index.js";
 import generalRoutes from "./routes/general.js";
@@ -88,7 +89,14 @@ app.use(hpp({
 }));
 
 // Compression (gzip responses)
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+  threshold: 1024, // Only compress responses > 1KB
+  level: 6, // Compression level (0-9, 6 is default balance)
+}));
 
 // Request body parsing with size limits
 app.use(express.json({ limit: "10mb" }));
@@ -179,3 +187,5 @@ app.use((error, req, res, next) => {
 });
 
 export default app;
+
+app.use("/api/transaction-tags", transactionTagRoutes);
