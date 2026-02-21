@@ -1,11 +1,29 @@
 import db from "../config/database.js";
+import WebhookService from "../services/WebhookService.js";
 
 const Transaction = {
   async create(transactionData) {
-    const [id] = await db("transactions").insert(transactionData);
-    return this.findById(id);
-  },
+  // Validate metadata if provided
+  if (transactionData.metadata !== undefined) {
+    const metadata = transactionData.metadata;
 
+    if (typeof metadata !== "object" || Array.isArray(metadata)) {
+      throw new Error("Metadata must be a valid JSON object");
+    }
+
+    const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+    if (size > 2048) {
+      throw new Error("Metadata exceeds 2KB limit");
+    }
+  }
+
+  const [id] = await db("transactions").insert({
+    ...transactionData,
+    metadata: transactionData.metadata || null
+  });
+
+  return this.findById(id);
+},
   async findById(id) {
     return await db("transactions")
       .select(
@@ -25,8 +43,11 @@ const Transaction = {
       .first();
   },
 
-  async getAll(limit = 10, offset = 0) {
-    return await db("transactions")
+
+  async getAll(limit = 10, offset = 0, metadataSearch = null, options = {}) {
+    const { minAmount = null, maxAmount = null } = options;
+    
+    let query = db("transactions")
       .select(
         "transactions.*",
         "users.email as user_email",
@@ -39,14 +60,34 @@ const Transaction = {
       )
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
-      .leftJoin("chains", "transactions.chain_id", "chains.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id");
+
+    if (metadataSearch) {
+      query = query.whereRaw(
+        "transactions.metadata::text ILIKE ?",
+        [`%${metadataSearch}%`]
+      );
+    }
+
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
+    }
+
+    return await query
       .limit(limit)
       .offset(offset)
       .orderBy("transactions.created_at", "desc");
   },
 
-  async getByUser(userId, limit = 10, offset = 0) {
-    return await db("transactions")
+
+  async getByUser(userId, limit = 10, offset = 0, options = {}) {
+    const { minAmount = null, maxAmount = null } = options;
+    
+    let query = db("transactions")
       .select(
         "transactions.*",
         "users.email as user_email",
@@ -60,7 +101,17 @@ const Transaction = {
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
       .leftJoin("chains", "transactions.chain_id", "chains.id")
-      .where("transactions.user_id", userId)
+      .where("transactions.user_id", userId);
+
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
+    }
+
+    return await query
       .limit(limit)
       .offset(offset)
       .orderBy("transactions.created_at", "desc");
@@ -96,19 +147,47 @@ const Transaction = {
   },
 
   async update(id, transactionData, trx = null) {
+    const oldTransaction = await this.findById(id);
     const query = trx || db;
+
+    if (transactionData.metadata !== undefined) {
+      const metadata = transactionData.metadata;
+
+      if (typeof metadata !== "object" || Array.isArray(metadata)) {
+        throw new Error("Metadata must be a valid JSON object");
+      }
+
+      const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+      if (size > 2048) {
+        throw new Error("Metadata exceeds 2KB limit");
+      }
+    }
+    
     await query("transactions")
       .where({ id })
       .update({
         ...transactionData,
         updated_at: db.fn.now(),
       });
-    return this.findById(id);
+    
+    const updatedTransaction = await this.findById(id);
+    
+    if (transactionData.status && oldTransaction.status !== transactionData.status) {
+      WebhookService.sendStatusChangeWebhook(
+        updatedTransaction,
+        oldTransaction.status,
+        transactionData.status
+      ).catch(console.error);
+    }
+    
+    return updatedTransaction;
   },
+
 
   async delete(id) {
     return await db("transactions").where({ id }).del();
   },
+
 
   async getByTag(userId, options = {}) {
     const {
@@ -117,6 +196,8 @@ const Transaction = {
       from = null,
       to = null,
       type = null,
+      minAmount = null,
+      maxAmount = null,
       sortBy = "created_at",
       sortOrder = "desc",
     } = options;
@@ -149,6 +230,14 @@ const Transaction = {
       query = query.where("transactions.type", type);
     }
 
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
+    }
+
     const allowedSortFields = ["created_at", "amount", "usd_value", "type", "status"];
     const sanitizedSortBy = allowedSortFields.includes(sortBy) ? sortBy : "created_at";
     const sanitizedSortOrder = sortOrder === "asc" ? "asc" : "desc";
@@ -159,8 +248,9 @@ const Transaction = {
       .offset(offset);
   },
 
+
   async countByTag(userId, options = {}) {
-    const { from = null, to = null, type = null } = options;
+    const { from = null, to = null, type = null, minAmount = null, maxAmount = null } = options;
 
     let query = db("transactions")
       .where("transactions.user_id", userId)
@@ -176,6 +266,14 @@ const Transaction = {
 
     if (type) {
       query = query.where("transactions.type", type);
+    }
+
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
     }
 
     const result = await query.first();

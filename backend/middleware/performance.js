@@ -19,31 +19,21 @@ export const performanceMonitor = (req, res, next) => {
         const formattedTime = timeInMs.toFixed(3);
 
         const message = `${req.method} ${req.originalUrl} ${res.statusCode} ${formattedTime}ms`;
+        const logMeta = {
+            requestId: req.id,
+            method: req.method,
+            url: req.originalUrl,
+            status: res.statusCode,
+            duration: timeInMs,
+            ip: req.ip,
+        };
 
         if (res.statusCode >= 500) {
-            logger.error(message, {
-                method: req.method,
-                url: req.originalUrl,
-                status: res.statusCode,
-                duration: timeInMs,
-                ip: req.ip,
-            });
+            logger.error(message, logMeta);
         } else if (res.statusCode >= 400) {
-            logger.warn(message, {
-                method: req.method,
-                url: req.originalUrl,
-                status: res.statusCode,
-                duration: timeInMs,
-                ip: req.ip,
-            });
+            logger.warn(message, logMeta);
         } else {
-            logger.info(message, {
-                method: req.method,
-                url: req.originalUrl,
-                status: res.statusCode,
-                duration: timeInMs,
-                ip: req.ip,
-            });
+            logger.info(message, logMeta);
         }
     });
 
