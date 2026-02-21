@@ -14,7 +14,7 @@ import {
   getPaymentHistory,
   updateTransactionNote
 } from "../controllers/transactionController.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, userRateLimiter } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
@@ -23,76 +23,14 @@ import { paymentLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
-/**
- * @swagger
- * tags:
- *   name: Transactions
- *   description: Transaction and payment management
- */
-
-/**
- * @swagger
- * /api/transactions:
- *   get:
- *     summary: Get transactions by user
- *     tags: [Transactions]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of transactions
- */
-router.get("/", authenticate, getTransactionByUser);
-
-/**
- * @swagger
- * /api/transactions/tag/{tag}:
- *   get:
- *     summary: Get transactions by tag
- *     tags: [Transactions]
- *     parameters:
- *       - in: path
- *         name: tag
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: List of transactions based on tag
- */
+router.get("/", authenticate, userRateLimiter, getTransactionByUser);
 router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
-router.get("/:id/receipt", authenticate, getTransactionReceipt);
-router.get("/:id", authenticate, getTransactionById);
-router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
-router.patch("/:id/note", authenticate, validate(transactionSchema), auditLog("transactions"), updateTransactionNote);
-router.delete("/:id", authenticate, paymentLimiter, auditLog("transactions"), deleteTransaction);
-router.post("/:id/restore", authenticate, auditLog("transactions"), restoreTransaction);
+router.get("/:id", authenticate, userRateLimiter, getTransactionById);
+router.put("/:id", authenticate, userRateLimiter, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
+router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, auditLog("transactions"), deleteTransaction);
 
 // Payment operations
-/**
- * @swagger
- * /api/transactions/payment:
- *   post:
- *     summary: Process a payment
- *     tags: [Transactions]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Payment processed successfully
- */
-router.post("/payment", authenticate, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
-
-/**
- * @swagger
- * /api/transactions/payment/limits:
- *   get:
- *     summary: Get payment limits
- *     tags: [Transactions]
- *     responses:
- *       200:
- *         description: Payment limits
- */
+router.post("/payment", authenticate, userRateLimiter, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
 router.get("/payment/limits", getPaymentLimits);
 
 /**
