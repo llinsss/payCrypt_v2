@@ -78,7 +78,6 @@ const Transaction = {
       metadata: transactionData.metadata || null
     });
 
-    // Invalidate user's list cache since there's a new transaction
     if (transactionData.user_id) {
       await invalidateUserLists(transactionData.user_id);
     }
@@ -347,13 +346,11 @@ const Transaction = {
 
 
   async delete(id) {
-    // Fetch first to get user_id for list invalidation before deleting
-    const tx = await this.findById(id);
+     const tx = await this.findById(id);
     const result = await db("transactions")
       .where({ id })
       .update({ deleted_at: db.fn.now() });
 
-    // Invalidate caches
     await cacheDel(CacheKeys.byId(id));
     if (tx?.user_id) await invalidateUserLists(tx.user_id);
 
