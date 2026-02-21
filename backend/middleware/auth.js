@@ -22,3 +22,12 @@ export const authenticate = async (req, res, next) => {
     res.status(401).json({ error: "Invalid token" });
   }
 };
+
+export const isAdmin = (req, res, next) => {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) {
+    next();
+  } else {
+    res.status(403).json({ error: "Access denied. Admin role required." });
+  }
+};
+

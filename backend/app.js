@@ -116,8 +116,6 @@ if (process.env.NODE_ENV === "development") {
 // Performance Monitoring
 app.use(performanceMonitor);
 
-// Performance Monitoring
-app.use(performanceMonitor);
 
 // ===== ROUTES =====
 
