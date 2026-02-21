@@ -9,6 +9,9 @@ import "./listeners.js";
 import "./workers.js";
 import AuditLog from "./models/AuditLog.js";
 
+import http from "http";
+import SocketService from "./services/SocketService.js";
+
 const PORT = process.env.PORT || 3000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
@@ -26,8 +29,13 @@ const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
     console.warn("Starting server without database migrations");
   }
 
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  const httpServer = http.createServer(app);
+  
+  // Initialize Socket.io
+  SocketService.init(httpServer);
+
+  httpServer.listen(PORT, () => {
+    console.log(`Server running on port ${PORT} (with WebSockets)`);
     console.log(
       `Bull Board: http://localhost:${PORT}/admin/running-queues`
     );

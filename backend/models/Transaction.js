@@ -1,21 +1,22 @@
 import db from "../config/database.js";
 import WebhookService from "../services/WebhookService.js";
+import { getExplorerLink } from "../utils/explorer.js";
 
 const Transaction = {
   async create(transactionData) {
-  // Validate metadata if provided
-  if (transactionData.metadata !== undefined) {
-    const metadata = transactionData.metadata;
+    // Validate metadata if provided
+    if (transactionData.metadata !== undefined) {
+      const metadata = transactionData.metadata;
 
-    if (typeof metadata !== "object" || Array.isArray(metadata)) {
-      throw new Error("Metadata must be a valid JSON object");
-    }
+      if (typeof metadata !== "object" || Array.isArray(metadata)) {
+        throw new Error("Metadata must be a valid JSON object");
+      }
 
-    const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
-    if (size > 2048) {
-      throw new Error("Metadata exceeds 2KB limit");
+      const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+      if (size > 2048) {
+        throw new Error("Metadata exceeds 2KB limit");
+      }
     }
-  }
 
   // Validate notes if provided
   if (transactionData.notes !== undefined && transactionData.notes !== null) {
@@ -32,10 +33,10 @@ const Transaction = {
     metadata: transactionData.metadata || null
   });
 
-  return this.findById(id);
-},
+    return this.findById(id);
+  },
   async findById(id) {
-    return await db("transactions")
+    const transaction = await db("transactions")
       .select(
         "transactions.*",
         "users.email as user_email",
@@ -44,7 +45,8 @@ const Transaction = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "chains.name as chain_name",
-        "chains.symbol as chain_symbol"
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
       )
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
@@ -71,6 +73,15 @@ const Transaction = {
       .leftJoin("chains", "transactions.chain_id", "chains.id")
       .where("transactions.id", id)
       .first();
+
+    if (transaction) {
+      transaction.explorer_link = getExplorerLink(
+        transaction.chain_name,
+        transaction.tx_hash,
+        transaction.chain_explorer
+      );
+    }
+    return transaction;
   },
 
 
@@ -86,7 +97,8 @@ const Transaction = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "chains.name as chain_name",
-        "chains.symbol as chain_symbol"
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
       )
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
@@ -112,10 +124,15 @@ const Transaction = {
       query = query.where("transactions.usd_value", "<=", maxAmount);
     }
 
-    return await query
+    const transactions = await query
       .limit(limit)
       .offset(offset)
       .orderBy("transactions.created_at", "desc");
+
+    return transactions.map((tx) => ({
+      ...tx,
+      explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
+    }));
   },
 
 
@@ -131,7 +148,8 @@ const Transaction = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "chains.name as chain_name",
-        "chains.symbol as chain_symbol"
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
       )
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
@@ -151,10 +169,15 @@ const Transaction = {
       query = query.where("transactions.usd_value", "<=", maxAmount);
     }
 
-    return await query
+    const transactions = await query
       .limit(limit)
       .offset(offset)
       .orderBy("transactions.created_at", "desc");
+
+    return transactions.map((tx) => ({
+      ...tx,
+      explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
+    }));
   },
 
   async totalDeposit() {
@@ -222,9 +245,9 @@ const Transaction = {
         ...transactionData,
         updated_at: db.fn.now(),
       });
-    
+
     const updatedTransaction = await this.findById(id);
-    
+
     if (transactionData.status && oldTransaction.status !== transactionData.status) {
       WebhookService.sendStatusChangeWebhook(
         updatedTransaction,
@@ -232,7 +255,7 @@ const Transaction = {
         transactionData.status
       ).catch(console.error);
     }
-    
+
     return updatedTransaction;
   },
 
@@ -273,7 +296,8 @@ const Transaction = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "chains.name as chain_name",
-        "chains.symbol as chain_symbol"
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
       )
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
@@ -309,10 +333,15 @@ const Transaction = {
     const sanitizedSortBy = allowedSortFields.includes(sortBy) ? sortBy : "created_at";
     const sanitizedSortOrder = sortOrder === "asc" ? "asc" : "desc";
 
-    return await query
+    const transactions = await query
       .orderBy(`transactions.${sanitizedSortBy}`, sanitizedSortOrder)
       .limit(limit)
       .offset(offset);
+
+    return transactions.map((tx) => ({
+      ...tx,
+      explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
+    }));
   },
 
 

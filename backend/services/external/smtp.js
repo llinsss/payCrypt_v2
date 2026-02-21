@@ -23,7 +23,7 @@ transporter.verify((err, success) => {
   }
 });
 
-const emailTemplate = (title, body) => `<!DOCTYPE html>
+const emailTemplate = (title, body, explorerLink = null) => `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -37,6 +37,7 @@ const emailTemplate = (title, body) => `<!DOCTYPE html>
   h1 { font-size: 22px; color: #000; margin-bottom: 20px; }
   p { font-size: 16px; color: #333; line-height: 1.6; }
   .footer { background: #f9f9f9; padding: 20px; text-align: center; font-size: 13px; color: #777; }
+  .btn { display: inline-block; padding: 12px 24px; background-color: #000; color: #fff !important; text-decoration: none; border-radius: 4px; font-weight: bold; margin-top: 20px; }
 </style>
 </head>
 <body>
@@ -47,6 +48,7 @@ const emailTemplate = (title, body) => `<!DOCTYPE html>
   <div class="content">
     <h1>${title}</h1>
     <p>${body}</p>
+    ${explorerLink ? `<a href="${explorerLink}" class="btn">View on Explorer</a>` : ''}
     <p>Cheers,<br/>Llins from Tagged</p>
   </div>
   <div class="footer">Tagged • support@taggedpay.xyz</div>
@@ -54,9 +56,9 @@ const emailTemplate = (title, body) => `<!DOCTYPE html>
 </body>
 </html>`;
 
-export const sendEmail = async (to, title, body) => {
+export const sendEmail = async (to, title, body, explorerLink = null) => {
   try {
-    const html = emailTemplate(title, body);
+    const html = emailTemplate(title, body, explorerLink);
 
     const info = await transporter.sendMail({
       from: `Tagged <${process.env.FROM_EMAIL || "support@taggedpay.xyz"}>`,

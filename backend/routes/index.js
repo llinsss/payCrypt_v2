@@ -14,11 +14,15 @@ import apiKeysRoutes from "./apiKeys.js";
 import scheduledPaymentRoutes from "./scheduledPayments.js";
 import disputeRoutes from "./disputes.js";
 import auditLogRoutes from "./auditLogs.js";
+import performanceRoutes from "./performance.js";
+import analyticsRoutes from "./analytics.js";
 
 const router = express.Router();
 
 router.use("/health", healthRoutes);
+router.use("/performance", performanceRoutes);
 router.use("/auth", authRoutes);
+
 router.use("/balances", balancesRoutes);
 router.use("/users", userRoutes);
 router.use("/kycs", kycRoutes);
@@ -32,5 +36,6 @@ router.use("/api-keys", apiKeysRoutes);
 router.use("/scheduled-payments", scheduledPaymentRoutes);
 router.use("/disputes", disputeRoutes);
 router.use("/audit-logs", auditLogRoutes);
+router.use("/analytics", analyticsRoutes);
 
 export default router;
