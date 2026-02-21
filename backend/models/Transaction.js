@@ -3,7 +3,7 @@ import WebhookService from "../services/WebhookService.js";
 import { getExplorerLink } from "../utils/explorer.js";
 
 const Transaction = {
-  async create(transactionData) {
+  async create(transactionData, trx = null) {
     // Validate metadata if provided
     if (transactionData.metadata !== undefined) {
       const metadata = transactionData.metadata;
@@ -18,22 +18,20 @@ const Transaction = {
       }
     }
 
-  // Validate notes if provided
-  if (transactionData.notes !== undefined && transactionData.notes !== null) {
-    if (typeof transactionData.notes !== "string") {
-      throw new Error("Notes must be a string");
-    }
-    if (transactionData.notes.length > 1000) {
-      throw new Error("Notes must be at most 1000 characters");
-    }
-  }
-
-  const [id] = await db("transactions").insert({
-    ...transactionData,
-    metadata: transactionData.metadata || null
-  });
+    const query = trx || db;
+    const [id] = await query("transactions").insert({
+      ...transactionData,
+      metadata: transactionData.metadata || null
+    });
 
     return this.findById(id);
+  },
+
+  async findByIdempotencyKey(idempotencyKey, trx = null) {
+    const query = trx || db;
+    return await query("transactions")
+      .where({ idempotency_key: idempotencyKey })
+      .first();
   },
   async findById(id) {
     const transaction = await db("transactions")
