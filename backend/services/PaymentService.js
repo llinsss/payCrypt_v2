@@ -6,6 +6,7 @@ import Transaction from '../models/Transaction.js';
 import User from '../models/User.js';
 import Token from '../models/Token.js';
 import db from '../config/database.js';
+import { publish } from '../config/redis.js';
 
 // Payment limits and configuration
 const PAYMENT_CONFIG = {
@@ -368,11 +369,13 @@ class PaymentService {
    * @param {string} paymentData.memo - Optional payment memo
    * @param {Array<string>} paymentData.secrets - Secret keys for signing
    * @param {number} paymentData.userId - User ID for transaction record
+   * @param {string} paymentData.notes - User notes for transaction
    * @returns {Object} payment result with transaction ID and hash
    * @throws {Error} if payment processing fails
    */
-  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, secrets, userId }) {
+  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, secrets, userId, notes }) {
     const trx = await db.transaction();
+    let transactionRecord = null;
 
     try {
       // Step 1: Validate payment parameters
@@ -428,6 +431,7 @@ class PaymentService {
         from_address: senderAddress,
         to_address: recipientAddress,
         description: memo || `Payment from ${senderTag} to ${recipientTag}`,
+        notes: notes || null,
         extra: JSON.stringify({
           fee: feeInfo.fee,
           baseFee: feeInfo.baseFee,
@@ -439,8 +443,20 @@ class PaymentService {
         })
       };
 
-      const transactionRecord = await Transaction.create(transactionData, trx);
+      transactionRecord = await Transaction.create(transactionData, trx);
       this.logger.log(`Transaction record created: ${transactionRecord.id}`);
+
+      // Publish pending transaction event
+      await publish('transaction:updates', {
+        id: transactionRecord.id,
+        user_id: userId,
+        status: 'pending',
+        amount: validatedAmount,
+        asset,
+        reference: transactionData.reference,
+        type: 'payment',
+        timestamp: new Date().toISOString()
+      });
 
       // Step 7: Create and sign Stellar transaction
       const signedXdr = await this.createTransaction({
@@ -465,6 +481,19 @@ class PaymentService {
         timestamp: submitResult.createdAt || new Date().toISOString()
       }, trx);
 
+      // Publish completed transaction event
+      await publish('transaction:updates', {
+        id: transactionRecord.id,
+        user_id: userId,
+        status: 'completed',
+        tx_hash: submitResult.hash,
+        amount: validatedAmount,
+        asset,
+        reference: transactionData.reference,
+        type: 'payment',
+        timestamp: submitResult.createdAt || new Date().toISOString()
+      });
+
       // Commit transaction
       await trx.commit();
       this.logger.log(`Payment completed successfully: ${transactionRecord.id}`);
@@ -483,8 +512,32 @@ class PaymentService {
       };
 
     } catch (error) {
-      await trx.rollback();
+      if (trx) await trx.rollback();
       this.logger.error(`Payment processing failed: ${error.message}`);
+      
+      // If we have a transaction record ID, we should publish a failure event
+      if (transactionRecord && transactionRecord.id) {
+        try {
+          // Update record separately to 'failed' if trx rolled back
+          await Transaction.update(transactionRecord.id, {
+            status: 'failed',
+            extra: JSON.stringify({ error: error.message })
+          });
+
+          await publish('transaction:updates', {
+            id: transactionRecord.id,
+            user_id: userId,
+            status: 'failed',
+            error: error.message,
+            amount: amount,
+            asset: asset,
+            timestamp: new Date().toISOString()
+          });
+        } catch (pubError) {
+          this.logger.error(`Failed to publish failure event: ${pubError.message}`);
+        }
+      }
+      
       throw error;
     }
   }
