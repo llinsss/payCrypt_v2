@@ -3,13 +3,16 @@ import {
   createTransaction,
   getTransactions,
   getTransactionById,
+  getTransactionReceipt,
   updateTransaction,
   deleteTransaction,
+  restoreTransaction,
   getTransactionByUser,
   getTransactionsByTag,
   processPayment,
   getPaymentLimits,
-  getPaymentHistory
+  getPaymentHistory,
+  updateTransactionNote
 } from "../controllers/transactionController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
@@ -22,9 +25,12 @@ const router = express.Router();
 
 router.get("/", authenticate, getTransactionByUser);
 router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
+router.get("/:id/receipt", authenticate, getTransactionReceipt);
 router.get("/:id", authenticate, getTransactionById);
 router.put("/:id", authenticate, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
+router.patch("/:id/note", authenticate, validate(transactionSchema), auditLog("transactions"), updateTransactionNote);
 router.delete("/:id", authenticate, paymentLimiter, auditLog("transactions"), deleteTransaction);
+router.post("/:id/restore", authenticate, auditLog("transactions"), restoreTransaction);
 
 // Payment operations
 router.post("/payment", authenticate, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);

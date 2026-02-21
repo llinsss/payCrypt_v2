@@ -40,6 +40,15 @@ const logger = winston.createLogger({
       level: 'error',
       dirname: path.join(process.cwd(), 'logs'),
     }),
+    new winston.transports.DailyRotateFile({
+      filename: 'logs/performance-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      zippedArchive: true,
+      maxSize: '20m',
+      maxFiles: '30d',
+      level: 'info',
+      dirname: path.join(process.cwd(), 'logs'),
+    }),
   ],
 });
 

@@ -19,6 +19,7 @@ export const createApiKey = async (req, res) => {
       name,
       scopes: scopes || "read,write",
       ipWhitelist,
+      rotationIntervalDays: parseInt(req.body.rotationIntervalDays) || null,
     });
 
     // Set expiration if provided (in days)
@@ -41,6 +42,8 @@ export const createApiKey = async (req, res) => {
         ipWhitelist: apiKey.ip_whitelist,
         createdAt: apiKey.created_at,
         expiresAt: apiKey.expires_at,
+        rotationIntervalDays: apiKey.rotation_interval_days,
+        nextRotationAt: apiKey.next_rotation_at,
       },
     });
   } catch (error) {
@@ -68,6 +71,9 @@ export const getApiKeys = async (req, res) => {
         createdAt: key.created_at,
         lastUsedAt: key.last_used_at,
         expiresAt: key.expires_at,
+        rotationIntervalDays: key.rotation_interval_days,
+        nextRotationAt: key.next_rotation_at,
+        transitionEndsAt: key.transition_ends_at,
       })),
     });
   } catch (error) {
@@ -102,6 +108,10 @@ export const getApiKey = async (req, res) => {
         createdAt: apiKey.created_at,
         lastUsedAt: apiKey.last_used_at,
         expiresAt: apiKey.expires_at,
+        rotationIntervalDays: apiKey.rotation_interval_days,
+        nextRotationAt: apiKey.next_rotation_at,
+        transitionEndsAt: apiKey.transition_ends_at,
+        lastRotatedAt: apiKey.last_rotated_at,
         stats,
       },
     });
@@ -130,6 +140,9 @@ export const updateApiKey = async (req, res) => {
       name: name || apiKey.name,
       scopes: scopes || apiKey.scopes,
       ipWhitelist: ipWhitelist || apiKey.ip_whitelist,
+      rotationIntervalDays: req.body.rotationIntervalDays !== undefined 
+        ? parseInt(req.body.rotationIntervalDays) 
+        : apiKey.rotation_interval_days,
     });
 
     res.status(200).json({
@@ -141,6 +154,8 @@ export const updateApiKey = async (req, res) => {
         ipWhitelist: updatedKey.ip_whitelist,
         createdAt: updatedKey.created_at,
         expiresAt: updatedKey.expires_at,
+        rotationIntervalDays: updatedKey.rotation_interval_days,
+        nextRotationAt: updatedKey.next_rotation_at,
       },
     });
   } catch (error) {
@@ -181,6 +196,7 @@ export const rotateApiKey = async (req, res) => {
   try {
     const userId = req.user.id;
     const { keyId } = req.params;
+    const { transitionDays } = req.body;
 
     const apiKey = await ApiKey.findById(keyId);
 
@@ -188,7 +204,7 @@ export const rotateApiKey = async (req, res) => {
       return res.status(404).json({ error: "API key not found" });
     }
 
-    const newKey = await ApiKey.rotate(keyId);
+    const newKey = await ApiKey.rotate(keyId, transitionDays ? parseInt(transitionDays) : 1);
 
     res.status(200).json({
       message: "API key rotated successfully",
@@ -200,6 +216,8 @@ export const rotateApiKey = async (req, res) => {
         ipWhitelist: newKey.ip_whitelist,
         createdAt: newKey.created_at,
         expiresAt: newKey.expires_at,
+        rotationIntervalDays: newKey.rotation_interval_days,
+        nextRotationAt: newKey.next_rotation_at,
       },
     });
   } catch (error) {
@@ -230,5 +248,38 @@ export const getApiKeyStats = async (req, res) => {
   } catch (error) {
     console.error("Get API key stats error:", error);
     res.status(500).json({ error: "Failed to retrieve API key statistics" });
+  }
+};
+
+/**
+ * Get API key rotation audit logs
+ */
+export const getApiKeyAuditLogs = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { keyId } = req.params;
+
+    const apiKey = await ApiKey.findById(keyId);
+
+    if (!apiKey || apiKey.user_id !== userId) {
+      return res.status(404).json({ error: "API key not found" });
+    }
+
+    const auditLogs = await db("api_key_audit_logs")
+      .where({ api_key_id: keyId })
+      .orderBy("created_at", "desc");
+
+    res.status(200).json({
+      count: auditLogs.length,
+      auditLogs: auditLogs.map(log => ({
+        id: log.id,
+        action: log.action,
+        metadata: typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata,
+        createdAt: log.created_at
+      }))
+    });
+  } catch (error) {
+    console.error("Get API key audit logs error:", error);
+    res.status(500).json({ error: "Failed to retrieve API key audit logs" });
   }
 };

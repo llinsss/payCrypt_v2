@@ -35,6 +35,9 @@ export const transactionQuerySchema = Joi.object({
   sortOrder: Joi.string().valid("asc", "desc").default("desc").messages({
     "any.only": "sortOrder must be asc or desc",
   }),
+  noteSearch: Joi.string().max(100).optional().allow(null, "").messages({
+    "string.max": "Note search term cannot exceed 100 characters",
+  }),
 });
 
 /**
@@ -70,6 +73,10 @@ export const transactionSchema = Joi.object({
   rate: Joi.number().min(0).allow(null).optional(),
 
   description: Joi.string().max(500).allow(null, "").optional(),
+
+  notes: Joi.string().max(1000).allow(null, "").optional().messages({
+    "string.max": "Notes cannot exceed 1000 characters",
+  }),
 
   extra: Joi.object().allow(null).optional(),
 })

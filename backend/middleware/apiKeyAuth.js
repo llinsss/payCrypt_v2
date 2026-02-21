@@ -1,5 +1,5 @@
 import db from "../config/database.js";
-
+import ipRangeCheck from "ip-range-check";
 /**
  * Authenticate using API Key
  * Expected header: x-api-key
@@ -26,10 +26,36 @@ export const authenticateApiKey = async (req, res, next) => {
       return res.status(401).json({ error: "API key has expired" });
     }
 
-    // Update last used timestamp
-    await db("api_keys").where({ id: apiKeyRecord.id }).update({
-      last_used_at: new Date(),
+    // 🔒 IP Whitelist Check (supports CIDR)
+if (apiKeyRecord.ip_whitelist) {
+  const entries = apiKeyRecord.ip_whitelist
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  const clientIp =
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    req.socket.remoteAddress;
+
+  const allowed = entries.some((entry) => {
+    try {
+      return ipRangeCheck(clientIp, entry);
+    } catch {
+      return false;
+    }
+  });
+
+  if (!allowed) {
+    return res.status(403).json({
+      error: "Request from unauthorized IP address",
     });
+  }
+}
+
+// Update last used timestamp
+await db("api_keys").where({ id: apiKeyRecord.id }).update({
+  last_used_at: new Date(),
+});;
 
     // Attach API key record and associated user to request
     req.apiKey = apiKeyRecord;

@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import bcrypt from "bcrypt";
+import NotificationPreference from "./NotificationPreference.js";
 
 const User = {
   async findByEmail(email) {
@@ -126,6 +127,14 @@ const User = {
 
   async delete(id) {
     return await db("users").where({ id }).del();
+  },
+
+  async getNotificationPreferences(id) {
+    return await NotificationPreference.getOrCreate(id);
+  },
+
+  async updateNotificationPreferences(id, preferences) {
+    return await NotificationPreference.update(id, preferences);
   },
 };
 
