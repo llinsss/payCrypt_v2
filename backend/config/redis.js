@@ -2,64 +2,62 @@ import { createClient } from "redis";
 import dotenv from "dotenv";
 dotenv.config();
 
-let redis = null;
-let redisConnection = null;
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
-redis = createClient({
-  url: process.env.REDIS_URL,
-});
+const createRedisClient = (name) => {
+  const client = createClient({ url: redisUrl });
 
-redisConnection = {
-  host: process.env.REDIS_HOST,
+  client.on("connect", () => console.log(`✅ Redis ${name} connected`));
+  client.on("error", (err) => {
+    console.error(`❌ Redis ${name} error`, err);
+  });
+
+  return client;
+};
+
+// Main client for general commands (GET/SET/PUBLISH)
+const redis = createRedisClient("Main");
+
+// Subscriber client specifically for SUB
+const subClient = createRedisClient("Sub");
+
+const redisConnection = {
+  host: process.env.REDIS_HOST || 'localhost',
   port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379,
   password: process.env.REDIS_PASS,
 };
 
-redis.on("connect", () => console.log("✅ Redis connected"));
-redis.on("error", (err) => {
-  console.error("❌ Redis error", err);
-  // If Redis fails to connect, disable it
-  console.warn("⚠️ Redis not available, running without Redis");
-  redis = {
-    get: async () => null,
-    set: async () => null,
-    del: async () => null,
-    expire: async () => null,
-    exists: async () => false,
-    hget: async () => null,
-    hset: async () => null,
-    hdel: async () => null,
-    hgetall: async () => ({}),
-    lpush: async () => null,
-    rpop: async () => null,
-    publish: async () => null,
-    subscribe: async () => null,
-  };
-  redisConnection = null;
+// Helper to publish events
+const publish = async (channel, message) => {
+  try {
+    await redis.publish(channel, JSON.stringify(message));
+  } catch (error) {
+    console.error(`❌ Redis Publish Error on channel ${channel}:`, error);
+  }
+};
+
+// Connect clients
+(async () => {
+  try {
+    if (!redis.isOpen) await redis.connect();
+    if (!subClient.isOpen) await subClient.connect();
+  } catch (error) {
+    console.warn("⚠️ Redis connection failed, running with limited functionality:", error.message);
+  }
+})();
+
+// ===== CACHE METRICS =====
+const metrics = { hits: 0, misses: 0 };
+
+export const recordCacheHit = () => { metrics.hits++; };
+export const recordCacheMiss = () => { metrics.misses++; };
+export const getCacheMetrics = () => ({
+  hits: metrics.hits,
+  misses: metrics.misses,
+  ratio: metrics.hits + metrics.misses === 0
+    ? 0
+    : (metrics.hits / (metrics.hits + metrics.misses)).toFixed(4),
 });
 
-// Try to connect asynchronously
-setTimeout(() => {
-  redis.connect().catch((error) => {
-    console.warn("⚠️ Redis connection failed, running without Redis:", error.message);
-    redis = {
-      get: async () => null,
-      set: async () => null,
-      del: async () => null,
-      expire: async () => null,
-      exists: async () => false,
-      hget: async () => null,
-      hset: async () => null,
-      hdel: async () => null,
-      hgetall: async () => ({}),
-      lpush: async () => null,
-      rpop: async () => null,
-      publish: async () => null,
-      subscribe: async () => null,
-    };
-    redisConnection = null;
-  });
-}, 100);
-
-export { redisConnection };
+export { redisConnection, subClient, publish };
 export default redis;

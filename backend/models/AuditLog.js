@@ -134,6 +134,27 @@ const AuditLog = {
   },
 
   /**
+   * Create audit log for failed payment/transaction
+   * Used when Stellar transaction fails or DB commit fails after Stellar success
+   */
+  async createFailedTransactionAudit(logData) {
+    const [id] = await db("audit_logs").insert({
+      user_id: logData.userId || null,
+      action: "payment_failed",
+      resource: "transaction",
+      resource_id: logData.resourceId ? String(logData.resourceId) : null,
+      details: logData.details ? (typeof logData.details === "string" ? logData.details : JSON.stringify(logData.details)) : null,
+      ip_address: null,
+      user_agent: null,
+      method: "PAYMENT",
+      endpoint: "/internal/failed-transaction",
+      status_code: null,
+    });
+
+    return this.findById(id);
+  },
+
+  /**
    * Get aggregate statistics for audit logs
    */
   async getStats() {

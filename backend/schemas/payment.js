@@ -70,6 +70,13 @@ export const processPaymentSchema = Joi.object({
     .default([])
     .messages({
       'array.base': 'Additional secrets must be an array'
+    }),
+
+  idempotencyKey: Joi.string()
+    .max(255)
+    .allow(null, '')
+    .messages({
+      'string.max': 'Idempotency key must be 255 characters or less'
     })
 }).unknown(false);
 
@@ -91,5 +98,6 @@ export const transactionHistoryQuerySchema = Joi.object({
   sortBy: Joi.string()
     .valid('created_at', 'amount', 'usd_value', 'type', 'status')
     .default('created_at'),
-  sortOrder: Joi.string().valid('asc', 'desc').default('desc')
+  sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+  noteSearch: Joi.string().max(100).allow(null, '')
 });

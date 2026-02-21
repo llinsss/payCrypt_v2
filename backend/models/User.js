@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import bcrypt from "bcrypt";
+import NotificationPreference from "./NotificationPreference.js";
 
 const User = {
   async findByEmail(email) {
@@ -24,6 +25,55 @@ const User = {
     return await db("users").where({ id }).first();
   },
 
+  async setTwoFactorSecret(id, secret) {
+    await db("users")
+      .where({ id })
+      .update({
+        two_factor_secret: secret,
+        updated_at: db.fn.now(),
+      });
+
+    return this.findById(id);
+  },
+
+  async enableTwoFactor(id, backupCodes = []) {
+    await db("users")
+      .where({ id })
+      .update({
+        two_factor_enabled: true,
+        two_factor_backup_codes: JSON.stringify(backupCodes),
+        updated_at: db.fn.now(),
+      });
+
+    return this.findById(id);
+  },
+
+  async updateBackupCodes(id, backupCodes = []) {
+    await db("users")
+      .where({ id })
+      .update({
+        two_factor_backup_codes: JSON.stringify(backupCodes),
+        updated_at: db.fn.now(),
+      });
+
+    return this.findById(id);
+  },
+
+  getBackupCodes(user) {
+    if (!user?.two_factor_backup_codes) return [];
+
+    if (Array.isArray(user.two_factor_backup_codes)) {
+      return user.two_factor_backup_codes;
+    }
+
+    try {
+      const parsed = JSON.parse(user.two_factor_backup_codes);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
   async findByIds(ids) {
     return await db("users").whereIn("id", ids);
   },
@@ -33,6 +83,9 @@ const User = {
     const [id] = await db("users").insert({
       ...userData,
       password: hashedPassword,
+      two_factor_secret: null,
+      two_factor_enabled: false,
+      two_factor_backup_codes: JSON.stringify([]),
     });
     return this.findById(id);
   },
@@ -50,6 +103,7 @@ const User = {
         "photo",
         "email",
         "kyc_status",
+        "currency_preference",
         "created_at"
       )
       .limit(limit)
@@ -74,6 +128,14 @@ const User = {
 
   async delete(id) {
     return await db("users").where({ id }).del();
+  },
+
+  async getNotificationPreferences(id) {
+    return await NotificationPreference.getOrCreate(id);
+  },
+
+  async updateNotificationPreferences(id, preferences) {
+    return await NotificationPreference.update(id, preferences);
   },
 };
 

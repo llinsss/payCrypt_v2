@@ -1,11 +1,14 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
 const Server = StellarSdk.Horizon.Server;
 const { TransactionBuilder, Networks, Operation, Asset, Keypair, Memo, Transaction: StellarTransaction } = StellarSdk;
+import crypto from 'crypto';
 import TagService from './TagService.js';
 import Transaction from '../models/Transaction.js';
 import User from '../models/User.js';
 import Token from '../models/Token.js';
+import AuditLog from '../models/AuditLog.js';
 import db from '../config/database.js';
+import { publish } from '../config/redis.js';
 
 // Payment limits and configuration
 const PAYMENT_CONFIG = {
@@ -359,6 +362,7 @@ class PaymentService {
 
   /**
    * Process @tag-to-@tag payment with full validation and atomic transaction handling
+   * Supports idempotency keys to prevent duplicate processing.
    * @param {Object} paymentData
    * @param {string} paymentData.senderTag - Sender @tag
    * @param {string} paymentData.recipientTag - Recipient @tag
@@ -368,13 +372,38 @@ class PaymentService {
    * @param {string} paymentData.memo - Optional payment memo
    * @param {Array<string>} paymentData.secrets - Secret keys for signing
    * @param {number} paymentData.userId - User ID for transaction record
+   * @param {string} paymentData.idempotencyKey - Optional idempotency key to prevent duplicate processing
    * @returns {Object} payment result with transaction ID and hash
    * @throws {Error} if payment processing fails
    */
-  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, secrets, userId }) {
+  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, secrets, userId, idempotencyKey }) {
+    const effectiveIdempotencyKey = idempotencyKey || this._generateIdempotencyKey({ senderTag, recipientTag, amount, userId });
     const trx = await db.transaction();
+    let transactionRecord = null;
 
     try {
+      // Step 0: Idempotency check - return existing completed result or reject duplicates
+      const existingTransaction = await Transaction.findByIdempotencyKey(effectiveIdempotencyKey, trx);
+      if (existingTransaction) {
+        await trx.commit();
+        if (existingTransaction.status === 'completed') {
+          return {
+            success: true,
+            transactionId: existingTransaction.id,
+            txHash: existingTransaction.tx_hash,
+            amount: parseFloat(existingTransaction.amount),
+            asset: asset || 'XLM',
+            senderTag,
+            recipientTag,
+            idempotentReplay: true
+          };
+        }
+        if (existingTransaction.status === 'failed') {
+          throw new Error(`Payment previously failed: ${existingTransaction.extra || 'Unknown error'}`);
+        }
+        throw new Error('Payment already in progress with this idempotency key');
+      }
+
       // Step 1: Validate payment parameters
       this.logger.log(`Processing payment: ${senderTag} -> ${recipientTag}, amount: ${amount} ${asset}`);
       
@@ -415,12 +444,13 @@ class PaymentService {
       // Step 5: Calculate USD value
       const usdValue = validatedAmount * (token.price || 0);
 
-      // Step 6: Create transaction record (pending status)
+      // Step 6: Create transaction record (pending status) with idempotency key
       const transactionData = {
         user_id: userId,
         token_id: token.id,
         chain_id: 6, // Stellar chain ID
         reference: `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        idempotency_key: effectiveIdempotencyKey,
         type: 'payment',
         status: 'pending',
         amount: validatedAmount,
@@ -428,6 +458,7 @@ class PaymentService {
         from_address: senderAddress,
         to_address: recipientAddress,
         description: memo || `Payment from ${senderTag} to ${recipientTag}`,
+        notes: notes || null,
         extra: JSON.stringify({
           fee: feeInfo.fee,
           baseFee: feeInfo.baseFee,
@@ -439,8 +470,20 @@ class PaymentService {
         })
       };
 
-      const transactionRecord = await Transaction.create(transactionData, trx);
+      transactionRecord = await Transaction.create(transactionData, trx);
       this.logger.log(`Transaction record created: ${transactionRecord.id}`);
+
+      // Publish pending transaction event
+      await publish('transaction:updates', {
+        id: transactionRecord.id,
+        user_id: userId,
+        status: 'pending',
+        amount: validatedAmount,
+        asset,
+        reference: transactionData.reference,
+        type: 'payment',
+        timestamp: new Date().toISOString()
+      });
 
       // Step 7: Create and sign Stellar transaction
       const signedXdr = await this.createTransaction({
@@ -454,19 +497,51 @@ class PaymentService {
       });
       this.logger.log(`Transaction signed successfully`);
 
-      // Step 8: Submit to Stellar network
-      const submitResult = await this.submitTransaction(signedXdr);
-      this.logger.log(`Transaction submitted to network: ${submitResult.hash}`);
+      // Step 8: Submit to Stellar network (outside DB trx - cannot be rolled back)
+      let submitResult;
+      try {
+        submitResult = await this.submitTransaction(signedXdr);
+        this.logger.log(`Transaction submitted to network: ${submitResult.hash}`);
+      } catch (stellarError) {
+        throw stellarError;
+      }
 
-      // Step 9: Update transaction record with success
-      await Transaction.update(transactionRecord.id, {
-        status: 'completed',
-        tx_hash: submitResult.hash,
-        timestamp: submitResult.createdAt || new Date().toISOString()
-      }, trx);
+      // Step 9: Update transaction record with success and commit
+      try {
+        await Transaction.update(transactionRecord.id, {
+          status: 'completed',
+          tx_hash: submitResult.hash,
+          timestamp: submitResult.createdAt || new Date().toISOString()
+        }, trx);
+        await trx.commit();
+      } catch (dbError) {
+        await trx.rollback();
+        // Stellar succeeded but DB failed - attempt compensation (insert recovery record)
+        await this._attemptCompensation({
+          transactionRecord,
+          stellarHash: submitResult.hash,
+          error: dbError,
+          userId,
+          token,
+          usdValue,
+          feeInfo,
+          paymentContext: { senderTag, recipientTag, amount: validatedAmount, asset, senderAddress, recipientAddress }
+        });
+        return {
+          success: true,
+          transactionId: transactionRecord.id,
+          txHash: submitResult.hash,
+          ledger: submitResult.ledger,
+          amount: validatedAmount,
+          fee: feeInfo.fee,
+          asset,
+          senderTag,
+          recipientTag,
+          timestamp: submitResult.createdAt,
+          compensationApplied: true
+        };
+      }
 
-      // Commit transaction
-      await trx.commit();
       this.logger.log(`Payment completed successfully: ${transactionRecord.id}`);
 
       return {
@@ -483,10 +558,137 @@ class PaymentService {
       };
 
     } catch (error) {
-      await trx.rollback();
+      try {
+        await trx.rollback();
+        // Mark transaction as failed if record was created (rollback reverses DB changes, but we log for audit)
+        if (transactionRecord) {
+          await this._handleFailedTransaction({
+            transactionRecord,
+            error,
+            userId,
+            paymentContext: { senderTag, recipientTag, amount, asset }
+          });
+        }
+      } catch (rollbackError) {
+        this.logger.error(`Rollback failed: ${rollbackError.message}`);
+      }
       this.logger.error(`Payment processing failed: ${error.message}`);
+      
+      // If we have a transaction record ID, we should publish a failure event
+      if (transactionRecord && transactionRecord.id) {
+        try {
+          // Update record separately to 'failed' if trx rolled back
+          await Transaction.update(transactionRecord.id, {
+            status: 'failed',
+            extra: JSON.stringify({ error: error.message })
+          });
+
+          await publish('transaction:updates', {
+            id: transactionRecord.id,
+            user_id: userId,
+            status: 'failed',
+            error: error.message,
+            amount: amount,
+            asset: asset,
+            timestamp: new Date().toISOString()
+          });
+        } catch (pubError) {
+          this.logger.error(`Failed to publish failure event: ${pubError.message}`);
+        }
+      }
+      
       throw error;
     }
+  }
+
+  /**
+   * Handle failed transaction: create audit log for failed payments
+   * Note: After rollback, the transaction record is not in DB; we log for audit trail
+   * @private
+   */
+  async _handleFailedTransaction({ transactionRecord, error, userId, paymentContext }) {
+    try {
+      await AuditLog.createFailedTransactionAudit({
+        userId,
+        resourceId: transactionRecord.id,
+        details: {
+          error: error.message,
+          attemptedTransactionId: transactionRecord.id,
+          reference: transactionRecord.reference,
+          ...paymentContext,
+          failedAt: new Date().toISOString()
+        }
+      });
+    } catch (auditError) {
+      this.logger.error(`Failed to create audit log for failed transaction: ${auditError.message}`);
+    }
+  }
+
+  /**
+   * Attempt compensation when Stellar succeeds but DB commit fails
+   * Inserts recovery record so funds are not lost or double-counted
+   * @private
+   */
+  async _attemptCompensation({ transactionRecord, stellarHash, error, userId, token, usdValue, feeInfo, paymentContext }) {
+    this.logger.warn(`Compensation required: Stellar tx ${stellarHash} succeeded but DB update failed`);
+    try {
+      const extra = typeof transactionRecord.extra === 'string' ? JSON.parse(transactionRecord.extra || '{}') : (transactionRecord.extra || {});
+      const recoveryData = {
+        user_id: userId,
+        token_id: token.id,
+        chain_id: 6,
+        reference: transactionRecord.reference,
+        idempotency_key: transactionRecord.idempotency_key,
+        type: 'payment',
+        status: 'completed',
+        amount: transactionRecord.amount,
+        usd_value: usdValue,
+        from_address: paymentContext.senderAddress,
+        to_address: paymentContext.recipientAddress,
+        tx_hash: stellarHash,
+        timestamp: new Date().toISOString(),
+        description: transactionRecord.description,
+        extra: JSON.stringify({ ...extra, compensation_recovered: true, original_db_error: error.message })
+      };
+      const recovered = await Transaction.create(recoveryData);
+      await AuditLog.createFailedTransactionAudit({
+        userId,
+        resourceId: recovered.id,
+        details: {
+          action: 'compensation_recovery',
+          stellarHash,
+          originalError: error.message,
+          ...paymentContext,
+          recoveredAt: new Date().toISOString()
+        }
+      });
+    } catch (compensationError) {
+      this.logger.error(`Compensation failed - manual reconciliation required for tx ${stellarHash}: ${compensationError.message}`);
+      await AuditLog.createFailedTransactionAudit({
+        userId,
+        resourceId: null,
+        details: {
+          action: 'compensation_failed',
+          stellarHash,
+          requires_manual_reconciliation: true,
+          originalError: error.message,
+          compensationError: compensationError.message,
+          ...paymentContext
+        }
+      });
+    }
+  }
+
+  /**
+   * Generate idempotency key from payment params (used when client doesn't provide one)
+   * @private
+   */
+  _generateIdempotencyKey({ senderTag, recipientTag, amount, userId }) {
+    return crypto
+      .createHash('sha256')
+      .update(`${userId}:${senderTag}:${recipientTag}:${amount}:${Date.now()}`)
+      .digest('hex')
+      .substring(0, 64);
   }
 
   /**

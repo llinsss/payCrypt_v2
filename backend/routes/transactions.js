@@ -3,13 +3,16 @@ import {
   createTransaction,
   getTransactions,
   getTransactionById,
+  getTransactionReceipt,
   updateTransaction,
   deleteTransaction,
+  restoreTransaction,
   getTransactionByUser,
   getTransactionsByTag,
   processPayment,
   getPaymentLimits,
-  getPaymentHistory
+  getPaymentHistory,
+  updateTransactionNote
 } from "../controllers/transactionController.js";
 import { authenticate, userRateLimiter } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
@@ -29,6 +32,23 @@ router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, auditLog("t
 // Payment operations
 router.post("/payment", authenticate, userRateLimiter, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
 router.get("/payment/limits", getPaymentLimits);
+
+/**
+ * @swagger
+ * /api/transactions/tag/{tag}/history:
+ *   get:
+ *     summary: Get payment history by tag
+ *     tags: [Transactions]
+ *     parameters:
+ *       - in: path
+ *         name: tag
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Payment history
+ */
 router.get("/tag/:tag/history", getPaymentHistory);
 
 export default router;
