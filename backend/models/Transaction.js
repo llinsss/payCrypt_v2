@@ -365,6 +365,72 @@ const Transaction = {
   },
 
 
+  async searchByUser(userId, queryArg, limit = 10, offset = 0, options = {}) {
+    const { minAmount = null, maxAmount = null, status = null, from = null, to = null } = options;
+
+    let query = db("transactions")
+      .select(
+        "transactions.*",
+        "users.email as user_email",
+        "users.tag as user_tag",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "tokens.logo_url as token_logo_url",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
+      )
+      .leftJoin("users", "transactions.user_id", "users.id")
+      .leftJoin("tokens", "transactions.token_id", "tokens.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id")
+      .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null);
+
+    if (queryArg) {
+      query = query.whereRaw("transactions.search_vector @@ websearch_to_tsquery('simple', ?)", [queryArg]);
+    }
+
+    if (status) query = query.where("transactions.status", status);
+    if (from) query = query.where("transactions.created_at", ">=", from);
+    if (to) query = query.where("transactions.created_at", "<=", to);
+    if (minAmount !== null) query = query.where("transactions.usd_value", ">=", minAmount);
+    if (maxAmount !== null) query = query.where("transactions.usd_value", "<=", maxAmount);
+
+    const countQuery = db("transactions")
+      .count("* as total")
+      .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null);
+      
+    if (queryArg) countQuery.whereRaw("transactions.search_vector @@ websearch_to_tsquery('simple', ?)", [queryArg]);
+    if (status) countQuery.where("transactions.status", status);
+    if (from) countQuery.where("transactions.created_at", ">=", from);
+    if (to) countQuery.where("transactions.created_at", "<=", to);
+    if (minAmount !== null) countQuery.where("transactions.usd_value", ">=", minAmount);
+    if (maxAmount !== null) countQuery.where("transactions.usd_value", "<=", maxAmount);
+
+    query = query.limit(limit).offset(offset);
+    if (queryArg) {
+      query = query.orderByRaw("ts_rank(transactions.search_vector, websearch_to_tsquery('simple', ?)) DESC", [queryArg]);
+    } else {
+      query = query.orderBy("transactions.created_at", "desc");
+    }
+
+    const [totalResult, transactions] = await Promise.all([
+      countQuery.first(),
+      query
+    ]);
+
+    const result = transactions.map((tx) => ({
+      ...tx,
+      explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
+    }));
+
+    return {
+      data: result,
+      total: totalResult ? parseInt(totalResult.total, 10) : 0
+    };
+  },
+
   async getByTag(userId, options = {}) {
     const {
       limit = 20,
