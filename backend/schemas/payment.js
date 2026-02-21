@@ -98,5 +98,6 @@ export const transactionHistoryQuerySchema = Joi.object({
   sortBy: Joi.string()
     .valid('created_at', 'amount', 'usd_value', 'type', 'status')
     .default('created_at'),
-  sortOrder: Joi.string().valid('asc', 'desc').default('desc')
+  sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+  noteSearch: Joi.string().max(100).allow(null, '')
 });

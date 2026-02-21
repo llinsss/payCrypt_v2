@@ -8,6 +8,7 @@ import User from '../models/User.js';
 import Token from '../models/Token.js';
 import AuditLog from '../models/AuditLog.js';
 import db from '../config/database.js';
+import { publish } from '../config/redis.js';
 
 // Payment limits and configuration
 const PAYMENT_CONFIG = {
@@ -457,6 +458,7 @@ class PaymentService {
         from_address: senderAddress,
         to_address: recipientAddress,
         description: memo || `Payment from ${senderTag} to ${recipientTag}`,
+        notes: notes || null,
         extra: JSON.stringify({
           fee: feeInfo.fee,
           baseFee: feeInfo.baseFee,
@@ -470,6 +472,18 @@ class PaymentService {
 
       transactionRecord = await Transaction.create(transactionData, trx);
       this.logger.log(`Transaction record created: ${transactionRecord.id}`);
+
+      // Publish pending transaction event
+      await publish('transaction:updates', {
+        id: transactionRecord.id,
+        user_id: userId,
+        status: 'pending',
+        amount: validatedAmount,
+        asset,
+        reference: transactionData.reference,
+        type: 'payment',
+        timestamp: new Date().toISOString()
+      });
 
       // Step 7: Create and sign Stellar transaction
       const signedXdr = await this.createTransaction({
@@ -559,6 +573,30 @@ class PaymentService {
         this.logger.error(`Rollback failed: ${rollbackError.message}`);
       }
       this.logger.error(`Payment processing failed: ${error.message}`);
+      
+      // If we have a transaction record ID, we should publish a failure event
+      if (transactionRecord && transactionRecord.id) {
+        try {
+          // Update record separately to 'failed' if trx rolled back
+          await Transaction.update(transactionRecord.id, {
+            status: 'failed',
+            extra: JSON.stringify({ error: error.message })
+          });
+
+          await publish('transaction:updates', {
+            id: transactionRecord.id,
+            user_id: userId,
+            status: 'failed',
+            error: error.message,
+            amount: amount,
+            asset: asset,
+            timestamp: new Date().toISOString()
+          });
+        } catch (pubError) {
+          this.logger.error(`Failed to publish failure event: ${pubError.message}`);
+        }
+      }
+      
       throw error;
     }
   }
