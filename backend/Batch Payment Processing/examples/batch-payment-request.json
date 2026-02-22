@@ -1,0 +1,35 @@
+{
+  "payments": [
+    {
+      "recipientTag": "@alice",
+      "amount": 100.5,
+      "asset": "XLM",
+      "memo": "Salary payment - January 2024"
+    },
+    {
+      "recipientTag": "@bob",
+      "amount": 250.75,
+      "asset": "XLM",
+      "memo": "Salary payment - January 2024"
+    },
+    {
+      "recipientTag": "@charlie",
+      "amount": 180.25,
+      "asset": "XLM",
+      "memo": "Salary payment - January 2024"
+    },
+    {
+      "recipientTag": "@david",
+      "amount": 300.0,
+      "asset": "XLM",
+      "memo": "Salary payment - January 2024"
+    },
+    {
+      "recipientTag": "@eve",
+      "amount": 220.5,
+      "asset": "XLM",
+      "memo": "Salary payment - January 2024"
+    }
+  ],
+  "failureMode": "continue"
+}
