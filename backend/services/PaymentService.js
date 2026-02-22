@@ -20,6 +20,7 @@ const PAYMENT_CONFIG = {
   MAX_RETRIES: 3,
   RETRY_DELAY_MS: 1000,
   ACCOUNT_RESERVE: 2, // Minimum XLM to keep in account
+  DUPLICATE_WINDOW_MS: 60_000, // Reject identical submissions within 60 s
 };
 
 class PaymentService {
@@ -32,7 +33,7 @@ class PaymentService {
   /**
    * Resolve @tag to Stellar address
    * @param {string} tag - The @tag to resolve
-   * @returns {string} Stellar address
+   * @returns {Promise<string>} Stellar address
    */
   async resolveTag(tag) {
     const tagData = await TagService.resolveTag(tag);
@@ -52,7 +53,7 @@ class PaymentService {
    * @param {string} paymentData.assetIssuer - Issuer for custom assets
    * @param {string} paymentData.memo
    * @throws {Error} if validation fails
-   * @returns {Object} validated payment data
+   * @returns {Promise<Object>} validated payment data
    */
   async validatePayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo }) {
     // Validate required fields
@@ -126,7 +127,7 @@ class PaymentService {
    * @param {string} address - Stellar address
    * @param {string} asset - Asset code ('XLM' for native)
    * @param {string} assetIssuer - Issuer for custom assets
-   * @returns {number} balance
+   * @returns {Promise<number>} balance
    * @throws {Error} if account not found or network error
    */
   async getBalance(address, asset = 'XLM', assetIssuer = null) {
@@ -164,7 +165,7 @@ class PaymentService {
   /**
    * Check if account requires multi-signature with retry logic
    * @param {string} address - Stellar address
-   * @returns {Object} { required: boolean, threshold: number, signers: Array }
+   * @returns {Promise<{required: boolean, threshold: number, signers: Array}>}
    * @throws {Error} if unable to check multi-sig requirement
    */
   async checkMultiSigRequirement(address) {
@@ -206,7 +207,7 @@ class PaymentService {
    * @param {string} asset - Asset code
    * @returns {Object} { fee: number, baseFee: number, networkFee: number }
    */
-  calculateFee(amount, asset = 'XLM') {
+  calculateFee(amount, _asset = 'XLM') {
     // Base fee: 0.1% of transaction amount, minimum 0.00001 XLM
     const baseFee = Math.max(amount * PAYMENT_CONFIG.BASE_FEE_PERCENTAGE, PAYMENT_CONFIG.MIN_FEE);
     
@@ -233,7 +234,7 @@ class PaymentService {
    * @param {string} params.assetIssuer - Issuer for custom assets
    * @param {string} params.memo - Optional memo text
    * @param {Array<string>} params.secrets - Array of secret keys for signing
-   * @returns {string} signed transaction XDR
+   * @returns {Promise<string>} signed transaction XDR
    * @throws {Error} if transaction creation fails
    */
   async createTransaction({ senderAddress, recipientAddress, amount, asset = 'XLM', assetIssuer, memo, secrets }) {
@@ -316,7 +317,7 @@ class PaymentService {
    * Submit transaction to Stellar network with exponential backoff retry logic
    * @param {string} signedXdr - Signed transaction XDR
    * @param {number} maxRetries - Maximum retry attempts
-   * @returns {Object} transaction result with hash, ledger, and full result
+   * @returns {Promise<Object>} transaction result with hash, ledger, and full result
    * @throws {Error} if submission fails after all retries
    */
   async submitTransaction(signedXdr, maxRetries = PAYMENT_CONFIG.MAX_RETRIES) {
@@ -377,6 +378,32 @@ class PaymentService {
    * @throws {Error} if payment processing fails
    */
   async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, secrets, userId, idempotencyKey }) {
+    // ── Duplicate detection (fast-fail, before opening a DB transaction) ──────
+    const fingerprint = this._fingerprintTransaction({ userId, senderTag, recipientTag, amount, asset });
+    const duplicate = await this._checkDuplicate(fingerprint);
+    if (duplicate) {
+      if (duplicate.status === 'completed') {
+        const dupExtra = typeof duplicate.extra === 'string'
+          ? JSON.parse(duplicate.extra || '{}')
+          : (duplicate.extra || {});
+        this.logger.log(`Duplicate payment detected (fingerprint ${fingerprint}), returning existing tx ${duplicate.id}`);
+        return {
+          success: true,
+          transactionId: duplicate.id,
+          txHash: duplicate.tx_hash,
+          amount: parseFloat(duplicate.amount),
+          asset: dupExtra.asset || asset,
+          senderTag,
+          recipientTag,
+          duplicateDetected: true,
+        };
+      }
+      throw new Error(
+        'Duplicate transaction submission detected. An identical payment is already being processed. ' +
+        `Please wait ${PAYMENT_CONFIG.DUPLICATE_WINDOW_MS / 1000} seconds before retrying.`
+      );
+    }
+
     const effectiveIdempotencyKey = idempotencyKey || this._generateIdempotencyKey({ senderTag, recipientTag, amount, userId });
     const trx = await db.transaction();
     let transactionRecord = null;
@@ -449,7 +476,7 @@ class PaymentService {
         user_id: userId,
         token_id: token.id,
         chain_id: 6, // Stellar chain ID
-        reference: `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        reference: `PAY-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         idempotency_key: effectiveIdempotencyKey,
         type: 'payment',
         status: 'pending',
@@ -460,6 +487,7 @@ class PaymentService {
         description: memo || `Payment from ${senderTag} to ${recipientTag}`,
         notes: notes || null,
         extra: JSON.stringify({
+          fingerprint,
           fee: feeInfo.fee,
           baseFee: feeInfo.baseFee,
           networkFee: feeInfo.networkFee,
@@ -524,7 +552,6 @@ class PaymentService {
           userId,
           token,
           usdValue,
-          feeInfo,
           paymentContext: { senderTag, recipientTag, amount: validatedAmount, asset, senderAddress, recipientAddress }
         });
         return {
@@ -629,7 +656,7 @@ class PaymentService {
    * Inserts recovery record so funds are not lost or double-counted
    * @private
    */
-  async _attemptCompensation({ transactionRecord, stellarHash, error, userId, token, usdValue, feeInfo, paymentContext }) {
+  async _attemptCompensation({ transactionRecord, stellarHash, error, userId, token, usdValue, paymentContext }) {
     this.logger.warn(`Compensation required: Stellar tx ${stellarHash} succeeded but DB update failed`);
     try {
       const extra = typeof transactionRecord.extra === 'string' ? JSON.parse(transactionRecord.extra || '{}') : (transactionRecord.extra || {});
@@ -680,7 +707,9 @@ class PaymentService {
   }
 
   /**
-   * Generate idempotency key from payment params (used when client doesn't provide one)
+   * Generate idempotency key from payment params (used when client doesn't provide one).
+   * Includes Date.now() so each new submission gets a unique key unless the caller
+   * supplies an explicit idempotencyKey.
    * @private
    */
   _generateIdempotencyKey({ senderTag, recipientTag, amount, userId }) {
@@ -689,6 +718,49 @@ class PaymentService {
       .update(`${userId}:${senderTag}:${recipientTag}:${amount}:${Date.now()}`)
       .digest('hex')
       .substring(0, 64);
+  }
+
+  /**
+   * Compute a deterministic fingerprint for a payment request.
+   * Unlike the idempotency key this does NOT include a timestamp, so identical
+   * submissions within the duplicate-detection window hash to the same value.
+   *
+   * Inputs are normalised before hashing:
+   *   - tags   → lower-cased
+   *   - amount → fixed to 7 decimal places (Stellar precision)
+   *   - asset  → upper-cased
+   *
+   * @private
+   * @param {Object} p
+   * @param {number} p.userId
+   * @param {string} p.senderTag
+   * @param {string} p.recipientTag
+   * @param {number|string} p.amount
+   * @param {string} p.asset
+   * @returns {string} 64-char hex SHA-256 digest
+   */
+  _fingerprintTransaction({ userId, senderTag, recipientTag, amount, asset }) {
+    const parts = [
+      String(userId),
+      senderTag.toLowerCase(),
+      recipientTag.toLowerCase(),
+      parseFloat(amount).toFixed(7),
+      asset.toUpperCase(),
+    ];
+    return crypto.createHash('sha256').update(parts.join(':')).digest('hex');
+  }
+
+  /**
+   * Return the most recent payment transaction that shares the same fingerprint
+   * and was created within the configured duplicate-detection window.
+   * Returns `undefined` when no duplicate is found.
+   *
+   * @private
+   * @param {string} fingerprint
+   * @returns {Promise<Object|undefined>}
+   */
+  async _checkDuplicate(fingerprint) {
+    return Transaction.findByFingerprint(fingerprint, PAYMENT_CONFIG.DUPLICATE_WINDOW_MS);
   }
 
   /**
@@ -745,16 +817,6 @@ class PaymentService {
       errorMessage.toLowerCase().includes(pattern.toLowerCase()) ||
       errorCode.includes(pattern)
     );
-  }
-
-  /**
-   * Validate Stellar address format
-   * @private
-   * @param {string} address - Address to validate
-   * @returns {boolean} true if valid Stellar address
-   */
-  _isValidStellarAddress(address) {
-    return /^G[A-Z0-9]{55}$/.test(address);
   }
 
   /**

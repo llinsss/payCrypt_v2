@@ -73,7 +73,7 @@ const Transaction = {
       }
     }
 
-    const [id] = await db("transactions").insert({
+    const [id] = await (trx || db)("transactions").insert({
       ...transactionData,
       metadata: transactionData.metadata || null
     });
@@ -124,7 +124,7 @@ const Transaction = {
 
 
   async findByIdWithDeleted(id) {
-    return await db("transactions")
+    const transaction = await db("transactions")
       .select(
         "transactions.*",
         "users.email as user_email",
@@ -436,6 +436,39 @@ const Transaction = {
     }));
   },
 
+
+  /**
+   * Find a transaction by its idempotency key.
+   *
+   * @param {string} key
+   * @param {import("knex").Knex.Transaction|null} trx
+   * @returns {Promise<Object|undefined>}
+   */
+  async findByIdempotencyKey(key, trx = null) {
+    const query = trx || db;
+    return await query("transactions").where({ idempotency_key: key }).first();
+  },
+
+  /**
+   * Find the most recent payment transaction whose `extra` JSON contains a
+   * matching fingerprint, created within `windowMs` milliseconds ago, and
+   * currently pending or completed.
+   *
+   * @param {string} fingerprint - SHA-256 hex fingerprint
+   * @param {number} windowMs    - Look-back window in milliseconds
+   * @returns {Promise<Object|undefined>}
+   */
+  async findByFingerprint(fingerprint, windowMs) {
+    const windowStart = new Date(Date.now() - windowMs).toISOString();
+    return await db("transactions")
+      .whereRaw("extra::json->>'fingerprint' = ?", [fingerprint])
+      .whereIn("status", ["pending", "completed"])
+      .where("type", "payment")
+      .where("created_at", ">=", windowStart)
+      .whereNull("deleted_at")
+      .orderBy("created_at", "desc")
+      .first();
+  },
 
   async countByTag(userId, options = {}) {
     const { from = null, to = null, type = null, minAmount = null, maxAmount = null, noteSearch = null } = options;
