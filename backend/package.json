@@ -1,9 +1,13 @@
 {
-    "name": "paycrypt-backend",
+    "name": "tagged-backend",
     "version": "1.0.0",
     "type": "module",
-    "description": "Tagged Backend",
+    "description": "Tagged Backend - Crypto Payment API",
     "main": "server.js",
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=9.0.0"
+    },
     "scripts": {
         "dev": "nodemon server.js",
         "start": "node server.js",
