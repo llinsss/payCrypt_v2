@@ -8,6 +8,7 @@ import redis from "./config/redis.js";
 import "./listeners.js";
 import "./workers.js";
 import AuditLog from "./models/AuditLog.js";
+import ExportService from "./services/ExportService.js";
 
 import http from "http";
 import SocketService from "./services/SocketService.js";
@@ -53,6 +54,18 @@ const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
       }
     }, TWENTY_FOUR_HOURS);
     console.log(`Audit log retention: ${retentionDays} days (cleanup every 24h)`);
+
+    // Export file cleanup — runs every 24 hours
+    setInterval(async () => {
+      try {
+        const deleted = await ExportService.cleanupExpiredExports();
+        if (deleted > 0) {
+          console.log(`Export cleanup: deleted ${deleted} expired export files`);
+        }
+      } catch (err) {
+        console.error("Export cleanup failed:", err.message);
+      }
+    }, TWENTY_FOUR_HOURS);
   });
 })();
 

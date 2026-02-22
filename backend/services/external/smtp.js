@@ -180,6 +180,16 @@ const EMAIL_TEMPLATES = {
 <p>A new API key named <strong>"{{keyName}}"</strong> was created on your Tagged account on <strong>{{date}}</strong>.</p>
 <p>If you did not create this key, please revoke it immediately from your account settings and contact support.</p>`,
     },
+
+    transaction_export_ready: {
+      subject: "Your transaction export is ready",
+      body: `
+<p>Hi <strong>{{name}}</strong>,</p>
+<p>Your transaction export ({{format}}) with <strong>{{recordCount}}</strong> records is ready for download.</p>
+<p>This link expires on <strong>{{expiresAt}}</strong>. Download your file before it expires.</p>
+<p><a href="{{downloadUrl}}" class="btn">Download Export</a></p>
+<p style="font-size:14px; color:#999;">If the button doesn't work, copy and paste this link into your browser: {{downloadUrl}}</p>`,
+    },
   },
 
   // ── French ─────────────────────────────────────────────────────────────────
@@ -254,6 +264,16 @@ const EMAIL_TEMPLATES = {
 <p>Bonjour <strong>{{name}}</strong>,</p>
 <p>Une nouvelle clé API nommée <strong>"{{keyName}}"</strong> a été créée sur votre compte Tagged le <strong>{{date}}</strong>.</p>
 <p>Si vous n'avez pas créé cette clé, veuillez la révoquer immédiatement depuis les paramètres de votre compte et contacter le support.</p>`,
+    },
+
+    transaction_export_ready: {
+      subject: "Votre export de transactions est prêt",
+      body: `
+<p>Bonjour <strong>{{name}}</strong>,</p>
+<p>Votre export de transactions ({{format}}) avec <strong>{{recordCount}}</strong> enregistrements est prêt à être téléchargé.</p>
+<p>Ce lien expire le <strong>{{expiresAt}}</strong>. Téléchargez votre fichier avant expiration.</p>
+<p><a href="{{downloadUrl}}" class="btn">Télécharger l'export</a></p>
+<p style="font-size:14px; color:#999;">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur : {{downloadUrl}}</p>`,
     },
   },
 };

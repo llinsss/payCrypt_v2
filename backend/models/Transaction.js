@@ -431,6 +431,40 @@ const Transaction = {
     };
   },
 
+  async getForExport(userId, options = {}) {
+    const { from = null, to = null, status = null, chain = null, token = null } = options;
+
+    let query = db("transactions")
+      .select(
+        "transactions.*",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol"
+      )
+      .leftJoin("tokens", "transactions.token_id", "tokens.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id")
+      .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null)
+      .orderBy("transactions.created_at", "desc");
+
+    if (status) query = query.where("transactions.status", status);
+    if (from) query = query.where("transactions.created_at", ">=", from);
+    if (to) query = query.where("transactions.created_at", "<=", to);
+    if (chain) {
+      query = query.where((qb) =>
+        qb.where("chains.symbol", "ilike", chain).orWhere("chains.name", "ilike", chain)
+      );
+    }
+    if (token) {
+      query = query.where((qb) =>
+        qb.where("tokens.symbol", "ilike", token).orWhere("tokens.name", "ilike", token)
+      );
+    }
+
+    return await query;
+  },
+
   async getByTag(userId, options = {}) {
     const {
       limit = 20,
