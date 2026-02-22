@@ -375,7 +375,33 @@ export default {
 **Labels:** `priority: medium` `difficulty: easy` `type: observability` `area: logging` `good-first-issue: yes`
 
 ### 📋 Description
-Implement comprehensive structured logging with correlation IDs for request tracing and debugging.
+Implement comprehensive structured logging with correlation IDs for request tracing and debugging. Currently, logs are unstructured and lack context, making debugging production issues difficult. This feature adds JSON-formatted logs with request correlation, timing metrics, and automatic PII redaction.
+
+### 🎯 Business Value
+- Reduce debugging time by 70%
+- Enable distributed tracing
+- Improve incident response
+- Meet compliance requirements for audit logs
+
+### 📝 Requirements
+1. Log all API requests with method, path, status, duration
+2. Generate unique correlation ID per request
+3. Include user ID in logs (if authenticated)
+4. Log request/response bodies for errors (4xx, 5xx)
+5. Integrate with Pino logger for structured JSON
+6. Redact sensitive data (passwords, tokens, secrets)
+7. Add log rotation (daily, max 30 days)
+8. Configurable log level via environment
+
+### ✅ Acceptance Criteria
+- [ ] All requests logged with correlation ID
+- [ ] Logs include timing information (ms)
+- [ ] Error logs include stack traces
+- [ ] Logs are structured JSON format
+- [ ] Sensitive data automatically redacted
+- [ ] Log level configurable via LOG_LEVEL env var
+- [ ] Tests verify redaction works
+- [ ] Documentation includes log format examples
 
 ### 📁 Files to Create
 ```
@@ -398,11 +424,69 @@ backend/
 └── package.json                 # Add pino-http
 ```
 
+### 🔧 Implementation Guide
+
+**Log Format:**
+```json
+{
+  "level": "info",
+  "time": "2024-02-21T10:30:00.000Z",
+  "correlationId": "abc-123-def-456",
+  "userId": 42,
+  "method": "POST",
+  "path": "/api/transactions",
+  "statusCode": 201,
+  "duration": 145,
+  "userAgent": "Mozilla/5.0...",
+  "ip": "192.168.1.1"
+}
+```
+
+### 🧪 Testing Requirements
+- Test correlation ID generation
+- Test PII redaction (passwords, tokens)
+- Test log levels (debug, info, warn, error)
+- Test error logging with stack traces
+
+### 📊 Success Metrics
+- 100% request coverage
+- Zero PII leaks in logs
+- Log query time < 100ms
+
 ---
 
 ## 🟡 Issue #5: Transaction Export (CSV/PDF)
 
 **Labels:** `priority: medium` `difficulty: medium` `type: feature` `area: reporting` `good-first-issue: no`
+
+### 📋 Description
+Allow users to export their transaction history in CSV and PDF formats for accounting, tax reporting, and record-keeping. Large exports are processed as background jobs with email notifications when ready.
+
+### 🎯 Business Value
+- Enable tax compliance for users
+- Support accounting workflows
+- Reduce support requests for transaction data
+- Enterprise feature for business customers
+
+### 📝 Requirements
+1. Export transactions as CSV with all fields
+2. Export transactions as PDF with Tagged branding
+3. Filter by date range, status, chain, token
+4. Queue large exports (>1000 records) as background jobs
+5. Email download link when export ready
+6. Expire export files after 24 hours
+7. Rate limit exports (5 per hour per user)
+8. Include export metadata (generated date, filters applied)
+
+### ✅ Acceptance Criteria
+- [ ] GET /api/transactions/export?format=csv&from=2024-01-01&to=2024-12-31
+- [ ] GET /api/transactions/export?format=pdf&status=completed
+- [ ] Exports respect user permissions (own transactions only)
+- [ ] Large exports (>1000 records) processed in background
+- [ ] Email notification sent with secure download link
+- [ ] Export files auto-delete after 24 hours
+- [ ] Tests cover both CSV and PDF formats
+- [ ] Documentation includes filter examples
 
 ### 📁 Files to Create
 ```
@@ -425,11 +509,75 @@ backend/
         └── PdfGenerator.test.js
 ```
 
+### 📝 Files to Modify
+```
+backend/
+├── server.js                    # Register export routes
+├── package.json                 # Add pdfkit, csv-stringify
+└── .env.example                 # Add EXPORT_STORAGE_PATH
+```
+
+### 🔧 Implementation Guide
+
+**CSV Format:**
+```csv
+Date,Transaction ID,Type,Amount,Token,Chain,Status,Hash
+2024-02-21,12345,credit,100.00,XLM,Stellar,completed,0x...
+```
+
+**PDF Template:**
+- Tagged logo and branding
+- Export metadata (date range, filters)
+- Transaction table with pagination
+- Summary statistics (total volume, count)
+
+### 🧪 Testing Requirements
+- Test CSV generation with various filters
+- Test PDF generation with branding
+- Test background job processing
+- Test file expiration (24 hours)
+- Test email notification delivery
+
+### 📊 Success Metrics
+- Export generation time < 5s for 1000 records
+- Email delivery within 30 seconds
+- Zero data leaks (user isolation)
+
 ---
 
 ## 🔴 Issue #6: Two-Factor Authentication (2FA)
 
 **Labels:** `priority: high` `difficulty: hard` `type: security` `area: authentication` `good-first-issue: no`
+
+### 📋 Description
+Implement TOTP-based two-factor authentication for enhanced account security. Users can enable 2FA by scanning a QR code with authenticator apps like Google Authenticator or Authy. Backup codes provided for account recovery.
+
+### 🎯 Business Value
+- Reduce account takeover incidents by 99%
+- Meet security compliance requirements
+- Increase user trust and confidence
+- Enable enterprise customer adoption
+
+### 📝 Requirements
+1. Generate TOTP secrets and QR codes for 2FA setup
+2. Verify TOTP codes on login (6-digit codes)
+3. Provide 10 single-use backup codes
+4. Allow 2FA disable with password + current TOTP code
+5. Track 2FA status in user model
+6. Enforce 2FA for admin accounts
+7. Add 2FA recovery flow with backup codes
+8. Log all 2FA events (enable, disable, failed attempts)
+
+### ✅ Acceptance Criteria
+- [ ] POST /api/auth/2fa/enable - Enable 2FA, return QR code
+- [ ] POST /api/auth/2fa/verify - Verify TOTP code
+- [ ] POST /api/auth/2fa/disable - Disable 2FA (requires password + TOTP)
+- [ ] GET /api/auth/2fa/backup-codes - Generate new backup codes
+- [ ] Login requires TOTP code if 2FA enabled
+- [ ] Backup codes work for login (single-use)
+- [ ] Failed TOTP attempts rate limited (5 per 15 min)
+- [ ] Tests cover all 2FA flows
+- [ ] Documentation includes setup guide with screenshots
 
 ### 📁 Files to Create
 ```
@@ -461,11 +609,81 @@ backend/
 └── package.json                 # Add speakeasy, qrcode
 ```
 
+### 🗄️ Database Migration
+```sql
+ALTER TABLE users ADD COLUMN two_factor_secret VARCHAR(32);
+ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN backup_codes TEXT[];
+ALTER TABLE users ADD COLUMN two_factor_enabled_at TIMESTAMP;
+
+CREATE INDEX idx_users_2fa_enabled ON users(two_factor_enabled) WHERE two_factor_enabled = true;
+```
+
+### 🔧 Implementation Guide
+
+**QR Code Generation:**
+```javascript
+const secret = speakeasy.generateSecret({ name: 'Tagged (@username)' });
+const qrCode = await qrcode.toDataURL(secret.otpauth_url);
+```
+
+**TOTP Verification:**
+```javascript
+const verified = speakeasy.totp.verify({
+  secret: user.two_factor_secret,
+  encoding: 'base32',
+  token: userProvidedCode,
+  window: 2 // Allow 60s time drift
+});
+```
+
+### 🧪 Testing Requirements
+- Test TOTP generation and verification
+- Test backup code generation (10 codes)
+- Test backup code usage (single-use)
+- Test 2FA disable flow
+- Test rate limiting on failed attempts
+
+### 📊 Success Metrics
+- 2FA adoption rate > 30% within 3 months
+- Zero account takeovers with 2FA enabled
+- Failed TOTP rate < 5%
+
 ---
 
 ## 🟡 Issue #7: Analytics Dashboard API
 
 **Labels:** `priority: medium` `difficulty: medium` `type: feature` `area: analytics` `good-first-issue: no`
+
+### 📋 Description
+Create API endpoints to power an analytics dashboard showing transaction metrics, trends, and insights. Provides aggregated data for volume, transaction counts, token distribution, and chain usage with caching for performance.
+
+### 🎯 Business Value
+- Enable data-driven decision making
+- Provide user insights for retention
+- Support business intelligence needs
+- Attract enterprise customers
+
+### 📝 Requirements
+1. Total transaction volume by period (day/week/month)
+2. Transaction count by status (completed, pending, failed)
+3. Top tokens by volume and transaction count
+4. Top chains by transaction count
+5. Average transaction value over time
+6. Daily/weekly/monthly aggregations
+7. Cache results for 5 minutes
+8. Support date range filtering
+9. User-specific and global analytics
+
+### ✅ Acceptance Criteria
+- [ ] GET /api/analytics/overview - Summary statistics
+- [ ] GET /api/analytics/volume?period=daily&from=2024-01-01&to=2024-12-31
+- [ ] GET /api/analytics/tokens - Token breakdown
+- [ ] GET /api/analytics/chains - Chain breakdown
+- [ ] Support date range filtering on all endpoints
+- [ ] Results cached for 5 minutes in Redis
+- [ ] Tests verify calculation accuracy
+- [ ] Documentation includes response examples
 
 ### 📁 Files to Create
 ```
@@ -481,11 +699,81 @@ backend/
         └── AnalyticsService.test.js
 ```
 
+### 📝 Files to Modify
+```
+backend/
+├── server.js                    # Register analytics routes
+└── middleware/
+    └── cacheMiddleware.js       # Use for caching
+```
+
+### 🔧 Implementation Guide
+
+**Response Format:**
+```json
+{
+  "overview": {
+    "totalVolume": 1250000.50,
+    "totalTransactions": 5420,
+    "averageValue": 230.55,
+    "successRate": 98.5
+  },
+  "volumeByDay": [
+    { "date": "2024-02-20", "volume": 45000.00, "count": 120 },
+    { "date": "2024-02-21", "volume": 52000.00, "count": 135 }
+  ],
+  "topTokens": [
+    { "symbol": "XLM", "volume": 500000.00, "count": 2500 },
+    { "symbol": "USDC", "volume": 400000.00, "count": 1800 }
+  ]
+}
+```
+
+### 🧪 Testing Requirements
+- Test volume calculations
+- Test aggregation by period
+- Test cache hit/miss
+- Test date range filtering
+
+### 📊 Success Metrics
+- Query response time < 100ms (cached)
+- Cache hit rate > 90%
+- Calculation accuracy 100%
+
 ---
 
 ## 🟡 Issue #8: Batch Payment Processing
 
 **Labels:** `priority: medium` `difficulty: hard` `type: feature` `area: payments` `good-first-issue: no`
+
+### 📋 Description
+Allow users to process multiple payments in a single request for efficiency. Useful for payroll, airdrops, and bulk transfers. Supports parallel processing with configurable concurrency limits and partial success handling.
+
+### 🎯 Business Value
+- Enable payroll and bulk payment use cases
+- Reduce API calls by 95% for bulk operations
+- Attract business customers
+- Improve user efficiency
+
+### 📝 Requirements
+1. Accept array of payment requests (max 50 per batch)
+2. Process payments in parallel with concurrency limit (5 concurrent)
+3. Return individual results for each payment
+4. Support two failure modes: "abort" (rollback all) or "continue" (partial success)
+5. Track batch processing status
+6. Queue large batches as background jobs
+7. Provide batch status endpoint
+8. Calculate total fees upfront
+
+### ✅ Acceptance Criteria
+- [ ] POST /api/transactions/batch - Process batch payment
+- [ ] GET /api/transactions/batch/:id - Get batch status
+- [ ] Each payment validated independently
+- [ ] Partial success supported (configurable via failureMode)
+- [ ] Batch processing uses BullMQ queue
+- [ ] Tests cover success/failure scenarios
+- [ ] Documentation includes request/response examples
+- [ ] Rate limit: 10 batches per hour per user
 
 ### 📁 Files to Create
 ```
@@ -509,11 +797,107 @@ backend/
         └── BatchPaymentService.test.js
 ```
 
+### 📝 Files to Modify
+```
+backend/
+├── server.js                    # Register batch routes
+└── services/
+    └── PaymentService.js        # Reuse for individual payments
+```
+
+### 🗄️ Database Schema
+```sql
+CREATE TABLE batch_payments (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  total_payments INTEGER NOT NULL,
+  successful_payments INTEGER DEFAULT 0,
+  failed_payments INTEGER DEFAULT 0,
+  total_amount DECIMAL(20, 8),
+  total_fees DECIMAL(20, 8),
+  status VARCHAR(20) DEFAULT 'pending',
+  failure_mode VARCHAR(10) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  CONSTRAINT valid_status CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+);
+
+CREATE INDEX idx_batch_payments_user_id ON batch_payments(user_id);
+CREATE INDEX idx_batch_payments_status ON batch_payments(status);
+```
+
+### 🔧 Implementation Guide
+
+**Request Format:**
+```json
+{
+  "payments": [
+    { "recipientTag": "@user1", "amount": 100, "asset": "XLM", "memo": "Payment 1" },
+    { "recipientTag": "@user2", "amount": 200, "asset": "XLM", "memo": "Payment 2" }
+  ],
+  "failureMode": "continue"
+}
+```
+
+**Response Format:**
+```json
+{
+  "batchId": 123,
+  "status": "processing",
+  "totalPayments": 2,
+  "results": [
+    { "index": 0, "status": "success", "transactionId": 456 },
+    { "index": 1, "status": "failed", "error": "Insufficient funds" }
+  ]
+}
+```
+
+### 🧪 Testing Requirements
+- Test batch with all successful payments
+- Test batch with partial failures (continue mode)
+- Test batch with failure (abort mode)
+- Test concurrency limits
+- Test batch size limits (max 50)
+
+### 📊 Success Metrics
+- Batch processing time < 10s for 50 payments
+- Success rate > 95%
+- Concurrency limit prevents overload
+
 ---
 
 ## 🟡 Issue #9: API Versioning
 
 **Labels:** `priority: medium` `difficulty: medium` `type: architecture` `area: api` `good-first-issue: no`
+
+### 📋 Description
+Add API versioning to support backward compatibility and smooth migrations when making breaking changes. Implements URL-based versioning (/api/v1/, /api/v2/) with deprecation warnings and migration guides.
+
+### 🎯 Business Value
+- Enable API evolution without breaking clients
+- Support multiple client versions simultaneously
+- Reduce integration friction for partners
+- Professional API management
+
+### 📝 Requirements
+1. Support v1 and v2 API versions
+2. Version specified in URL path (/api/v1/, /api/v2/)
+3. Maintain v1 endpoints during transition period (6 months)
+4. Add deprecation warnings to v1 responses
+5. Document version differences
+6. Add version detection middleware
+7. Create migration guide for v1 to v2
+8. Set sunset date for v1 (6 months from v2 launch)
+
+### ✅ Acceptance Criteria
+- [ ] All routes support /api/v1/ prefix
+- [ ] New v2 routes created for changed endpoints
+- [ ] Middleware detects and validates version
+- [ ] Deprecation headers added to v1 (X-API-Deprecation, X-API-Sunset)
+- [ ] Tests cover both versions
+- [ ] Migration guide created with examples
+- [ ] Documentation updated with version info
+- [ ] Version mismatch returns 400 with helpful message
 
 ### 📁 Files to Create
 ```
@@ -533,8 +917,53 @@ backend/
 ```
 backend/
 ├── server.js
-└── routes/*.js                  # Organize into v1/v2
+├── routes/*.js                  # Organize into v1/v2
+└── docs/
+    └── API_MIGRATION_V1_TO_V2.md
 ```
+
+### 🔧 Implementation Guide
+
+**Version Middleware:**
+```javascript
+// middleware/versionMiddleware.js
+export const versionMiddleware = (req, res, next) => {
+  const version = req.path.match(/^\/api\/(v\d+)\//)?.[1];
+  
+  if (!version) {
+    return res.status(400).json({ error: 'API version required in path' });
+  }
+  
+  req.apiVersion = version;
+  
+  if (version === 'v1') {
+    res.set('X-API-Deprecation', 'v1 is deprecated');
+    res.set('X-API-Sunset', '2024-08-21');
+  }
+  
+  next();
+};
+```
+
+**Server Setup:**
+```javascript
+import v1Routes from './routes/v1/index.js';
+import v2Routes from './routes/v2/index.js';
+
+app.use('/api/v1', versionMiddleware, v1Routes);
+app.use('/api/v2', versionMiddleware, v2Routes);
+```
+
+### 🧪 Testing Requirements
+- Test v1 endpoints return deprecation headers
+- Test v2 endpoints work correctly
+- Test invalid version returns 400
+- Test version detection middleware
+
+### 📊 Success Metrics
+- Zero breaking changes for v1 clients
+- 80% client migration to v2 within 3 months
+- Clear migration path documented
 
 ---
 
