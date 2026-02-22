@@ -1,12 +1,16 @@
 {
-  "name": "paycryptv2",
+  "name": "tagged",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Tagged - Seamless Crypto Payments for Africa",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint ."
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",

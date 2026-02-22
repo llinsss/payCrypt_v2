@@ -8,6 +8,7 @@ import hpp from "hpp";
 import xss from "xss-clean";
 import basicAuth from "express-basic-auth";
 import mongoSanitize from "express-mongo-sanitize";
+
 import indexRoutes from "./routes/index.js";
 import generalRoutes from "./routes/general.js";
 import bullBoardRouter from "./bullboard.js";
@@ -65,6 +66,7 @@ const corsOptions = {
   optionsSuccessStatus: 200,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-request-id"],
+  exposedHeaders: ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"],
   maxAge: 3600,
 };
 app.use(cors(corsOptions));
