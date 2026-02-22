@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import db from "../config/database.js";
+import { createUserRateLimiter } from "../config/rateLimiting.js";
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -23,11 +24,18 @@ export const authenticate = async (req, res, next) => {
   }
 };
 
-export const isAdmin = (req, res, next) => {
-  if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) {
-    next();
-  } else {
-    res.status(403).json({ error: "Access denied. Admin role required." });
-  }
-};
+/**
+ * Per-user rate limiter - use after authenticate for protected routes
+ * Uses Redis sliding window; keys by user ID
+ */
+export const userRateLimiter = createUserRateLimiter({
+  windowMs: 60 * 1000,
+  max: 100,
+  type: "user",
+  message: "Too many requests from this user, please try again later",
+});
 
+/**
+ * Authenticate + per-user rate limiting (convenience for protected routes)
+ */
+export const authenticateWithRateLimit = [authenticate, userRateLimiter];

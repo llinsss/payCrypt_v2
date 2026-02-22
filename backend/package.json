@@ -1,9 +1,13 @@
 {
-    "name": "paycrypt-backend",
+    "name": "tagged-backend",
     "version": "1.0.0",
     "type": "module",
-    "description": "Tagged Backend",
+    "description": "Tagged Backend - Crypto Payment API",
     "main": "server.js",
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=9.0.0"
+    },
     "scripts": {
         "dev": "nodemon server.js",
         "start": "node server.js",
@@ -48,7 +52,6 @@
         "express-rate-limit": "^6.8.1",
         "fs": "^0.0.1-security",
         "graphql": "^16.12.0",
-        "graphql-query-complexity": "^1.1.0",
         "helmet": "^7.2.0",
         "hpp": "^0.2.3",
         "ip-range-check": "^0.2.0",
@@ -66,9 +69,7 @@
         "redis": "^5.8.2",
         "sanitize-html": "^2.17.1",
         "socket.io": "^4.8.3",
-        "speakeasy": "^2.0.0",
         "starknet": "^7.6.4",
-        "stellar-sdk": "^13.3.0",
         "swagger-jsdoc": "^6.2.8",
         "swagger-ui-express": "^5.0.1",
         "winston": "^3.19.0",
