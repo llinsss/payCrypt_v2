@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import db from "../config/database.js";
 import { createUserRateLimiter } from "../config/rateLimiting.js";
+import { authenticateApiKey } from "./apiKeyAuth.js";
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -22,6 +23,19 @@ export const authenticate = async (req, res, next) => {
   } catch (error) {
     res.status(401).json({ error: "Invalid token" });
   }
+};
+
+export const authenticateJwtOrApiKey = async (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  const apiKey = req.headers["x-api-key"];
+
+  if (apiKey) {
+    return authenticateApiKey(req, res, next);
+  }
+  if (token) {
+    return authenticate(req, res, next);
+  }
+  return res.status(401).json({ error: "Access token or API key required" });
 };
 
 /**
