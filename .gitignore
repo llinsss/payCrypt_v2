@@ -37,7 +37,6 @@ build
 Thumbs.db
 
 # Package manager lock files
-package-lock.json
 pnpm-lock.yaml
 yarn.lock
 
