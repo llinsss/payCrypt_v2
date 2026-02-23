@@ -36,7 +36,8 @@ build
 .DS_Store
 Thumbs.db
 
-# Package manager lock files (keep npm only)
+# Package manager lock files
+package-lock.json
 pnpm-lock.yaml
 yarn.lock
 
