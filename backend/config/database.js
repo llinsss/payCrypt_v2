@@ -6,6 +6,23 @@ import performanceService from "../services/PerformanceService.js";
 const CONNECTION_ACQUIRE_TIMEOUT_MS =
   Number(process.env.DB_ACQUIRE_TIMEOUT_MS) || 30000;
 
+const DB_RETRY_MAX_ATTEMPTS = Math.max(
+  1,
+  parseInt(process.env.DB_RETRY_MAX_ATTEMPTS, 10) || 5
+);
+const DB_RETRY_INITIAL_DELAY_MS = Math.max(
+  100,
+  parseInt(process.env.DB_RETRY_INITIAL_DELAY_MS, 10) || 1000
+);
+const DB_RETRY_BACKOFF_MULTIPLIER = Math.max(
+  1,
+  parseFloat(process.env.DB_RETRY_BACKOFF_MULTIPLIER) || 2
+);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const db = knex(knexConfig);
 
 function getPool() {
@@ -141,6 +158,59 @@ async function checkConnectionHealth() {
   }
 }
 
-export { getPoolMetrics, checkConnectionHealth };
+/**
+ * Verify database connection with exponential backoff retry.
+ * @param {Object} [options]
+ * @param {number} [options.maxAttempts] - Max retry attempts (default from env or 5)
+ * @param {number} [options.initialDelayMs] - Initial delay before first retry (ms)
+ * @param {number} [options.backoffMultiplier] - Multiplier for delay after each failure
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+async function ensureConnectionWithRetry(options = {}) {
+  const maxAttempts = options.maxAttempts ?? DB_RETRY_MAX_ATTEMPTS;
+  let delayMs = options.initialDelayMs ?? DB_RETRY_INITIAL_DELAY_MS;
+  const backoffMultiplier = options.backoffMultiplier ?? DB_RETRY_BACKOFF_MULTIPLIER;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await db.raw("SELECT 1");
+      if (attempt > 1) {
+        logger.info("Database connection established after retry", {
+          attempt,
+          type: "database_retry",
+        });
+      }
+      return { ok: true };
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts) {
+        logger.warn("Database connection failed, retrying", {
+          attempt,
+          maxAttempts,
+          nextRetryInMs: delayMs,
+          error: err?.message,
+          type: "database_retry",
+        });
+        await sleep(delayMs);
+        delayMs = Math.round(delayMs * backoffMultiplier);
+      } else {
+        logger.error("Database connection failed after max retries", {
+          attempt,
+          maxAttempts,
+          error: err?.message,
+          type: "database_retry",
+        });
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    error: lastError?.message ?? "Connection failed",
+  };
+}
+
+export { getPoolMetrics, checkConnectionHealth, ensureConnectionWithRetry };
 export default db;
 
