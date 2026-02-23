@@ -3,7 +3,58 @@ import knexConfig from "../knexfile.js";
 import logger from "../utils/logger.js";
 import performanceService from "../services/PerformanceService.js";
 
+const CONNECTION_ACQUIRE_TIMEOUT_MS =
+  Number(process.env.DB_ACQUIRE_TIMEOUT_MS) || 30000;
+
 const db = knex(knexConfig);
+
+function getPool() {
+  try {
+    return db.client?.pool ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getPoolMetrics() {
+  const pool = getPool();
+  if (!pool || typeof pool.numUsed !== "function") return null;
+  try {
+    const used = pool.numUsed();
+    const free = pool.numFree();
+    const pendingAcquires = pool.numPendingAcquires?.() ?? 0;
+    const pendingCreates = pool.numPendingCreates?.() ?? 0;
+    const max = knexConfig.pool?.max ?? 10;
+    const total = used + free;
+    const utilizationPercent = max > 0 ? Math.round((used / max) * 100) : 0;
+    return {
+      used,
+      free,
+      total,
+      max,
+      pendingAcquires,
+      pendingCreates,
+      utilizationPercent,
+    };
+  } catch (err) {
+    logger.warn("Failed to read pool metrics", { error: err?.message });
+    return null;
+  }
+}
+
+db.on("pool-error", (err) => {
+  logger.error("Database pool error", {
+    error: err.message,
+    type: "database_pool",
+  });
+});
+
+db.on("pool-acquire-request-timeout", () => {
+  logger.warn("Database connection acquire timeout", {
+    timeoutMs: CONNECTION_ACQUIRE_TIMEOUT_MS,
+    type: "database_pool",
+  });
+});
 
 const SLOW_QUERY_THRESHOLD = process.env.SLOW_QUERY_THRESHOLD || 200; // ms
 const ALERT_QUERY_THRESHOLD = process.env.ALERT_QUERY_THRESHOLD || 1000; // ms
@@ -65,6 +116,31 @@ db.on("query-error", (error, obj) => {
   }
 });
 
+async function checkConnectionHealth() {
+  const start = Date.now();
+  try {
+    await db.raw("SELECT 1");
+    const latencyMs = Date.now() - start;
+    const poolMetrics = getPoolMetrics();
+    return {
+      healthy: true,
+      latencyMs,
+      pool: poolMetrics,
+    };
+  } catch (err) {
+    logger.error("Connection health check failed", {
+      error: err?.message,
+      type: "database_health",
+    });
+    return {
+      healthy: false,
+      latencyMs: Date.now() - start,
+      error: err?.message,
+      pool: getPoolMetrics(),
+    };
+  }
+}
 
+export { getPoolMetrics, checkConnectionHealth };
 export default db;
 
