@@ -13,6 +13,8 @@ import ExportService from "./services/ExportService.js";
 import http from "http";
 import SocketService from "./services/SocketService.js";
 
+import { initApollo } from './graphql/apollo.js';
+
 const PORT = process.env.PORT || 3000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
@@ -31,9 +33,12 @@ const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
   }
 
   const httpServer = http.createServer(app);
-  
+
   // Initialize Socket.io
   SocketService.init(httpServer);
+
+  // Initialize Apollo GraphQL Server
+  await initApollo(app, null, httpServer);
 
   httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT} (with WebSockets)`);
