@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import db from "../config/database.js";
 import { createUserRateLimiter } from "../config/rateLimiting.js";
+import * as Sentry from "@sentry/node";
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -18,6 +19,7 @@ export const authenticate = async (req, res, next) => {
     }
 
     req.user = user;
+    Sentry.setUser({ id: user.id, username: user.username, email: user.email });
     next();
   } catch (error) {
     res.status(401).json({ error: "Invalid token" });

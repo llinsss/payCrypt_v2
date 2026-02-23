@@ -1,4 +1,6 @@
 import express from "express";
+import * as Sentry from "@sentry/node";
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
@@ -36,6 +38,26 @@ import {
 dotenv.config();
 
 const app = express();
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV || "development",
+  integrations: [
+    nodeProfilingIntegration(),
+  ],
+  // Performance Monitoring
+  tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
+  profilesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
+});
+
+// Custom Sentry Middleware to attach context
+app.use((req, res, next) => {
+  // Try to use Sentry's newer IsolationScope if available, otherwise just use setContext safely.
+  // Actually, Express requests run in their own async context in Node, so we can do this:
+  Sentry.setContext("request_body", req.body || {});
+  Sentry.setContext("request_query", req.query || {});
+  next();
+});
 
 // ===== SECURITY MIDDLEWARE =====
 
@@ -137,6 +159,11 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Test route for user verification of Sentry
+app.get("/test-error", (req, res) => {
+  throw new Error("Sentry Test Error manually triggered");
+});
+
 import tagRoutes from "./routes/tagRoutes.js";
 
 app.use("/", generalRoutes);
@@ -196,12 +223,15 @@ app.use(
 // ===== ERROR HANDLING =====
 
 app.all("*", (req, res, next) => {
-  res.status(404).json({ 
+  res.status(404).json({
     message: `Route ${req.originalUrl} not found`,
     path: req.originalUrl,
     method: req.method,
   });
 });
+
+// Setup Sentry error handler
+Sentry.setupExpressErrorHandler(app);
 
 // Global error handler
 app.use((error, req, res, next) => {
