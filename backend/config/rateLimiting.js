@@ -182,6 +182,16 @@ export const userRateLimiter = createUserRateLimiter({
   message: "Too many requests from this user, please try again later",
 });
 
+/**
+ * Export rate limiter - 5 per hour per user
+ */
+export const exportLimiter = createUserRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  type: "export",
+  message: "Export limit exceeded. You can export up to 5 times per hour.",
+});
+
 export default {
   globalLimiter,
   accountCreationLimiter,
@@ -191,4 +201,5 @@ export default {
   strictLimiter,
   createUserRateLimiter,
   userRateLimiter,
+  exportLimiter,
 };

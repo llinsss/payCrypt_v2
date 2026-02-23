@@ -26,6 +26,19 @@ export const authenticate = async (req, res, next) => {
   }
 };
 
+export const authenticateJwtOrApiKey = async (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  const apiKey = req.headers["x-api-key"];
+
+  if (apiKey) {
+    return authenticateApiKey(req, res, next);
+  }
+  if (token) {
+    return authenticate(req, res, next);
+  }
+  return res.status(401).json({ error: "Access token or API key required" });
+};
+
 /**
  * Per-user rate limiter - use after authenticate for protected routes
  * Uses Redis sliding window; keys by user ID
