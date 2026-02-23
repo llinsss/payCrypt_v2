@@ -1,4 +1,5 @@
 import ExportService from "../services/ExportService.js";
+import { exportQueue } from "../queues/exportQueue.js";
 
 export const exportTransactions = async (req, res) => {
   try {
