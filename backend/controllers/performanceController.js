@@ -1,17 +1,20 @@
 import performanceService from "../services/PerformanceService.js";
+import { getConnectionPoolStats } from "../utils/dbHealth.js";
 
 export const getPerformanceMetrics = async (req, res) => {
   try {
     const metrics = await performanceService.getMetrics();
+    const poolStats = getConnectionPoolStats();
+    const data = { ...metrics, pool: poolStats };
     res.status(200).json({
       success: true,
-      data: metrics
+      data,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: "Failed to fetch performance metrics",
-      error: error.message
+      error: error.message,
     });
   }
 };
