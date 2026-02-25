@@ -24,6 +24,7 @@ import {
 } from "./config/initials.js";
 
 import { performanceMonitor } from "./middleware/performance.js";
+import { versionDetection } from "./middleware/apiVersion.js";
 import logger, { stream } from "./utils/logger.js";
 import { sanitizeRequest, detectSqlInjection } from "./middleware/validation.js";
 
@@ -142,6 +143,9 @@ if (process.env.NODE_ENV === "development") {
 
 // Performance Monitoring
 app.use(performanceMonitor);
+
+// API Version Detection
+app.use('/api', versionDetection);
 
 
 // ===== ROUTES =====
