@@ -33,8 +33,6 @@ const WebhookService = {
     );
   },
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   generateSecret() {
     return crypto.randomBytes(32).toString("hex");
   },
@@ -46,16 +44,41 @@ const WebhookService = {
     );
   },
 
+  // FIXED FUNCTION
   verifySignature(payload, signature, secret) {
-    const expected = this.generateSignature(payload, secret);
     try {
-      return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+      if (!signature || typeof signature !== "string") return false;
+
+      // Remove "sha256=" prefix if present
+      let normalized = signature.startsWith("sha256=")
+        ? signature.slice(7)
+        : signature;
+
+      normalized = normalized.trim().toLowerCase();
+
+      // Validate hex format
+      if (!/^[a-f0-9]+$/.test(normalized)) return false;
+
+      // SHA256 hex must be 64 chars
+      if (normalized.length !== 64) return false;
+
+      // Generate expected signature (hex only)
+      const expected = crypto
+        .createHmac("sha256", secret)
+        .update(JSON.stringify(payload))
+        .digest("hex");
+
+      const expectedBuffer = Buffer.from(expected, "hex");
+      const receivedBuffer = Buffer.from(normalized, "hex");
+
+      // Prevent timingSafeEqual crash
+      if (expectedBuffer.length !== receivedBuffer.length) return false;
+
+      return crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
     } catch {
       return false;
     }
   },
-
-  // ── Registration ────────────────────────────────────────────────────────────
 
   async register({ user_id, url, events, secret }) {
     const validEvents = Object.values(WEBHOOK_EVENTS);
@@ -126,8 +149,6 @@ const WebhookService = {
     await Webhook.update(id, { secret: newSecret });
     return { secret: newSecret };
   },
-
-  // ── Delivery ─────────────────────────────────────────────────────────────────
 
   async dispatch(eventType, data, user_id = null) {
     const webhooks = await Webhook.findActive(user_id || undefined);
