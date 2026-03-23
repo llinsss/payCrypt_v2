@@ -292,55 +292,69 @@ const Transaction = {
       .sum("usd_value as amount");
   },
 
-  async update(id, transactionData, trx = null) {
-    const oldTransaction = await this.findById(id);
-    const query = trx || db;
+async update(id, transactionData, trx = null) {
+  const query = trx || db;
 
-    if (transactionData.metadata !== undefined) {
-      const metadata = transactionData.metadata;
+  // Fetch old transaction using trx (no cache)
+  const oldTransaction = await query("transactions")
+    .where({ id })
+    .first();
 
-      if (typeof metadata !== "object" || Array.isArray(metadata)) {
-        throw new Error("Metadata must be a valid JSON object");
-      }
+  if (!oldTransaction) {
+    throw new Error("Transaction not found");
+  }
 
-      const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
-      if (size > 2048) {
-        throw new Error("Metadata exceeds 2KB limit");
-      }
+  if (transactionData.metadata !== undefined) {
+    const metadata = transactionData.metadata;
+
+    if (typeof metadata !== "object" || Array.isArray(metadata)) {
+      throw new Error("Metadata must be a valid JSON object");
     }
 
-    if (transactionData.notes !== undefined && transactionData.notes !== null) {
-      if (typeof transactionData.notes !== "string") {
-        throw new Error("Notes must be a string");
-      }
-      if (transactionData.notes.length > 1000) {
-        throw new Error("Notes must be at most 1000 characters");
-      }
+    const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+    if (size > 2048) {
+      throw new Error("Metadata exceeds 2KB limit");
     }
+  }
 
-    await query("transactions")
-      .where({ id })
-      .update({
-        ...transactionData,
-        updated_at: db.fn.now(),
-      });
-
-    const updatedTransaction = await this.findById(id);
-
-    // Invalidate caches after update
-    await cacheDel(CacheKeys.byId(id));
-    if (updatedTransaction?.user_id) await invalidateUserLists(updatedTransaction.user_id);
-
-    if (transactionData.status && oldTransaction.status !== transactionData.status) {
-      WebhookService.sendStatusChangeWebhook(
-        updatedTransaction,
-        oldTransaction.status,
-        transactionData.status
-      ).catch(console.error);
+  if (transactionData.notes !== undefined && transactionData.notes !== null) {
+    if (typeof transactionData.notes !== "string") {
+      throw new Error("Notes must be a string");
     }
+    if (transactionData.notes.length > 1000) {
+      throw new Error("Notes must be at most 1000 characters");
+    }
+  }
 
-    return updatedTransaction;
-  },
+  await query("transactions")
+    .where({ id })
+    .update({
+      ...transactionData,
+      updated_at: db.fn.now(),
+    });
+
+  const updatedTransaction = await this.findById(id);
+
+  // Invalidate cache
+  await cacheDel(CacheKeys.byId(id));
+  if (updatedTransaction?.user_id) {
+    await invalidateUserLists(updatedTransaction.user_id);
+  }
+
+  // Webhook trigger
+  if (
+    transactionData.status &&
+    oldTransaction.status !== transactionData.status
+  ) {
+    WebhookService.sendStatusChangeWebhook(
+      updatedTransaction,
+      oldTransaction.status,
+      transactionData.status
+    ).catch(console.error);
+  }
+
+  return updatedTransaction;
+},
 
 
 
