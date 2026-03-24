@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import redis from "../config/redis.js";
+import ExchangeRateService from "../services/exchange-rate-api.js";
 
 // Cache TTL in seconds
 const CACHE_TTL = {
@@ -34,12 +35,12 @@ const invalidateUserCache = async (userId) => {
 const Balance = {
   async create(balanceData) {
     const [id] = await db("balances").insert(balanceData);
-    
+
     // Invalidate cache for the user
     if (balanceData.user_id) {
       await invalidateUserCache(balanceData.user_id);
     }
-    
+
     return this.findById(id);
   },
 
@@ -72,7 +73,8 @@ const Balance = {
         "tokens.name as token_name",
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
-        "tokens.price as token_price"
+        "tokens.price as token_price",
+        "users.currency_preference"
       )
       .leftJoin("users", "balances.user_id", "users.id")
       .leftJoin("tokens", "balances.token_id", "tokens.id")
@@ -81,6 +83,14 @@ const Balance = {
 
     // Cache the result
     if (balance) {
+      // Add converted value
+      const preferredCurrency = balance.currency_preference || "USD";
+      balance.preferred_value = await ExchangeRateService.convertFromUSD(
+        balance.usd_value,
+        preferredCurrency
+      );
+      balance.currency = preferredCurrency;
+
       try {
         await redis.set(cacheKey, JSON.stringify(balance), "EX", CACHE_TTL.BALANCE_BY_ID);
       } catch (error) {
@@ -142,7 +152,8 @@ const Balance = {
         "tokens.name as token_name",
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
-        "tokens.price as token_price"
+        "tokens.price as token_price",
+        "users.currency_preference"
       )
       .leftJoin("users", "balances.user_id", "users.id")
       .leftJoin("tokens", "balances.token_id", "tokens.id")
@@ -179,14 +190,26 @@ const Balance = {
         "tokens.name as token_name",
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
-        "tokens.price as token_price"
+        "tokens.price as token_price",
+        "users.currency_preference"
       )
       .leftJoin("users", "balances.user_id", "users.id")
       .leftJoin("tokens", "balances.token_id", "tokens.id")
       .where("balances.user_id", userId);
 
     // Cache the result
-    if (balances) {
+    if (balances && balances.length > 0) {
+      await Promise.all(
+        balances.map(async (b) => {
+          const preferredCurrency = b.currency_preference || "USD";
+          b.preferred_value = await ExchangeRateService.convertFromUSD(
+            b.usd_value,
+            preferredCurrency
+          );
+          b.currency = preferredCurrency;
+        })
+      );
+
       try {
         await redis.set(cacheKey, JSON.stringify(balances), "EX", CACHE_TTL.BALANCE_BY_USER);
       } catch (error) {
@@ -198,7 +221,7 @@ const Balance = {
   },
   async getByUser(userId, limit = 10, offset = 0) {
     // Optimized query using composite index for user_id + created_at
-    return await db("balances")
+    const balances = await db("balances")
       .select(
         "balances.id",
         "balances.user_id",
@@ -214,7 +237,8 @@ const Balance = {
         "tokens.name as token_name",
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
-        "tokens.price as token_price"
+        "tokens.price as token_price",
+        "users.currency_preference"
       )
       .leftJoin("users", "balances.user_id", "users.id")
       .leftJoin("tokens", "balances.token_id", "tokens.id")
@@ -222,6 +246,19 @@ const Balance = {
       .orderBy("balances.created_at", "desc")
       .limit(limit)
       .offset(offset);
+
+    await Promise.all(
+      balances.map(async (b) => {
+        const preferredCurrency = b.currency_preference || "USD";
+        b.preferred_value = await ExchangeRateService.convertFromUSD(
+          b.usd_value,
+          preferredCurrency
+        );
+        b.currency = preferredCurrency;
+      })
+    );
+
+    return balances;
   },
 
   async totalBalance() {
@@ -262,13 +299,21 @@ const Balance = {
       console.warn("Cache read failed:", error.message);
     }
 
-    // Use composite index for user_id + usd_value
     const result = await db("balances")
       .where("user_id", userId)
       .sum("usd_value as amount");
 
-    // Cache the result
-    if (result) {
+    if (result && result[0]) {
+      const user = await db("users").where({ id: userId }).select("currency_preference").first();
+      const preferredCurrency = user?.currency_preference || "USD";
+      const usdAmount = Number(result[0].amount || 0);
+
+      result[0].preferred_amount = await ExchangeRateService.convertFromUSD(
+        usdAmount,
+        preferredCurrency
+      );
+      result[0].currency = preferredCurrency;
+
       try {
         await redis.set(cacheKey, JSON.stringify(result), "EX", CACHE_TTL.TOTAL_BALANCE);
       } catch (error) {
@@ -281,27 +326,27 @@ const Balance = {
 
   async credit(id, amount) {
     await db("balances").where({ id }).increment("amount", amount);
-    
+
     // Invalidate cache
     const balance = await db("balances").where({ id }).first();
     if (balance) {
       await invalidateUserCache(balance.user_id);
       await redis.del(cacheKeys.balanceById(id));
     }
-    
+
     return this.findById(id);
   },
 
   async debit(id, amount) {
     await db("balances").where({ id }).decrement("amount", amount);
-    
+
     // Invalidate cache
     const balance = await db("balances").where({ id }).first();
     if (balance) {
       await invalidateUserCache(balance.user_id);
       await redis.del(cacheKeys.balanceById(id));
     }
-    
+
     return this.findById(id);
   },
 
@@ -312,7 +357,7 @@ const Balance = {
         ...balanceData,
         updated_at: db.fn.now(),
       });
-    
+
     // Invalidate cache
     const balance = await db("balances").where({ id }).first();
     if (balance) {
@@ -322,16 +367,16 @@ const Balance = {
         await redis.del(cacheKeys.balanceByUserToken(balance.user_id, balance.token_id));
       }
     }
-    
+
     return this.findById(id);
   },
 
   async delete(id) {
     // Get balance before deletion for cache invalidation
     const balance = await db("balances").where({ id }).first();
-    
+
     const result = await db("balances").where({ id }).del();
-    
+
     // Invalidate cache
     if (balance) {
       await invalidateUserCache(balance.user_id);
@@ -340,7 +385,7 @@ const Balance = {
         await redis.del(cacheKeys.balanceByUserToken(balance.user_id, balance.token_id));
       }
     }
-    
+
     return result;
   },
 };

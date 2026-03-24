@@ -1,7 +1,7 @@
 export async function up(knex) {
   return knex.schema.createTable("api_keys", (table) => {
     table.increments("id").primary();
-    table.uuid("user_id").notNullable();
+    table.integer("user_id").unsigned().notNullable();
     table.string("key", 255).notNullable().unique().index();
     table.string("name", 255).notNullable(); // Friendly name for the API key
     table.string("scopes", 500); // Comma-separated scopes: read,write,payments

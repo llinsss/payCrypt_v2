@@ -1,6 +1,42 @@
 import winston from 'winston';
+import Transport from 'winston-transport';
 import 'winston-daily-rotate-file';
 import path from 'path';
+import * as Sentry from '@sentry/node';
+
+class SentryTransport extends Transport {
+  constructor(opts) {
+    super(opts);
+  }
+
+  log(info, callback) {
+    setImmediate(() => this.emit('logged', info));
+
+    const { message, stack, requestId, fingerprint, ...meta } = info;
+
+    // Clean metadata to avoid sending redundant info
+    const extraMeta = { ...meta };
+    delete extraMeta.level;
+    delete extraMeta.timestamp;
+
+    Sentry.withScope((scope) => {
+      if (requestId) scope.setTag('requestId', requestId);
+      if (fingerprint) scope.setFingerprint(fingerprint);
+
+      if (Object.keys(extraMeta).length > 0) {
+        scope.setExtra('metadata', extraMeta);
+      }
+
+      // If info contains a direct Error object we use it, otherwise create one from message string
+      const err = info.error instanceof Error ? info.error : new Error(message || 'Unknown Error');
+      if (stack) err.stack = stack;
+
+      Sentry.captureException(err);
+    });
+
+    callback();
+  }
+}
 
 const { combine, timestamp, json, printf, colorize } = winston.format;
 
@@ -49,6 +85,7 @@ const logger = winston.createLogger({
       level: 'info',
       dirname: path.join(process.cwd(), 'logs'),
     }),
+    new SentryTransport({ level: 'error' }),
   ],
 });
 

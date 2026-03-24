@@ -1,4 +1,7 @@
-import db from "../config/database.js";
+import db, {
+  getPoolMetrics,
+  checkConnectionHealth,
+} from "../config/database.js";
 import redis from "../config/redis.js";
 import { checkStellarHealth } from "../services/stellarMonitor.js";
 
@@ -7,34 +10,48 @@ import { checkStellarHealth } from "../services/stellarMonitor.js";
  */
 
 export const checkDatabaseConnection = async () => {
-  const start = Date.now();
-  try {
-    await db.raw("SELECT 1");
-    return {
-      healthy: true,
-      latencyMs: Date.now() - start,
-      message: "Database connection successful",
-    };
-  } catch (error) {
-    console.error("Database connection failed:", error);
-    return {
-      healthy: false,
-      latencyMs: Date.now() - start,
-      message: error.message,
-    };
-  }
+  const result = await checkConnectionHealth();
+  return {
+    healthy: result.healthy,
+    latencyMs: result.latencyMs,
+    message: result.healthy
+      ? "Database connection successful"
+      : result.error ?? "Database connection failed",
+    pool: result.pool ?? undefined,
+  };
 };
 
 export const getConnectionPoolStats = () => {
   try {
-    const pool = db.client.pool;
+    const poolMetrics = getPoolMetrics();
+    if (poolMetrics) {
+      return {
+        ...poolMetrics,
+        min: db.client?.config?.pool?.min ?? 2,
+      };
+    }
+    const pool = db.client?.pool;
+    if (!pool) return { error: "Pool not available" };
+    const used = typeof pool.numUsed === "function" ? pool.numUsed() : null;
+    const free = typeof pool.numFree === "function" ? pool.numFree() : null;
+    const max = pool.max ?? db.client?.config?.pool?.max ?? 10;
+    const utilizationPercent =
+      max > 0 && used != null ? Math.round((used / max) * 100) : null;
     return {
-      min: pool.min,
-      max: pool.max,
-      numUsed: pool.numUsed(),
-      numFree: pool.numFree(),
-      numPendingAcquires: pool.numPendingAcquires(),
-      numPendingCreates: pool.numPendingCreates(),
+      used,
+      free,
+      total: used != null && free != null ? used + free : null,
+      max,
+      pendingAcquires:
+        typeof pool.numPendingAcquires === "function"
+          ? pool.numPendingAcquires()
+          : null,
+      pendingCreates:
+        typeof pool.numPendingCreates === "function"
+          ? pool.numPendingCreates()
+          : null,
+      utilizationPercent,
+      error: used == null && free == null ? "Pool stats not available" : undefined,
     };
   } catch (error) {
     console.error("Failed to get connection pool stats:", error);

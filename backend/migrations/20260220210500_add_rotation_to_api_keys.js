@@ -5,7 +5,7 @@ export async function up(knex) {
     table.timestamp("next_rotation_at").nullable();
     table.timestamp("transition_ends_at").nullable();
     table.timestamp("last_rotated_at").nullable();
-    
+
     table.index("next_rotation_at");
     table.index("transition_ends_at");
   });
@@ -14,14 +14,14 @@ export async function up(knex) {
   await knex.schema.createTable("api_key_audit_logs", (table) => {
     table.increments("id").primary();
     table.integer("api_key_id").unsigned().notNullable();
-    table.uuid("user_id").notNullable();
+    table.integer("user_id").unsigned().notNullable();
     table.string("action").notNullable();
     table.jsonb("metadata").nullable();
     table.timestamp("created_at").defaultTo(knex.fn.now());
 
     table.foreign("api_key_id").references("id").inTable("api_keys").onDelete("CASCADE");
     table.foreign("user_id").references("id").inTable("users").onDelete("CASCADE");
-    
+
     table.index("api_key_id");
     table.index("user_id");
   });

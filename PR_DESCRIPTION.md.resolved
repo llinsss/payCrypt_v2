@@ -1,0 +1,48 @@
+# PR Description: Implement Multi-Currency Support (#96)
+
+## Overview
+This PR implements comprehensive multi-currency support (USD, EUR, GBP, NGN) across the application. It includes real-time exchange rate fetching with Redis caching, user currency preferences, and dynamic balance conversion in all financial reports.
+
+## Related Issue
+Fixes #96
+
+## Changes
+### ⚙️ Backend Services
+- **[MODIFY]** [backend/services/exchange-rate-api.js](file:///Users/mac/Documents/github/payCrypt_v2/backend/services/exchange-rate-api.js): 
+  - Refactored into a robust service with real-time API integration (ExchangeRate-API).
+  - Implemented Redis caching with 1-hour TTL.
+  - Added high-availability fallbacks for currency conversion.
+
+### 📊 Backend Models
+- **[MODIFY]** [backend/models/User.js](file:///Users/mac/Documents/github/payCrypt_v2/backend/models/User.js): Added support for `currency_preference`.
+- **[MODIFY]** [backend/models/Balance.js](file:///Users/mac/Documents/github/payCrypt_v2/backend/models/Balance.js): 
+  - Updated retrieval methods to dynamically convert balances into the user's preferred currency.
+  - Automatically appends `preferred_value` and `currency` fields to response objects.
+
+### 🎮 Backend Controllers & Routes
+- **[MODIFY]** [backend/controllers/balanceController.js](file:///Users/mac/Documents/github/payCrypt_v2/backend/controllers/balanceController.js): Removed legacy hardcoded NGN logic in favor of the new dynamic conversion service.
+- **[MODIFY]** [backend/controllers/userController.js](file:///Users/mac/Documents/github/payCrypt_v2/backend/controllers/userController.js): Updated `dashboard_summary` to include `total_balance_preferred`.
+- **[MODIFY]** [backend/controllers/generalController.js](file:///Users/mac/Documents/github/payCrypt_v2/backend/controllers/generalController.js): Added `get_exchange_rates` and `convert_currency` endpoints.
+
+### 🛠 Database & Migrations
+- **[NEW]** `backend/migrations/20260220174000_add_currency_to_users.js`: Added `currency_preference` column.
+- **[FIX]** Resolved multiple legacy migration issues:
+  - Converted CommonJS migrations to **ESM format** (fixing scope errors).
+  - Fixed **foreign key type mismatches** (`uuid` ➡️ `integer`) in `api_keys` and `audit_logs` tables.
+
+## Verification Results
+Verified the conversion engine and database integrity.
+
+| Feature | Status |
+|---|---|
+| Exchange Rate Fetching | ✅ Passed |
+| Redis Caching | ✅ Passed |
+| USD -> NGN/EUR/GBP Conversion | ✅ Passed |
+| Database Migrations (Fresh Setup) | ✅ Passed |
+| API Dashboard Response | ✅ Passed |
+
+## How to Test
+1. Run migrations: `npm run migrate`.
+2. Update your profile currency (e.g., to 'EUR').
+3. Call `GET /api/user/dashboard-summary` and verify the `total_balance_preferred` field.
+4. Use `GET /api/general/exchange-rates` to see current network rates.

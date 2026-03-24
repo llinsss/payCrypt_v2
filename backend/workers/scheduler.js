@@ -4,6 +4,7 @@ import ScheduledPayment from "../models/ScheduledPayment.js";
 import Notification from "../models/Notification.js";
 import PaymentService from "../services/PaymentService.js";
 import { apiKeyRotationQueue } from "./apiKeyRotationWorker.js";
+import { reconciliationQueue, registerReconciliationJob } from "./reconciliation.js";
 
 // ========== Queues ==========
 
@@ -205,6 +206,8 @@ async function registerRepeatableJobs() {
         );
         console.log("🔑 API key rotation worker registered (every 1h)");
     }
+
+    await registerReconciliationJob();
 }
 
 // Register jobs on startup

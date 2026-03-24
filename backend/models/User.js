@@ -103,6 +103,7 @@ const User = {
         "photo",
         "email",
         "kyc_status",
+        "currency_preference",
         "created_at"
       )
       .limit(limit)

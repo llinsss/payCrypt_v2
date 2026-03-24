@@ -1,4 +1,6 @@
 import express from "express";
+import * as Sentry from "@sentry/node";
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
@@ -8,11 +10,12 @@ import hpp from "hpp";
 import xss from "xss-clean";
 import basicAuth from "express-basic-auth";
 import mongoSanitize from "express-mongo-sanitize";
-import transactionTagRoutes from "./routes/transactionTagRoutes.js";
 
 import indexRoutes from "./routes/index.js";
 import generalRoutes from "./routes/general.js";
 import bullBoardRouter from "./bullboard.js";
+import swaggerJsdoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
 
 import {
   SIX_HOURS,
@@ -21,8 +24,9 @@ import {
 } from "./config/initials.js";
 
 import { performanceMonitor } from "./middleware/performance.js";
+import { versionDetection } from "./middleware/apiVersion.js";
 import logger, { stream } from "./utils/logger.js";
-import { sanitizeRequest } from "./middleware/validation.js";
+import { sanitizeRequest, detectSqlInjection } from "./middleware/validation.js";
 
 import {
   globalLimiter,
@@ -35,6 +39,26 @@ import {
 dotenv.config();
 
 const app = express();
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV || "development",
+  integrations: [
+    nodeProfilingIntegration(),
+  ],
+  // Performance Monitoring
+  tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
+  profilesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
+});
+
+// Custom Sentry Middleware to attach context
+app.use((req, res, next) => {
+  // Try to use Sentry's newer IsolationScope if available, otherwise just use setContext safely.
+  // Actually, Express requests run in their own async context in Node, so we can do this:
+  Sentry.setContext("request_body", req.body || {});
+  Sentry.setContext("request_query", req.query || {});
+  next();
+});
 
 // ===== SECURITY MIDDLEWARE =====
 
@@ -65,6 +89,7 @@ const corsOptions = {
   optionsSuccessStatus: 200,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-request-id"],
+  exposedHeaders: ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"],
   maxAge: 3600,
 };
 app.use(cors(corsOptions));
@@ -102,6 +127,9 @@ app.use(compression({
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// Detect SQL Injection attempts
+app.use(detectSqlInjection);
+
 // Sanitize all request inputs
 app.use(sanitizeRequest);
 
@@ -115,6 +143,9 @@ if (process.env.NODE_ENV === "development") {
 
 // Performance Monitoring
 app.use(performanceMonitor);
+
+// API Version Detection
+app.use('/api', versionDetection);
 
 
 // ===== ROUTES =====
@@ -135,6 +166,11 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Test route for user verification of Sentry
+app.get("/test-error", (req, res) => {
+  throw new Error("Sentry Test Error manually triggered");
+});
+
 import tagRoutes from "./routes/tagRoutes.js";
 
 app.use("/", generalRoutes);
@@ -151,15 +187,58 @@ app.use(
   bullBoardRouter.getRouter()
 );
 
+// Swagger Documentation setup
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "Tagg@d API",
+      version: "1.0.0",
+      description: "API documentation for the Tagg@d backend",
+    },
+    servers: [
+      {
+        url: `http://localhost:${process.env.PORT || 5002}`,
+        description: "Development Server",
+      },
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
+    },
+  },
+  apis: ["./routes/*.js"], // Path to the API docs
+};
+
+const swaggerDocs = swaggerJsdoc(swaggerOptions);
+
+app.use(
+  "/api-docs",
+  basicAuth({
+    users: { admin: process.env.SWAGGER_ADMIN_PASS || "tagg@d" },
+    challenge: true,
+  }),
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerDocs)
+);
+
 // ===== ERROR HANDLING =====
 
 app.all("*", (req, res, next) => {
-  res.status(404).json({ 
+  res.status(404).json({
     message: `Route ${req.originalUrl} not found`,
     path: req.originalUrl,
     method: req.method,
   });
 });
+
+// Setup Sentry error handler
+Sentry.setupExpressErrorHandler(app);
 
 // Global error handler
 app.use((error, req, res, next) => {
@@ -186,4 +265,3 @@ app.use((error, req, res, next) => {
 
 export default app;
 
-app.use("/api/transaction-tags", transactionTagRoutes);
