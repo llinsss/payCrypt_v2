@@ -15,6 +15,7 @@ import { ethers } from "ethers";
 import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
+import { transactionConfirmationQueue } from "../queues/transactionConfirmation.js";
 
 export const getWalletByUserId = async (req, res) => {
   try {
@@ -146,7 +147,7 @@ export const send_to_tag = async (req, res) => {
     await Promise.all([
       Transaction.create({
         user_id: user.id,
-        status: "completed",
+        status: "pending",
         token_id: balance.token_id,
         chain_id: token.id,
         reference,
@@ -161,12 +162,12 @@ export const send_to_tag = async (req, res) => {
       }),
       Notification.create({
         user_id: user.id,
-        title: "Fund transfer",
-        body: `You transferred ${amount} ${token.symbol} to ${receiver_tag}`,
+        title: "Fund transfer initiated",
+        body: `Transfer of ${amount} ${token.symbol} to ${receiver_tag} is being processed`,
       }),
       Transaction.create({
         user_id: recipient.id,
-        status: "completed",
+        status: "pending",
         token_id: balance.token_id,
         chain_id: token.chain_id,
         reference: secureRandomString(16),
@@ -179,12 +180,21 @@ export const send_to_tag = async (req, res) => {
         to_address: receiver_tag,
         description: "Fund received",
       }),
-      Notification.create({
-        user_id: recipient.id,
-        title: "Fund received",
-        body: `You received ${amount} ${token.symbol} from ${sender_tag}`,
-      }),
     ]);
+
+    // Enqueue transaction confirmation job
+    if (transactionConfirmationQueue) {
+      await transactionConfirmationQueue.add(
+        "confirm-transaction",
+        {
+          txHash,
+          chain: token.chain_id || chain,
+        },
+        {
+          delay: 10000, // Start checking after 10 seconds
+        }
+      );
+    }
 
     return res.json({ data: "success", txHash });
   } catch (error) {
@@ -245,7 +255,7 @@ export const send_to_wallet = async (req, res) => {
     await Promise.all([
       Transaction.create({
         user_id: user.id,
-        status: "completed",
+        status: "pending",
         token_id: balance.token_id,
         chain_id: token.id,
         reference,
@@ -260,15 +270,15 @@ export const send_to_wallet = async (req, res) => {
       }),
       Notification.create({
         user_id: user.id,
-        title: "Fund transfer",
-        body: `You transferred ${amount} ${token.symbol} to ${receiver_address}`,
+        title: "Fund transfer initiated",
+        body: `Transfer of ${amount} ${token.symbol} to ${receiver_address} is being processed`,
       }),
     ]);
     if (recipient) {
       await Promise.all([
         Transaction.create({
           user_id: recipient.id,
-          status: "completed",
+          status: "pending",
           token_id: balance.token_id,
           chain_id: token.chain_id,
           reference: secureRandomString(16),
@@ -281,12 +291,21 @@ export const send_to_wallet = async (req, res) => {
           to_address: receiver_address,
           description: "Fund received",
         }),
-        Notification.create({
-          user_id: recipient.id,
-          title: "Fund received",
-          body: `You received ${amount} ${token.symbol} from ${sender_address}`,
-        }),
       ]);
+    }
+
+    // Enqueue transaction confirmation job
+    if (transactionConfirmationQueue) {
+      await transactionConfirmationQueue.add(
+        "confirm-transaction",
+        {
+          txHash,
+          chain: token.chain_id || chain,
+        },
+        {
+          delay: 10000, // Start checking after 10 seconds
+        }
+      );
     }
 
     return res.json({ data: "success", txHash });
