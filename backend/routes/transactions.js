@@ -11,11 +11,15 @@ import {
   getPaymentLimits,
   getPaymentHistory
 } from "../controllers/transactionController.js";
+import {
+  createBatchPayment,
+  getBatchPaymentStatus,
+} from "../controllers/batchController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
-import { processPaymentSchema } from "../schemas/payment.js";
+import { batchPaymentSchema, processPaymentSchema } from "../schemas/payment.js";
 import { paymentLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
@@ -28,7 +32,9 @@ router.delete("/:id", authenticate, paymentLimiter, auditLog("transactions"), de
 
 // Payment operations
 router.post("/payment", authenticate, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
+router.post("/batches", authenticate, paymentLimiter, validate(batchPaymentSchema), auditLog("transactions"), createBatchPayment);
 router.get("/payment/limits", getPaymentLimits);
+router.get("/batches/:id", authenticate, getBatchPaymentStatus);
 router.get("/tag/:tag/history", getPaymentHistory);
 
 export default router;

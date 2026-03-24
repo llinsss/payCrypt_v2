@@ -7,7 +7,6 @@ import {
   CheckCircle,
   AlertCircle,
   QrCode,
-  User,
   Sparkles,
   AtSign,
 } from "lucide-react";
@@ -462,21 +461,6 @@ const TokenCard: React.FC<{
       </div>
     )}
   </button>
-);
-
-// Enhanced Reusable Components
-const InfoCard: React.FC<{
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  bg: string;
-  border: string;
-}> = ({ icon, children, bg, border }) => (
-  <div className={`${bg} rounded-2xl p-6 border ${border} backdrop-blur-sm`}>
-    <div className="flex items-start space-x-4">
-      <div className="p-3 bg-white/60 rounded-xl">{icon}</div>
-      <div className="flex-1">{children}</div>
-    </div>
-  </div>
 );
 
 const ActionButton: React.FC<{

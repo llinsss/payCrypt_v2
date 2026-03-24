@@ -124,6 +124,6 @@ export interface AdminStats {
 
 export interface WebSocketMessage {
   type: "balance_update" | "transaction_update" | "system_alert";
-  data: any;
+  data: Record<string, unknown>;
   timestamp: string;
 }

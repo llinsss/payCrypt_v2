@@ -11,7 +11,6 @@ import {
   Plus,
   QrCode,
   RefreshCcw,
-  Receipt,
 } from "lucide-react";
 import TransactionTable from "./TransactionTable";
 import { apiClient } from "../../utils/api";
