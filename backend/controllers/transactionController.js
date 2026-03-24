@@ -287,7 +287,17 @@ export const processPayment = async (req, res) => {
       });
     }
 
-    const { senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, senderSecret, additionalSecrets = [] } = value;
+    const {
+      senderTag,
+      recipientTag,
+      amount,
+      asset = 'XLM',
+      assetIssuer,
+      memo,
+      notes,
+      senderSecret,
+      additionalSecrets = [],
+    } = value;
     const userId = req.user.id;
 
     // Combine secrets
@@ -301,6 +311,7 @@ export const processPayment = async (req, res) => {
       asset,
       assetIssuer,
       memo,
+      notes,
       secrets,
       userId
     });
