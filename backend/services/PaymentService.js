@@ -377,7 +377,7 @@ class PaymentService {
    * @returns {Object} payment result with transaction ID and hash
    * @throws {Error} if payment processing fails
    */
-  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, secrets, userId, idempotencyKey }) {
+  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, notes, secrets, userId, idempotencyKey }) {
     // ── Duplicate detection (fast-fail, before opening a DB transaction) ──────
     const fingerprint = this._fingerprintTransaction({ userId, senderTag, recipientTag, amount, asset });
     const duplicate = await this._checkDuplicate(fingerprint);
