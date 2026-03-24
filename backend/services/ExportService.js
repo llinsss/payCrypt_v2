@@ -3,7 +3,7 @@ import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import { generateCsv } from "./CsvGenerator.js";
 import { generatePdf } from "./PdfGenerator.js";
-import jwt from "jsonwebtoken";
+import { signToken, verifyToken } from "../config/jwt.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -26,9 +26,8 @@ function getExportStoragePath() {
 function buildDownloadUrl(exportId, userId) {
   const baseUrl = process.env.API_BASE_URL || process.env.FRONTEND_URL || `http://localhost:${process.env.PORT || 3000}`;
   const apiBase = baseUrl.replace(/\/$/, "");
-  const token = jwt.sign(
+  const token = signToken(
     { exportId, userId },
-    process.env.JWT_SECRET,
     { expiresIn: DOWNLOAD_TOKEN_EXPIRY }
   );
   return `${apiBase}/api/transactions/export/download?token=${encodeURIComponent(token)}`;
@@ -99,7 +98,7 @@ export default {
 
   async serveDownload(token) {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = verifyToken(token);
       const { exportId, userId } = decoded;
 
       const exportRecord = await db("export_exports")
