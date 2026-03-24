@@ -59,6 +59,13 @@ export const processPaymentSchema = Joi.object({
       'any.required': 'Sender secret key is required'
     }),
 
+  notes: Joi.string()
+    .max(500)
+    .allow(null, '')
+    .messages({
+      'string.max': 'Notes must be 500 characters or less'
+    }),
+
   additionalSecrets: Joi.array()
     .items(
       Joi.string()
