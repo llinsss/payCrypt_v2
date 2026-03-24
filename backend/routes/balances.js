@@ -142,6 +142,6 @@ router.delete("/:id", authenticate, deleteBalance);
  *       200:
  *         description: Tag balance
  */
-router.get("/tag/:tag", balanceQueryLimiter, getBalanceByTag);
+router.get("/tag/:tag", authenticate, balanceQueryLimiter, getBalanceByTag);
 
 export default router;
