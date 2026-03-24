@@ -26,7 +26,10 @@ import {
 import { performanceMonitor } from "./middleware/performance.js";
 import { versionDetection } from "./middleware/apiVersion.js";
 import logger, { stream } from "./utils/logger.js";
-import { sanitizeRequest, detectSqlInjection } from "./middleware/validation.js";
+import {
+  sanitizeRequest,
+  detectSqlInjection,
+} from "./middleware/validation.js";
 
 import {
   globalLimiter,
@@ -43,9 +46,7 @@ const app = express();
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.NODE_ENV || "development",
-  integrations: [
-    nodeProfilingIntegration(),
-  ],
+  integrations: [nodeProfilingIntegration()],
   // Performance Monitoring
   tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
   profilesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
@@ -63,24 +64,26 @@ app.use((req, res, next) => {
 // ===== SECURITY MIDDLEWARE =====
 
 // Helmet for HTTP security headers
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
     },
-  },
-  hsts: {
-    maxAge: 31536000, // 1 year
-    includeSubDomains: true,
-    preload: true,
-  },
-  frameguard: { action: "deny" },
-  xssFilter: true,
-  noSniff: true,
-  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
-}));
+    hsts: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard: { action: "deny" },
+    xssFilter: true,
+    noSniff: true,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  }),
+);
 
 // CORS configuration
 const corsOptions = {
@@ -88,8 +91,18 @@ const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-request-id"],
-  exposedHeaders: ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-api-key",
+    "x-request-id",
+  ],
+  exposedHeaders: [
+    "X-RateLimit-Limit",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "Retry-After",
+  ],
   maxAge: 3600,
 };
 app.use(cors(corsOptions));
@@ -104,24 +117,28 @@ app.use(xss());
 app.use(mongoSanitize());
 
 // Prevent HTTP parameter pollution
-app.use(hpp({
-  whitelist: [
-    // Add query params that should be allowed as arrays
-    "sort",
-    "fields",
-    "filter",
-  ],
-}));
+app.use(
+  hpp({
+    whitelist: [
+      // Add query params that should be allowed as arrays
+      "sort",
+      "fields",
+      "filter",
+    ],
+  }),
+);
 
 // Compression (gzip responses)
-app.use(compression({
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) return false;
-    return compression.filter(req, res);
-  },
-  threshold: 1024, // Only compress responses > 1KB
-  level: 6, // Compression level (0-9, 6 is default balance)
-}));
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.headers["x-no-compression"]) return false;
+      return compression.filter(req, res);
+    },
+    threshold: 1024, // Only compress responses > 1KB
+    level: 6, // Compression level (0-9, 6 is default balance)
+  }),
+);
 
 // Request body parsing with size limits
 app.use(express.json({ limit: "10mb" }));
@@ -145,8 +162,7 @@ if (process.env.NODE_ENV === "development") {
 app.use(performanceMonitor);
 
 // API Version Detection
-app.use('/api', versionDetection);
-
+app.use("/api", versionDetection);
 
 // ===== ROUTES =====
 
@@ -187,7 +203,7 @@ app.use(
     users: { [process.env.BULL_ADMIN_USER]: process.env.BULL_ADMIN_PASS },
     challenge: true,
   }),
-  bullBoardRouter.getRouter()
+  bullBoardRouter.getRouter(),
 );
 
 // Swagger Documentation setup
@@ -221,7 +237,9 @@ const swaggerOptions = {
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 
 if (!process.env.SWAGGER_ADMIN_USER || !process.env.SWAGGER_ADMIN_PASS) {
-  throw new Error("SWAGGER_ADMIN_USER and SWAGGER_ADMIN_PASS env vars must be set");
+  throw new Error(
+    "SWAGGER_ADMIN_USER and SWAGGER_ADMIN_PASS env vars must be set",
+  );
 }
 app.use(
   "/api-docs",
@@ -230,7 +248,7 @@ app.use(
     challenge: true,
   }),
   swaggerUi.serve,
-  swaggerUi.setup(swaggerDocs)
+  swaggerUi.setup(swaggerDocs),
 );
 
 // ===== ERROR HANDLING =====
@@ -248,7 +266,16 @@ Sentry.setupExpressErrorHandler(app);
 
 // Global error handler
 app.use((error, req, res, next) => {
-  console.error(error.stack);
+  const isDev = process.env.NODE_ENV !== "production";
+
+  logger.error({
+    message: error.message,
+    status: error.status || 500,
+    method: req.method,
+    url: req.originalUrl,
+    requestId: req.headers["x-request-id"] || null,
+    ...(isDev && { stack: error.stack }),
+  });
 
   if (error.type === "entity.parse.failed") {
     return res.status(400).json({ error: "Invalid JSON" });
@@ -262,12 +289,8 @@ app.use((error, req, res, next) => {
   }
 
   res.status(error.status || 500).json({
-    error:
-      process.env.NODE_ENV === "production"
-        ? "Internal server error"
-        : error.message,
+    error: isDev ? error.message : "Internal server error",
   });
 });
 
 export default app;
-
