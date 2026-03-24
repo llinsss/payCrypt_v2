@@ -11,7 +11,7 @@ import {
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.js";
-import { balanceCreateSchema } from "../schemas/balance.js";
+import { balanceCreateSchema, balanceUpdateSchema } from "../schemas/balance.js";
 import { balanceQueryLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
@@ -123,7 +123,7 @@ router.get("/sync", authenticate, updateUserBalance);
  *         description: Balance deleted
  */
 router.get("/:id", authenticate, balanceQueryLimiter, getBalanceById);
-router.put("/:id", authenticate, updateBalance);
+router.put("/:id", authenticate, validate(balanceUpdateSchema), updateBalance);
 router.delete("/:id", authenticate, deleteBalance);
 
 /**

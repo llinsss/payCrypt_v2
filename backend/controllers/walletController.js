@@ -58,10 +58,13 @@ export const updateWallet = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updatedWallet = await Wallet.update(id, {
-      auto_convert_threshold: req.body.auto_convert_threshold,
+    // Note: Wallets currently have no user-updatable fields.
+    // auto_convert_threshold is a balance-level setting, not wallet-level.
+    // If you need to update balance settings, use the balance update endpoint.
+    
+    return res.status(400).json({ 
+      error: "No updatable fields available. Use balance endpoints to update balance settings." 
     });
-    res.json(updatedWallet);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

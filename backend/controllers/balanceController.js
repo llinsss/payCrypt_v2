@@ -84,7 +84,14 @@ export const updateBalance = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updatedBalance = await Balance.update(id, req.body);
+    // Only pass validated fields from req.body
+    // Validation middleware ensures only auto_convert_threshold is present
+    const updateData = {};
+    if (req.body.auto_convert_threshold !== undefined) {
+      updateData.auto_convert_threshold = req.body.auto_convert_threshold;
+    }
+
+    const updatedBalance = await Balance.update(id, updateData);
     res.json(updatedBalance);
   } catch (error) {
     res.status(500).json({ error: error.message });
