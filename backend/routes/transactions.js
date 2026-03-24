@@ -21,13 +21,13 @@ import { validate, validateQuery } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
 import { processPaymentSchema } from "../schemas/payment.js";
-import { paymentLimiter, exportLimiter } from "../config/rateLimiting.js";
+import { paymentLimiter, exportLimiter, downloadLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
 router.get("/search", authenticate, userRateLimiter, searchTransactions);
 router.get("/", authenticate, userRateLimiter, getTransactionByUser);
-router.get("/export/download", downloadExport);
+router.get("/export/download", downloadLimiter, downloadExport);
 router.get("/export", authenticateJwtOrApiKey, userRateLimiter, exportLimiter, exportTransactions);
 router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
 router.get("/:id", authenticate, userRateLimiter, getTransactionById);
