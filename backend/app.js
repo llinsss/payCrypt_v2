@@ -178,10 +178,13 @@ app.use("/api", indexRoutes);
 app.use("/api/tags", tagRoutes);
 
 // Admin routes with basic auth and rate limiting
+if (!process.env.BULL_ADMIN_USER || !process.env.BULL_ADMIN_PASS) {
+  throw new Error("BULL_ADMIN_USER and BULL_ADMIN_PASS env vars must be set");
+}
 app.use(
   "/admin/running-queues",
   basicAuth({
-    users: { admin: process.env.BULL_ADMIN_PASS || "tagg@d" },
+    users: { [process.env.BULL_ADMIN_USER]: process.env.BULL_ADMIN_PASS },
     challenge: true,
   }),
   bullBoardRouter.getRouter()
@@ -217,10 +220,13 @@ const swaggerOptions = {
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 
+if (!process.env.SWAGGER_ADMIN_USER || !process.env.SWAGGER_ADMIN_PASS) {
+  throw new Error("SWAGGER_ADMIN_USER and SWAGGER_ADMIN_PASS env vars must be set");
+}
 app.use(
   "/api-docs",
   basicAuth({
-    users: { admin: process.env.SWAGGER_ADMIN_PASS || "tagg@d" },
+    users: { [process.env.SWAGGER_ADMIN_USER]: process.env.SWAGGER_ADMIN_PASS },
     challenge: true,
   }),
   swaggerUi.serve,
