@@ -2,6 +2,16 @@ import rateLimit from "express-rate-limit";
 import redis from "redis";
 import RedisStore from "rate-limit-redis";
 
+export const TIER_LIMITS = {
+  FREE: parseInt(process.env.RATE_LIMIT_FREE_TIER) || 100,
+  PREMIUM: parseInt(process.env.RATE_LIMIT_PREMIUM_TIER) || 1000,
+};
+
+export const RATE_LIMIT_TIERS = {
+  FREE: "FREE",
+  PREMIUM: "PREMIUM",
+};
+
 const redisClient = redis.createClient({
   host: process.env.REDIS_HOST || "localhost",
   port: process.env.REDIS_PORT || 6379,
@@ -192,6 +202,81 @@ export const exportLimiter = createUserRateLimiter({
   message: "Export limit exceeded. You can export up to 5 times per hour.",
 });
 
+/**
+ * Create a tier-based rate limiter middleware
+ * Uses user tier from req.user.tier to determine max requests
+ * If req.apiKey.rate_limit is set, uses that instead of tier limit
+ * @param {Object} options
+ * @param {string} options.type - Rate limit type (for key namespacing)
+ * @param {string} options.message - Error message when limit exceeded
+ * @returns {Function} Express middleware
+ */
+export const createTierRateLimiter = (options = {}) => {
+  const { type = "tier", message = "Too many requests, please try again later" } = options;
+
+  return async (req, res, next) => {
+    const redis = (await import("./redis.js")).default;
+    const tier = req.user?.tier || "FREE";
+    const apiKeyLimit = req.apiKey?.rate_limit;
+    const max = apiKeyLimit !== null && apiKeyLimit !== undefined
+      ? apiKeyLimit
+      : (TIER_LIMITS[tier] || TIER_LIMITS.FREE);
+    const windowMs = 60 * 1000;
+
+    const userId = req.user?.id;
+    const apiKeyId = req.apiKey?.id;
+    const identifier = apiKeyId ? `apikey:${apiKeyId}` : userId ? `user:${userId}` : null;
+
+    if (!identifier) {
+      return next();
+    }
+
+    const key = `ratelimit:${identifier}:${type}`;
+
+    if (typeof redis.zRemRangeByScore !== "function") {
+      return next();
+    }
+
+    try {
+      const now = Date.now();
+      const windowStart = now - windowMs;
+
+      await redis.zRemRangeByScore(key, 0, windowStart);
+      const count = await redis.zCard(key);
+
+      if (count >= max) {
+        res.setHeader("X-RateLimit-Limit", String(max));
+        res.setHeader("X-RateLimit-Remaining", "0");
+        res.setHeader("X-RateLimit-Reset", String(Math.ceil(now / 1000) + Math.ceil(windowMs / 1000)));
+        res.setHeader("Retry-After", String(Math.ceil(windowMs / 1000)));
+        return res.status(429).json({ error: message, tier });
+      }
+
+      const memberId = `${now}-${Math.random().toString(36).slice(2)}`;
+      await redis.zAdd(key, { score: now, value: memberId });
+
+      const expireSeconds = Math.ceil(windowMs / 1000) + 60;
+      if (typeof redis.expire === "function") {
+        await redis.expire(key, expireSeconds);
+      } else if (typeof redis.pExpire === "function") {
+        await redis.pExpire(key, windowMs + 60000);
+      }
+
+      const remaining = Math.max(0, max - count - 1);
+      const resetTime = Math.ceil(now / 1000) + Math.ceil(windowMs / 1000);
+
+      res.setHeader("X-RateLimit-Limit", String(max));
+      res.setHeader("X-RateLimit-Remaining", String(remaining));
+      res.setHeader("X-RateLimit-Reset", String(resetTime));
+
+      next();
+    } catch (err) {
+      console.warn("Tier rate limit check failed, allowing request:", err.message);
+      next();
+    }
+  };
+};
+
 export default {
   globalLimiter,
   accountCreationLimiter,
@@ -202,4 +287,7 @@ export default {
   createUserRateLimiter,
   userRateLimiter,
   exportLimiter,
+  createTierRateLimiter,
+  TIER_LIMITS,
+  RATE_LIMIT_TIERS,
 };

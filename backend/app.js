@@ -188,10 +188,14 @@ app.get("/test-error", (req, res) => {
 });
 
 import tagRoutes from "./routes/tagRoutes.js";
+import rateLimitRoutes from "./routes/rateLimit.js";
 
 app.use("/", generalRoutes);
 app.use("/api", indexRoutes);
 app.use("/api/tags", tagRoutes);
+
+// Rate limit admin routes
+app.use("/admin/rate-limits", rateLimitRoutes);
 
 // Admin routes with basic auth and rate limiting
 if (!process.env.BULL_ADMIN_USER || !process.env.BULL_ADMIN_PASS) {
