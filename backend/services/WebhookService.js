@@ -3,6 +3,7 @@ import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import { webhookQueue } from "../queues/webhook.js";
+import { validateWebhookUrl } from "../utils/validateWebhookUrl.js";
 
 export const WEBHOOK_EVENTS = {
   PAYMENT_COMPLETED: "payment.completed",
@@ -58,6 +59,8 @@ const WebhookService = {
   // ── Registration ────────────────────────────────────────────────────────────
 
   async register({ user_id, url, events, secret }) {
+    await validateWebhookUrl(url);
+
     const validEvents = Object.values(WEBHOOK_EVENTS);
     const invalidEvents = events.filter((e) => !validEvents.includes(e));
     if (invalidEvents.length) {
@@ -103,6 +106,8 @@ const WebhookService = {
       if (invalidEvents.length)
         throw new Error(`Invalid event types: ${invalidEvents.join(", ")}`);
     }
+
+    if (url) await validateWebhookUrl(url);
 
     return Webhook.update(id, {
       ...(url && { url }),

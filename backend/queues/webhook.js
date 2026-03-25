@@ -4,6 +4,7 @@ import axios from "axios";
 import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
+import { validateWebhookUrl } from "../utils/validateWebhookUrl.js";
 
 // ========== Queue ==========
 
@@ -47,6 +48,9 @@ export const webhookWorker = redisConnection
       async (job) => {
         const { webhookId, eventId, url, secret, payload } = job.data;
 
+        // Re-validate URL at delivery time to catch DNS rebinding attacks
+        await validateWebhookUrl(url);
+
         console.log(`⚙️ Delivering webhook ${webhookId} — event: ${payload.event}`);
 
         const signature = signPayload(payload, secret);
@@ -54,6 +58,7 @@ export const webhookWorker = redisConnection
         try {
           const response = await axios.post(url, payload, {
             timeout: TIMEOUT_MS,
+            maxRedirects: 0,
             headers: {
               "Content-Type": "application/json",
               "X-Webhook-Signature": `sha256=${signature}`,
