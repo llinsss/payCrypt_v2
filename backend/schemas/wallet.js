@@ -54,6 +54,16 @@ export const sendToWalletSchema = Joi.object({
 });
 
 /**
+ * Schema for updating wallet settings.
+ * Note: auto_convert_threshold is a balance-level setting, not wallet-level.
+ * This schema currently has no fields but is defined for future wallet updates.
+ */
+export const updateWalletSchema = Joi.object({
+    // Wallet table only has: available_balance, locked_balance (managed by system)
+    // No user-updatable fields currently exist on the wallet table
+}).unknown(false).messages({
+    "object.unknown": "Invalid field provided. Wallets have no user-updatable fields.",
+});
  * Schema for updating wallet metadata (name, notes, etc.).
  * All fields are optional; at least one must be provided.
  */

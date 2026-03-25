@@ -10,6 +10,8 @@ import {
   getBalanceByTag,
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
+import { validate } from "../middleware/validation.js";
+import { balanceCreateSchema, balanceUpdateSchema } from "../schemas/balance.js";
 import { validate, validateParams } from "../middleware/validation.js";
 import { balanceCreateSchema, balanceUpdateSchema } from "../schemas/balance.js";
 import { numericIdParamSchema } from "../validators/customValidators.js";
@@ -123,6 +125,9 @@ router.get("/sync", authenticate, updateUserBalance);
  *       200:
  *         description: Balance deleted
  */
+router.get("/:id", authenticate, balanceQueryLimiter, getBalanceById);
+router.put("/:id", authenticate, validate(balanceUpdateSchema), updateBalance);
+router.delete("/:id", authenticate, deleteBalance);
 router.get("/:id", authenticate, balanceQueryLimiter, validateParams(numericIdParamSchema), getBalanceById);
 router.put("/:id", authenticate, validateParams(numericIdParamSchema), validate(balanceUpdateSchema), updateBalance);
 router.delete("/:id", authenticate, validateParams(numericIdParamSchema), deleteBalance);
