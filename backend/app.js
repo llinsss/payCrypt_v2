@@ -32,13 +32,7 @@ import {
   detectSqlInjection,
 } from "./middleware/validation.js";
 
-import {
-  globalLimiter,
-  accountCreationLimiter,
-  paymentLimiter,
-  balanceQueryLimiter,
-  loginLimiter,
-} from "./config/rateLimiting.js";
+import { rateLimit } from "./middleware/rateLimiter.js";
 
 dotenv.config();
 
@@ -91,7 +85,7 @@ app.use(
 app.use(cors(corsOptions));
 
 // Global rate limiting (applies to all routes)
-app.use(globalLimiter);
+app.use(rateLimit({ endpointName: "api", windowMs: 60 * 60 * 1000, max: 1000 }));
 
 // Prevent XSS attacks
 app.use(xss());
@@ -176,6 +170,8 @@ import rateLimitRoutes from "./routes/rateLimit.js";
 app.use("/", generalRoutes);
 app.use("/api", indexRoutes);
 app.use("/api/tags", tagRoutes);
+import withdrawalRoutes from "./routes/withdrawals.js";
+app.use("/api/withdrawals", withdrawalRoutes);
 
 // Rate limit admin routes
 app.use("/admin/rate-limits", rateLimitRoutes);
