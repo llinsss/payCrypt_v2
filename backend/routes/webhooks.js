@@ -11,8 +11,12 @@ import {
   verifySignature,
 } from "../controllers/webhookController.js";
 import { authenticate } from "../middleware/auth.js";
+import { validateRegister, validateUpdate } from "../middleware/validateWebhook.js";
 
 const router = express.Router();
+
+// Cap payload size for all webhook routes
+router.use(express.json({ limit: "16kb" }));
 
 // Public utility
 router.get("/events", getEventTypes);
@@ -21,10 +25,10 @@ router.post("/verify", verifySignature);
 // Protected routes
 router.use(authenticate);
 
-router.post("/", registerWebhook);
+router.post("/", validateRegister, registerWebhook);
 router.get("/", getUserWebhooks);
 router.get("/:id", getWebhookById);
-router.put("/:id", updateWebhook);
+router.put("/:id", validateUpdate, updateWebhook);
 router.delete("/:id", deleteWebhook);
 router.post("/:id/rotate-secret", rotateSecret);
 router.get("/:id/deliveries", getDeliveryHistory);
