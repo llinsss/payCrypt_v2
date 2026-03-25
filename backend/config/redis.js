@@ -59,5 +59,12 @@ export const getCacheMetrics = () => ({
     : (metrics.hits / (metrics.hits + metrics.misses)).toFixed(4),
 });
 
+// Lock configuration
+export const LOCK_CONFIG = {
+  DEFAULT_TTL: 10000,
+  RETRY_MAX: 10,
+  RETRY_DELAY: 100,
+};
+
 export { redisConnection, subClient, publish };
 export default redis;
