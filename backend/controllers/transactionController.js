@@ -164,7 +164,7 @@ export const getTransactionById = async (req, res) => {
     if (!transaction) {
       return res.status(400).json({ error: "Transaction not found" });
     }
-    // Only allow ttransaction owner to view
+    // Only allow transaction owner to view
     if (transaction.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
@@ -410,7 +410,6 @@ export const processPayment = async (req, res) => {
       notes,
       senderSecret,
       additionalSecrets = [],
-      idempotencyKey
       idempotencyKey,
     } = value;
     const userId = req.user.id;
