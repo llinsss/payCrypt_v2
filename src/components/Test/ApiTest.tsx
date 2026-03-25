@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { checkApiHealth } from '../../utils/api';
 import { authApi } from '../../utils/authApi';
 
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
 const ApiTest: React.FC = () => {
   const [healthStatus, setHealthStatus] = useState<string>('Not checked');
   const [isLoading, setIsLoading] = useState(false);
@@ -31,11 +34,12 @@ const ApiTest: React.FC = () => {
       // This will likely fail since we don't have a test user, but it will test the connection
       await authApi.login({ email: 'test@example.com', password: 'testpass' });
       addResult('✅ Login endpoint is accessible');
-    } catch (error: any) {
-      if (error.message.includes('User not found') || error.message.includes('Invalid credentials')) {
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      if (message.includes('User not found') || message.includes('Invalid credentials')) {
         addResult('✅ Login endpoint is working (expected auth failure)');
       } else {
-        addResult(`❌ Login endpoint error: ${error.message}`);
+        addResult(`❌ Login endpoint error: ${message}`);
       }
     } finally {
       setIsLoading(false);

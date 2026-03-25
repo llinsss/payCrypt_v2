@@ -3,17 +3,12 @@ import { apiClient } from "../../utils/api";
 import { formatCurrency } from "../../utils/amount";
 import {
   ArrowRightLeft,
-  Lock,
-  Unlock,
-  Settings,
   Zap,
   TrendingUp,
   Coins,
   Shield,
-  Sparkles,
   RotateCcw,
   CheckCircle2,
-  AlertCircle,
   Play,
   PieChart,
 } from "lucide-react";
@@ -168,20 +163,17 @@ const MultiCurrencyView: React.FC = () => {
               <StatCard
                 label="Active Currencies"
                 value={balances.length.toString()}
-                color="from-green-400 to-emerald-500"
               />
               <StatCard
                 label="Auto-Convert"
                 value={balances
                   .filter((b) => b.auto_convert_threshold)
                   .length.toString()}
-                color="from-blue-400 to-cyan-500"
               />
               <div className="hidden lg:block">
                 <StatCard
                   label="Total Value"
                   value={formatCurrency(summary?.total_balance ?? 0)}
-                  color="from-purple-400 to-pink-500"
                 />
               </div>
             </div>
@@ -314,8 +306,7 @@ const LoadingSkeleton: React.FC = () => (
 const StatCard: React.FC<{
   label: string;
   value: string;
-  color: string;
-}> = ({ label, value, color }) => (
+}> = ({ label, value }) => (
   <div className="text-center">
     <div className="text-sm text-blue-100 mb-1">{label}</div>
     <div className="text-xl font-bold">{value}</div>
@@ -504,7 +495,6 @@ const ConversionItem = ({
   amount,
   value,
   time,
-  status,
 }: {
   from: string;
   to: string;

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Eye, EyeOff, LogIn, Loader2, UserPlus } from "lucide-react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 
 interface LoginFormData {
@@ -17,11 +17,13 @@ interface RegisterFormData {
   acceptTerms: boolean;
 }
 
-interface LoginFormProps {
-  onSwitchToRegister: () => void;
+interface LoginLocationState {
+  from?: {
+    pathname?: string;
+  };
 }
 
-const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
+const LoginForm: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -32,7 +34,8 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
   const location = useLocation();
 
   // Get the intended destination or default to dashboard
-  const from = (location.state as any)?.from?.pathname || "/";
+  const locationState = location.state as LoginLocationState | null;
+  const from = locationState?.from?.pathname || "/";
 
   const loginForm = useForm<LoginFormData>();
   const registerForm = useForm<RegisterFormData>();

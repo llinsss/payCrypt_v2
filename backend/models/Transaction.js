@@ -479,6 +479,25 @@ async update(id, transactionData, trx = null) {
     return await query;
   },
 
+  async getByBatchId(batchId) {
+    return await db("transactions")
+      .select(
+        "transactions.*",
+        "users.email as user_email",
+        "users.tag as user_tag",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "tokens.logo_url as token_logo_url",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol"
+      )
+      .leftJoin("users", "transactions.user_id", "users.id")
+      .leftJoin("tokens", "transactions.token_id", "tokens.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id")
+      .where("transactions.batch_id", batchId)
+      .orderBy("transactions.batch_item_index", "asc");
+  },
+
   async getByTag(userId, options = {}) {
     const {
       limit = 20,

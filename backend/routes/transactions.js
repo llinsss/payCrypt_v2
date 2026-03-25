@@ -15,20 +15,16 @@ import {
   updateTransactionNote,
   searchTransactions
 } from "../controllers/transactionController.js";
-import { exportTransactions, downloadExport } from "../controllers/exportController.js";
-import { authenticate, authenticateJwtOrApiKey, userRateLimiter } from "../middleware/auth.js";
+import {
+  createBatchPayment,
+  getBatchPaymentStatus,
+} from "../controllers/batchController.js";
+import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
-import {
-  transactionSchema,
-  transactionQuerySchema,
-  transactionSearchQuerySchema,
-  transactionIdParamSchema,
-  transactionTagParamSchema,
-} from "../schemas/transaction.js";
-import { processPaymentSchema } from "../schemas/payment.js";
-import { validateParams } from "../middleware/validation.js";
-import { paymentLimiter, exportLimiter } from "../config/rateLimiting.js";
+import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
+import { batchPaymentSchema, processPaymentSchema } from "../schemas/payment.js";
+import { paymentLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
@@ -42,25 +38,10 @@ router.put("/:id", authenticate, userRateLimiter, paymentLimiter, validateParams
 router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, validateParams(transactionIdParamSchema), auditLog("transactions"), deleteTransaction);
 
 // Payment operations
-router.post("/payment", authenticate, userRateLimiter, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
+router.post("/payment", authenticate, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
+router.post("/batches", authenticate, paymentLimiter, validate(batchPaymentSchema), auditLog("transactions"), createBatchPayment);
 router.get("/payment/limits", getPaymentLimits);
-
-/**
- * @swagger
- * /api/transactions/tag/{tag}/history:
- *   get:
- *     summary: Get payment history by tag
- *     tags: [Transactions]
- *     parameters:
- *       - in: path
- *         name: tag
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Payment history
- */
+router.get("/batches/:id", authenticate, getBatchPaymentStatus);
 router.get("/tag/:tag/history", getPaymentHistory);
 
 export default router;

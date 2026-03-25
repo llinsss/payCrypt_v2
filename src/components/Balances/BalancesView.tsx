@@ -117,7 +117,6 @@ const BalancesView: React.FC = () => {
                   formatCurrency(summary?.total_deposit || 0),
                   "••••••"
                 ))}
-                color="from-green-400 to-emerald-500"
               />
               <StatCard
                 label="Total Withdrawn"
@@ -125,13 +124,11 @@ const BalancesView: React.FC = () => {
                   formatCurrency(summary?.total_withdrawal || 0),
                   "••••••"
                 ))}
-                color="from-orange-400 to-red-500"
               />
               <div className="hidden lg:block">
                 <StatCard
                   label="Active Assets"
                   value={balances.length.toString()}
-                  color="from-purple-400 to-pink-500"
                 />
               </div>
             </div>
@@ -254,8 +251,7 @@ const LoadingSkeleton: React.FC = () => (
 const StatCard: React.FC<{
   label: string;
   value: string;
-  color: string;
-}> = ({ label, value, color }) => (
+}> = ({ label, value }) => (
   <div className="text-center">
     <div className="text-sm text-blue-100 mb-1">{label}</div>
     <div className="text-xl font-bold">{value}</div>
