@@ -5,6 +5,7 @@ import {
   updateUserTier,
   getApiKeyRateLimit,
   updateApiKeyRateLimit,
+  getRateLimitViolations,
 } from "../controllers/rateLimitController.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -21,5 +22,7 @@ router.put("/users/:userId/tier", updateUserTier);
 router.get("/api-keys/:keyId", getApiKeyRateLimit);
 
 router.put("/api-keys/:keyId/rate-limit", updateApiKeyRateLimit);
+
+router.get("/violations", getRateLimitViolations);
 
 export default router;
