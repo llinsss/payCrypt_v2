@@ -15,13 +15,23 @@ import {
   updateTransactionNote,
   searchTransactions
 } from "../controllers/transactionController.js";
-import { authenticate } from "../middleware/auth.js";
-import { validate, validateQuery } from "../middleware/validation.js";
+import {
+  authenticate,
+  authenticateJwtOrApiKey,
+  userRateLimiter
+} from "../middleware/auth.js";
+import { validate, validateQuery, validateParams } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
-import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
-import { processPaymentSchema } from "../schemas/payment.js";
+import {
+  transactionSchema,
+  transactionQuerySchema,
+  transactionIdParamSchema,
+  transactionTagParamSchema
+} from "../schemas/transaction.js";
+import { processPaymentSchema, batchPaymentSchema } from "../schemas/payment.js";
 import { paymentLimiter, exportLimiter, downloadLimiter } from "../config/rateLimiting.js";
 import { idempotency } from "../middleware/idempotency.js";
+import { exportTransactions, downloadExport } from "../controllers/exportController.js";
 
 const router = express.Router();
 
