@@ -208,7 +208,7 @@ describe("POST /transactions/payment validation", () => {
             senderTag: "alice",
             recipientTag: "bob",
             amount: 10,
-            senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         });
         expect(res.status).toBe(200);
     });

@@ -3,6 +3,7 @@ import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import { webhookQueue } from "../queues/webhook.js";
+import WebhookSignature from "../utils/webhookSignature.js";
 
 export const WEBHOOK_EVENTS = {
   PAYMENT_COMPLETED: "payment.completed",
@@ -33,29 +34,18 @@ const WebhookService = {
     );
   },
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   generateSecret() {
     return crypto.randomBytes(32).toString("hex");
   },
 
   generateSignature(payload, secret) {
-    return (
-      "sha256=" +
-      crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex")
-    );
+    return WebhookSignature.generateSignature(payload, secret);
   },
 
+  // FIXED FUNCTION
   verifySignature(payload, signature, secret) {
-    const expected = this.generateSignature(payload, secret);
-    try {
-      return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-    } catch {
-      return false;
-    }
+    return WebhookSignature.verifySignature(payload, signature, secret);
   },
-
-  // ── Registration ────────────────────────────────────────────────────────────
 
   async register({ user_id, url, events, secret }) {
     const validEvents = Object.values(WEBHOOK_EVENTS);
@@ -126,8 +116,6 @@ const WebhookService = {
     await Webhook.update(id, { secret: newSecret });
     return { secret: newSecret };
   },
-
-  // ── Delivery ─────────────────────────────────────────────────────────────────
 
   async dispatch(eventType, data, user_id = null) {
     const webhooks = await Webhook.findActive(user_id || undefined);
