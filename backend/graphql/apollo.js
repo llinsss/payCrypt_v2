@@ -2,7 +2,7 @@ import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import { typeDefs } from './schema.js';
 import { resolvers } from './resolvers.js';
-import jwt from "jsonwebtoken";
+import { verifyToken } from "../config/jwt.js";
 
 /**
  * Count total field selections in an AST document to enforce a complexity limit.
@@ -79,7 +79,7 @@ export const initApollo = async (app, db = null, httpServer = null) => {
                 if (authHeader && authHeader.startsWith('Bearer ')) {
                     const token = authHeader.split(' ')[1];
                     try {
-                        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
+                        const decoded = verifyToken(token);
                         const userId = decoded.userId || decoded.id;
                         user = await db('users').where({ id: userId }).first();
                     } catch (e) {

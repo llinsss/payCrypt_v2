@@ -1,7 +1,7 @@
-import jwt from "jsonwebtoken";
 import db from "../config/database.js";
 import { createUserRateLimiter, createTierRateLimiter } from "../config/rateLimiting.js";
 import * as Sentry from "@sentry/node";
+import { verifyToken } from "../config/jwt.js";
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -11,7 +11,7 @@ export const authenticate = async (req, res, next) => {
       return res.status(401).json({ error: "Access token required" });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyToken(token);
     const user = await db("users").where({ id: decoded.userId }).first();
 
     if (!user) {

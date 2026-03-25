@@ -3,7 +3,7 @@ import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import { generateCsv } from "./CsvGenerator.js";
 import { generatePdf } from "./PdfGenerator.js";
-import jwt from "jsonwebtoken";
+import { signToken, verifyToken } from "../config/jwt.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -27,6 +27,8 @@ function getExportStoragePath() {
 async function buildDownloadUrl(exportId, userId) {
   const baseUrl = process.env.API_BASE_URL || process.env.FRONTEND_URL || `http://localhost:${process.env.PORT || 3000}`;
   const apiBase = baseUrl.replace(/\/$/, "");
+  const token = signToken(
+    { exportId, userId },
   const jti = randomUUID();
   const token = jwt.sign(
     { exportId, userId, jti },
@@ -103,6 +105,8 @@ export default {
 
   async serveDownload(token) {
     try {
+      const decoded = verifyToken(token);
+      const { exportId, userId } = decoded;
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const { exportId, userId, jti } = decoded;
 
