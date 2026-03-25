@@ -19,20 +19,27 @@ import { exportTransactions, downloadExport } from "../controllers/exportControl
 import { authenticate, authenticateJwtOrApiKey, userRateLimiter } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
-import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
+import {
+  transactionSchema,
+  transactionQuerySchema,
+  transactionSearchQuerySchema,
+  transactionIdParamSchema,
+  transactionTagParamSchema,
+} from "../schemas/transaction.js";
 import { processPaymentSchema } from "../schemas/payment.js";
+import { validateParams } from "../middleware/validation.js";
 import { paymentLimiter, exportLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
 
-router.get("/search", authenticate, userRateLimiter, searchTransactions);
-router.get("/", authenticate, userRateLimiter, getTransactionByUser);
+router.get("/search", authenticate, userRateLimiter, validateQuery(transactionSearchQuerySchema), searchTransactions);
+router.get("/", authenticate, userRateLimiter, validateQuery(transactionQuerySchema), getTransactionByUser);
 router.get("/export/download", downloadExport);
 router.get("/export", authenticateJwtOrApiKey, userRateLimiter, exportLimiter, exportTransactions);
-router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
-router.get("/:id", authenticate, userRateLimiter, getTransactionById);
-router.put("/:id", authenticate, userRateLimiter, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
-router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, auditLog("transactions"), deleteTransaction);
+router.get("/tag/:tag", validateParams(transactionTagParamSchema), validateQuery(transactionQuerySchema), getTransactionsByTag);
+router.get("/:id", authenticate, userRateLimiter, validateParams(transactionIdParamSchema), getTransactionById);
+router.put("/:id", authenticate, userRateLimiter, paymentLimiter, validateParams(transactionIdParamSchema), validate(transactionSchema), auditLog("transactions"), updateTransaction);
+router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, validateParams(transactionIdParamSchema), auditLog("transactions"), deleteTransaction);
 
 // Payment operations
 router.post("/payment", authenticate, userRateLimiter, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
