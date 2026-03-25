@@ -60,7 +60,10 @@ export const authenticateApiKey = async (req, res, next) => {
 
     // Attach API key record and associated user to request
     req.apiKey = apiKeyRecord;
-    req.user = { id: apiKeyRecord.user_id };
+    
+    // Fetch user to get tier for rate limiting
+    const user = await db("users").where({ id: apiKeyRecord.user_id }).first();
+    req.user = { id: apiKeyRecord.user_id, tier: user?.tier || "FREE" };
     Sentry.setUser({ id: apiKeyRecord.user_id });
 
     next();

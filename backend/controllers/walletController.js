@@ -53,7 +53,6 @@ export const updateWallet = async (req, res) => {
       return res.status(400).json({ error: "Wallet not found" });
     }
 
-    // Only allow wallet owner to update
     if (wallet.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
@@ -79,12 +78,10 @@ export const deleteWallet = async (req, res) => {
       return res.status(400).json({ error: "Wallet not found" });
     }
 
-    // Only allow wallet owner to delete
     if (wallet.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    // await Wallet.delete(id);
     res.json({ message: "Wallet deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -108,13 +105,10 @@ export const send_to_tag = async (req, res) => {
     ]);
 
     if (!user) return res.status(400).json({ error: "User not found" });
-    if (!recipient)
-      return res.status(400).json({ error: "Recipient not found" });
-    if (recipient.id === user.id)
-      return res.status(400).json({ error: "Cannot send to self" });
+    if (!recipient) return res.status(400).json({ error: "Recipient not found" });
+    if (recipient.id === user.id) return res.status(400).json({ error: "Cannot send to self" });
     if (!balance) return res.status(400).json({ error: "Balance not found" });
-    if (balance.user_id !== id)
-      return res.status(403).json({ error: "Unauthorized" });
+    if (balance.user_id !== id) return res.status(403).json({ error: "Unauthorized" });
 
     if (amount > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
@@ -124,25 +118,22 @@ export const send_to_tag = async (req, res) => {
     if (!token) return res.status(400).json({ error: "Token not found" });
 
     const timestamp = new Date();
-    const usdPrice = token.price ?? 1;
-    const usdValue = amount * usdPrice;
-    const reference = secureRandomString(16);
+    const usdValue = amount * (token.price ?? 1);
+    const reference = secureRandomString(16); // shared reference
     const chain = contract.chains[token.symbol];
     const sender_tag = user.tag;
-    const payload = {
+
+    const txHash = await contract.send_via_tag({
       chain,
       sender_tag,
       receiver_tag,
       amount,
-    };
-    const txHash = await contract.send_via_tag(payload);
-    console.log("Hash:", txHash)
+    });
 
     if (!txHash) {
       return res.status(422).json({ error: "Failed to transfer" });
     }
 
-    // ====== ⛓ Common database updates ======
     await Promise.all([
       Transaction.create({
         user_id: user.id,
@@ -153,7 +144,7 @@ export const send_to_tag = async (req, res) => {
         type: "debit",
         tx_hash: txHash,
         usd_value: usdValue,
-        amount: amount,
+        amount,
         timestamp,
         from_address: sender_tag,
         to_address: receiver_tag,
@@ -169,11 +160,11 @@ export const send_to_tag = async (req, res) => {
         status: "completed",
         token_id: balance.token_id,
         chain_id: token.chain_id,
-        reference: secureRandomString(16),
+        reference, // FIX
         type: "credit",
         tx_hash: txHash,
         usd_value: usdValue,
-        amount: amount,
+        amount,
         timestamp,
         from_address: sender_tag,
         to_address: receiver_tag,
@@ -197,6 +188,7 @@ export const send_to_wallet = async (req, res) => {
   try {
     const { id } = req.user;
     const { receiver_address, amount: _amount, balance_id } = req.body;
+
     const amount = Number(_amount);
     if (!amount || !balance_id) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -214,6 +206,7 @@ export const send_to_wallet = async (req, res) => {
     if (!balance) return res.status(400).json({ error: "Balance not found" });
     if (balance.user_id !== id)
       return res.status(403).json({ error: "Unauthorized" });
+
     if (amount > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
     }
@@ -222,26 +215,23 @@ export const send_to_wallet = async (req, res) => {
     if (!token) return res.status(400).json({ error: "Token not found" });
 
     const timestamp = new Date();
-    const usdPrice = token.price ?? 1;
-    const usdValue = amount * usdPrice;
-    const reference = secureRandomString(16);
+    const usdValue = amount * (token.price ?? 1);
+    const reference = secureRandomString(16); // shared
     const chain = contract.chains[token.symbol];
-    const sender_tag = user.tag;
     const sender_address = balance.address;
-    const payload = {
+    const sender_tag = user.tag;
+
+    const txHash = await contract.send_via_wallet({
       chain,
       sender_tag,
       receiver_address,
       amount,
-    };
-    const txHash = await contract.send_via_wallet(payload);
-    console.log("Hash:", txHash)
+    });
 
     if (!txHash) {
       return res.status(422).json({ error: "Failed to transfer" });
     }
 
-    // ====== ⛓ Common database updates ======
     await Promise.all([
       Transaction.create({
         user_id: user.id,
@@ -252,7 +242,7 @@ export const send_to_wallet = async (req, res) => {
         type: "debit",
         tx_hash: txHash,
         usd_value: usdValue,
-        amount: amount,
+        amount,
         timestamp,
         from_address: sender_address,
         to_address: receiver_address,
@@ -264,6 +254,7 @@ export const send_to_wallet = async (req, res) => {
         body: `You transferred ${amount} ${token.symbol} to ${receiver_address}`,
       }),
     ]);
+
     if (recipient) {
       await Promise.all([
         Transaction.create({
@@ -271,11 +262,11 @@ export const send_to_wallet = async (req, res) => {
           status: "completed",
           token_id: balance.token_id,
           chain_id: token.chain_id,
-          reference: secureRandomString(16),
+          reference, // FIX
           type: "credit",
           tx_hash: txHash,
           usd_value: usdValue,
-          amount: amount,
+          amount,
           timestamp,
           from_address: sender_address,
           to_address: receiver_address,

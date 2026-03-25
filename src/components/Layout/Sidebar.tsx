@@ -1,11 +1,9 @@
 import React from "react";
 import {
   Home,
-  ArrowUpDown,
   ArrowRightLeft,
   Settings,
   BarChart3,
-  QrCode,
   Users,
   DollarSign,
   Receipt,
