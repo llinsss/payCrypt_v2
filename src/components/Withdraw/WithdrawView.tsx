@@ -1,9 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import {
   ArrowUpRight,
-  AlertTriangle,
-  CreditCard,
-  Wallet,
   ChevronDown,
   Tag,
   Send,
@@ -11,7 +8,6 @@ import {
   Coins,
   Zap,
   Shield,
-  CheckCircle2,
   Info,
 } from "lucide-react";
 import { formatCurrency, formatCrypto } from "../../utils/amount";
@@ -36,14 +32,12 @@ const WithdrawView: React.FC = () => {
   const [amount, setAmount] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [balances, setBalances] = useState<UserTokenBalance[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiClient
       .get<UserTokenBalance[]>("/balances")
       .then(setBalances)
-      .catch((err) => console.error("Error fetching balances:", err))
-      .finally(() => setLoading(false));
+      .catch((err) => console.error("Error fetching balances:", err));
   }, []);
 
   const maxAmount = selectedBalance ? Number(selectedBalance.amount) : 0;

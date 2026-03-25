@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { WebSocketMessage } from '../types';
 
 export const useWebSocket = (url: string, userId?: string) => {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<WebSocketMessage[]>([]);
-  const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -43,7 +42,7 @@ export const useWebSocket = (url: string, userId?: string) => {
     return cleanup;
   }, [userId]);
 
-  const sendMessage = (message: any) => {
+  const sendMessage = (message: unknown) => {
     // Mock send message
     console.log('Sending message:', message);
   };

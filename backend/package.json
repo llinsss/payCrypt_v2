@@ -20,9 +20,7 @@
         "seed:make": "knex seed:make",
         "db:reset": "knex migrate:rollback --all && knex migrate:latest && knex seed:run",
         "test:db": "node scripts/test-db-setup.js",
-        "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit",
-        "benchmark:balance": "node scripts/benchmark-balance-queries.js",
-        "verify:indexes": "node scripts/verify-balance-indexes.js"
+        "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit"
     },
     "jest": {
         "testEnvironment": "node",
@@ -75,6 +73,7 @@
         "socket.io": "^4.8.3",
         "speakeasy": "^2.0.0",
         "starknet": "^7.6.4",
+        "stellar-sdk": "^13.3.0",
         "swagger-jsdoc": "^6.2.8",
         "swagger-ui-express": "^5.0.1",
         "winston": "^3.19.0",

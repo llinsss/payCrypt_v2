@@ -80,6 +80,107 @@ export const processPaymentSchema = Joi.object({
     })
 }).unknown(false);
 
+const batchPaymentItemSchema = Joi.object({
+  recipientTag: Joi.string()
+    .pattern(/^[a-zA-Z0-9_]{3,20}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Recipient tag must be 3-20 alphanumeric characters (underscores allowed)',
+      'any.required': 'Recipient tag is required'
+    }),
+
+  amount: Joi.number()
+    .positive()
+    .precision(7)
+    .required()
+    .messages({
+      'number.positive': 'Amount must be greater than 0',
+      'any.required': 'Amount is required'
+    }),
+
+  notes: Joi.string()
+    .max(1000)
+    .allow(null, '')
+    .messages({
+      'string.max': 'Notes must be 1000 characters or less'
+    })
+}).unknown(false);
+
+export const batchPaymentSchema = Joi.object({
+  senderTag: Joi.string()
+    .pattern(/^[a-zA-Z0-9_]{3,20}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Sender tag must be 3-20 alphanumeric characters (underscores allowed)',
+      'any.required': 'Sender tag is required'
+    }),
+
+  payments: Joi.array()
+    .items(batchPaymentItemSchema)
+    .min(1)
+    .max(25)
+    .required()
+    .messages({
+      'array.base': 'Payments must be an array',
+      'array.min': 'At least one payment is required',
+      'array.max': 'A batch cannot contain more than 25 payments',
+      'any.required': 'Payments are required'
+    }),
+
+  atomic: Joi.boolean()
+    .default(true)
+    .messages({
+      'boolean.base': 'Atomic must be a boolean'
+    }),
+
+  asset: Joi.string()
+    .pattern(/^[A-Z0-9]{1,12}$/)
+    .default('XLM')
+    .messages({
+      'string.pattern.base': 'Asset code must be 1-12 uppercase alphanumeric characters'
+    }),
+
+  assetIssuer: Joi.when('asset', {
+    is: 'XLM',
+    then: Joi.string().allow(null, ''),
+    otherwise: Joi.string()
+      .pattern(/^G[A-Z0-9]{55}$/)
+      .required()
+      .messages({
+        'string.pattern.base': 'Invalid Stellar address format for asset issuer',
+        'any.required': 'Asset issuer required for custom assets'
+      })
+  }),
+
+  memo: Joi.string()
+    .max(28)
+    .allow(null, '')
+    .messages({
+      'string.max': 'Memo must be 28 characters or less'
+    }),
+
+  senderSecret: Joi.string()
+    .pattern(/^S[A-Z0-9]{55}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Invalid Stellar secret key format',
+      'any.required': 'Sender secret key is required'
+    }),
+
+  additionalSecrets: Joi.array()
+    .items(
+      Joi.string()
+        .pattern(/^S[A-Z0-9]{55}$/)
+        .messages({
+          'string.pattern.base': 'Invalid Stellar secret key format in additional secrets'
+        })
+    )
+    .default([])
+    .messages({
+      'array.base': 'Additional secrets must be an array'
+    })
+}).unknown(false);
+
 export const paymentLimitsSchema = Joi.object({
   maxAmount: Joi.number().positive(),
   minAmount: Joi.number().positive(),

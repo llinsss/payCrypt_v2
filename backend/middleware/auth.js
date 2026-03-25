@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import db from "../config/database.js";
-import { createUserRateLimiter } from "../config/rateLimiting.js";
+import { createUserRateLimiter, createTierRateLimiter } from "../config/rateLimiting.js";
 import * as Sentry from "@sentry/node";
 
 export const authenticate = async (req, res, next) => {
@@ -40,12 +40,11 @@ export const authenticateJwtOrApiKey = async (req, res, next) => {
 };
 
 /**
- * Per-user rate limiter - use after authenticate for protected routes
+ * Per-user tier-based rate limiter - use after authenticate for protected routes
  * Uses Redis sliding window; keys by user ID
+ * Respects user tier: FREE=100 req/min, PREMIUM=1000 req/min
  */
-export const userRateLimiter = createUserRateLimiter({
-  windowMs: 60 * 1000,
-  max: 100,
+export const userRateLimiter = createTierRateLimiter({
   type: "user",
   message: "Too many requests from this user, please try again later",
 });
