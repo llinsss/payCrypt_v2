@@ -3,6 +3,7 @@ import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import { webhookQueue } from "../queues/webhook.js";
+import WebhookSignature from "../utils/webhookSignature.js";
 
 export const WEBHOOK_EVENTS = {
   PAYMENT_COMPLETED: "payment.completed",
@@ -33,29 +34,18 @@ const WebhookService = {
     );
   },
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   generateSecret() {
     return crypto.randomBytes(32).toString("hex");
   },
 
   generateSignature(payload, secret) {
-    return (
-      "sha256=" +
-      crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex")
-    );
+    return WebhookSignature.generateSignature(payload, secret);
   },
 
+  // FIXED FUNCTION
   verifySignature(payload, signature, secret) {
-    const expected = this.generateSignature(payload, secret);
-    try {
-      return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-    } catch {
-      return false;
-    }
+    return WebhookSignature.verifySignature(payload, signature, secret);
   },
-
-  // ── Registration ────────────────────────────────────────────────────────────
 
   async register({ user_id, url, events, secret }) {
     const validEvents = Object.values(WEBHOOK_EVENTS);
@@ -127,8 +117,6 @@ const WebhookService = {
     return { secret: newSecret };
   },
 
-  // ── Delivery ─────────────────────────────────────────────────────────────────
-
   async dispatch(eventType, data, user_id = null) {
     const webhooks = await Webhook.findActive(user_id || undefined);
     if (!webhooks.length) return;
@@ -145,16 +133,25 @@ const WebhookService = {
 
       if (!subscribedEvents.includes(eventType)) continue;
 
+      // Deterministic key: SHA256(webhook_id + event_type + stable payload fields)
+      const idempotencyKey = crypto
+        .createHash("sha256")
+        .update(`${webhook.id}:${eventType}:${JSON.stringify(data)}`)
+        .digest("hex");
+
       let eventId = null;
+      let isNew = true;
       try {
-        const event = await WebhookEvent.create({
+        const event = await WebhookEvent.createIdempotent({
           webhook_id: webhook.id,
           event_type: eventType,
           payload: JSON.stringify(payload),
+          idempotency_key: idempotencyKey,
           status: "pending",
           attempts: 0,
         });
         eventId = event.id;
+        isNew = event.status === "pending" && event.attempt_count === 0;
       } catch (err) {
         console.error("Failed to create WebhookEvent record:", err.message);
       }
@@ -163,6 +160,9 @@ const WebhookService = {
         console.warn("Webhook queue unavailable — skipping delivery");
         continue;
       }
+
+      // jobId is always deterministic — BullMQ deduplicates by jobId automatically
+      const jobId = `event-${idempotencyKey}`;
 
       await webhookQueue.add(
         "deliver",
@@ -173,9 +173,7 @@ const WebhookService = {
           secret: webhook.secret,
           payload,
         },
-        {
-          jobId: eventId ? `event-${eventId}` : undefined,
-        },
+        { jobId },
       );
     }
   },

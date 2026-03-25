@@ -5,8 +5,10 @@ import {
   updateKyc,
   deleteKyc,
   getKycByUser,
+  approveKyc,
+  rejectKyc,
 } from "../controllers/kycController.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.js";
 import { kycCreateSchema, kycUpdateSchema } from "../schemas/kyc.js";
 
@@ -91,5 +93,9 @@ router.get("/", authenticate, getKycByUser);
 router.get("/:id", authenticate, getKycById);
 router.put("/:id", authenticate, validate(kycUpdateSchema), updateKyc);
 router.delete("/:id", authenticate, deleteKyc);
+
+// Admin-only review routes
+router.post("/:id/approve", authenticate, requireAdmin, approveKyc);
+router.post("/:id/reject", authenticate, requireAdmin, rejectKyc);
 
 export default router;

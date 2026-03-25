@@ -5,7 +5,6 @@ import {
   ArrowRightLeft,
   ExternalLink,
 } from "lucide-react";
-import { Transaction } from "../../types";
 import {
   getTransactionStatusColor,
   formatCurrency,
