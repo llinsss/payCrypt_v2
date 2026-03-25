@@ -1,14 +1,130 @@
 import db from "../config/database.js";
 import WebhookService from "../services/WebhookService.js";
+import { getExplorerLink } from "../utils/explorer.js";
+import redis, { recordCacheHit, recordCacheMiss } from "../config/redis.js";
+
+
+const TTL_TRANSACTION = 5 * 60;  
+const TTL_USER_LIST = 2 * 60;  
+
+const CacheKeys = {
+  byId: (id) => `txn:id:${id}`,
+  byUser: (userId, limit, offset, options) =>
+    `txn:user:${userId}:${limit}:${offset}:${JSON.stringify(options)}`,
+  byUserPrefix: (userId) => `txn:user:${userId}:*`,
+};
+
+
+const cacheGet = async (key) => {
+  try {
+    const val = await redis.get(key);
+    if (val) { recordCacheHit(); return JSON.parse(val); }
+    recordCacheMiss();
+    return null;
+  } catch { return null; }
+};
+
+
+const cacheSet = async (key, value, ttl) => {
+  try {
+    await redis.set(key, JSON.stringify(value), { EX: ttl });
+  } catch { /* silent fail */ }
+};
+
+
+const cacheDel = async (key) => {
+  try { await redis.del(key); } catch { /* silent fail */ }
+};
+const invalidateUserLists = async (userId) => {
+  try {
+    const pattern = CacheKeys.byUserPrefix(userId);
+    let cursor = 0;
+    do {
+      const reply = await redis.scan(cursor, { MATCH: pattern, COUNT: 100 });
+      cursor = reply.cursor;
+      if (reply.keys.length) await redis.del(reply.keys);
+    } while (cursor !== 0);
+  } catch { /* silent fail */ }
+};
 
 const Transaction = {
-  async create(transactionData) {
-    const [id] = await db("transactions").insert(transactionData);
+  async create(transactionData, trx = null) {
+    // Validate metadata if provided
+    if (transactionData.metadata !== undefined) {
+      const metadata = transactionData.metadata;
+
+      if (typeof metadata !== "object" || Array.isArray(metadata)) {
+        throw new Error("Metadata must be a valid JSON object");
+      }
+
+      const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+      if (size > 2048) {
+        throw new Error("Metadata exceeds 2KB limit");
+      }
+    }
+
+    // Validate notes if provided
+    if (transactionData.notes !== undefined && transactionData.notes !== null) {
+      if (typeof transactionData.notes !== "string") {
+        throw new Error("Notes must be a string");
+      }
+      if (transactionData.notes.length > 1000) {
+        throw new Error("Notes must be at most 1000 characters");
+      }
+    }
+
+    const [id] = await (trx || db)("transactions").insert({
+      ...transactionData,
+      metadata: transactionData.metadata || null
+    });
+
+    if (transactionData.user_id) {
+      await invalidateUserLists(transactionData.user_id);
+    }
+
     return this.findById(id);
   },
 
   async findById(id) {
-    return await db("transactions")
+    const cacheKey = CacheKeys.byId(id);
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      console.log(`[Cache HIT] ${cacheKey}`);
+      return cached;
+    }
+    console.log(`[Cache MISS] ${cacheKey}`);
+
+    const transaction = await db("transactions")
+      .select(
+        "transactions.*",
+        "users.email as user_email",
+        "users.tag as user_tag",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "tokens.logo_url as token_logo_url",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
+      )
+      .leftJoin("users", "transactions.user_id", "users.id")
+      .leftJoin("tokens", "transactions.token_id", "tokens.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id")
+      .where("transactions.id", id)
+      .where("transactions.deleted_at", null)
+      .first();
+
+    if (transaction) {
+      transaction.explorer_link = getExplorerLink(
+        transaction.chain_name, transaction.tx_hash, transaction.chain_explorer
+      );
+      await cacheSet(cacheKey, transaction, TTL_TRANSACTION);
+    }
+    return transaction;
+  },
+
+
+  async findByIdWithDeleted(id) {
+    const transaction = await db("transactions")
       .select(
         "transactions.*",
         "users.email as user_email",
@@ -24,11 +140,21 @@ const Transaction = {
       .leftJoin("chains", "transactions.chain_id", "chains.id")
       .where("transactions.id", id)
       .first();
+
+    if (transaction) {
+      transaction.explorer_link = getExplorerLink(
+        transaction.chain_name,
+        transaction.tx_hash,
+        transaction.chain_explorer
+      );
+    }
+    return transaction;
   },
 
-  async getAll(limit = 10, offset = 0, options = {}) {
-    const { minAmount = null, maxAmount = null } = options;
-    
+
+  async getAll(limit = 10, offset = 0, metadataSearch = null, options = {}) {
+    const { minAmount = null, maxAmount = null, noteSearch = null } = options;
+
     let query = db("transactions")
       .select(
         "transactions.*",
@@ -38,44 +164,24 @@ const Transaction = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "chains.name as chain_name",
-        "chains.symbol as chain_symbol"
-      )
-      .leftJoin("users", "transactions.user_id", "users.id")
-      .leftJoin("tokens", "transactions.token_id", "tokens.id")
-      .leftJoin("chains", "transactions.chain_id", "chains.id");
-
-    if (minAmount !== null) {
-      query = query.where("transactions.usd_value", ">=", minAmount);
-    }
-
-    if (maxAmount !== null) {
-      query = query.where("transactions.usd_value", "<=", maxAmount);
-    }
-
-    return await query
-      .limit(limit)
-      .offset(offset)
-      .orderBy("transactions.created_at", "desc");
-  },
-
-  async getByUser(userId, limit = 10, offset = 0, options = {}) {
-    const { minAmount = null, maxAmount = null } = options;
-    
-    let query = db("transactions")
-      .select(
-        "transactions.*",
-        "users.email as user_email",
-        "users.tag as user_tag",
-        "tokens.name as token_name",
-        "tokens.symbol as token_symbol",
-        "tokens.logo_url as token_logo_url",
-        "chains.name as chain_name",
-        "chains.symbol as chain_symbol"
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
       )
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
       .leftJoin("chains", "transactions.chain_id", "chains.id")
-      .where("transactions.user_id", userId);
+      .where("transactions.deleted_at", null);
+
+    if (metadataSearch) {
+      query = query.whereRaw(
+        "transactions.metadata::text ILIKE ?",
+        [`%${metadataSearch}%`]
+      );
+    }
+
+    if (noteSearch) {
+      query = query.where("transactions.notes", "ILIKE", `%${noteSearch}%`);
+    }
 
     if (minAmount !== null) {
       query = query.where("transactions.usd_value", ">=", minAmount);
@@ -85,16 +191,79 @@ const Transaction = {
       query = query.where("transactions.usd_value", "<=", maxAmount);
     }
 
-    return await query
+    const transactions = await query
       .limit(limit)
       .offset(offset)
       .orderBy("transactions.created_at", "desc");
+
+    return transactions.map((tx) => ({
+      ...tx,
+      explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
+    }));
   },
+
+
+  async getByUser(userId, limit = 10, offset = 0, options = {}) {
+    const { minAmount = null, maxAmount = null, noteSearch = null } = options;
+
+    const cacheKey = CacheKeys.byUser(userId, limit, offset, options);
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      console.log(`[Cache HIT] ${cacheKey}`);
+      return cached;
+    }
+    console.log(`[Cache MISS] ${cacheKey}`);
+
+    let query = db("transactions")
+      .select(
+        "transactions.*",
+        "users.email as user_email",
+        "users.tag as user_tag",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "tokens.logo_url as token_logo_url",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
+      )
+      .leftJoin("users", "transactions.user_id", "users.id")
+      .leftJoin("tokens", "transactions.token_id", "tokens.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id")
+      .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null);
+
+    if (noteSearch) {
+      query = query.where("transactions.notes", "ILIKE", `%${noteSearch}%`);
+    }
+
+    if (minAmount !== null) {
+      query = query.where("transactions.usd_value", ">=", minAmount);
+    }
+
+    if (maxAmount !== null) {
+      query = query.where("transactions.usd_value", "<=", maxAmount);
+    }
+
+    const transactions = await query
+      .limit(limit)
+      .offset(offset)
+      .orderBy("transactions.created_at", "desc");
+
+    const result = transactions.map((tx) => ({
+      ...tx,
+      explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
+    }));
+
+    await cacheSet(cacheKey, result, TTL_USER_LIST);
+    return result;
+  },
+
 
   async totalDeposit() {
     return await db("transactions")
       .where("status", "completed")
       .where("type", "credit")
+      .where("deleted_at", null)
       .sum("usd_value as amount");
   },
 
@@ -103,12 +272,14 @@ const Transaction = {
       .where("status", "completed")
       .where("type", "credit")
       .where("user_id", userId)
+      .where("deleted_at", null)
       .sum("usd_value as amount");
   },
   async totalWithdrawal() {
     return await db("transactions")
       .where("status", "completed")
       .where("type", "debit")
+      .where("deleted_at", null)
       .sum("usd_value as amount");
   },
 
@@ -117,35 +288,195 @@ const Transaction = {
       .where("user_id", userId)
       .where("status", "completed")
       .where("type", "debit")
+      .where("deleted_at", null)
       .sum("usd_value as amount");
   },
 
-  async update(id, transactionData, trx = null) {
-    const oldTransaction = await this.findById(id);
-    const query = trx || db;
-    
-    await query("transactions")
-      .where({ id })
-      .update({
-        ...transactionData,
-        updated_at: db.fn.now(),
-      });
-    
-    const updatedTransaction = await this.findById(id);
-    
-    if (transactionData.status && oldTransaction.status !== transactionData.status) {
-      WebhookService.sendStatusChangeWebhook(
-        updatedTransaction,
-        oldTransaction.status,
-        transactionData.status
-      ).catch(console.error);
+async update(id, transactionData, trx = null) {
+  const query = trx || db;
+
+  // Fetch old transaction using trx (no cache)
+  const oldTransaction = await query("transactions")
+    .where({ id })
+    .first();
+
+  if (!oldTransaction) {
+    throw new Error("Transaction not found");
+  }
+
+  if (transactionData.metadata !== undefined) {
+    const metadata = transactionData.metadata;
+
+    if (typeof metadata !== "object" || Array.isArray(metadata)) {
+      throw new Error("Metadata must be a valid JSON object");
     }
-    
-    return updatedTransaction;
-  },
+
+    const size = Buffer.byteLength(JSON.stringify(metadata), "utf8");
+    if (size > 2048) {
+      throw new Error("Metadata exceeds 2KB limit");
+    }
+  }
+
+  if (transactionData.notes !== undefined && transactionData.notes !== null) {
+    if (typeof transactionData.notes !== "string") {
+      throw new Error("Notes must be a string");
+    }
+    if (transactionData.notes.length > 1000) {
+      throw new Error("Notes must be at most 1000 characters");
+    }
+  }
+
+  await query("transactions")
+    .where({ id })
+    .update({
+      ...transactionData,
+      updated_at: db.fn.now(),
+    });
+
+  const updatedTransaction = await this.findById(id);
+
+  // Invalidate cache
+  await cacheDel(CacheKeys.byId(id));
+  if (updatedTransaction?.user_id) {
+    await invalidateUserLists(updatedTransaction.user_id);
+  }
+
+  // Webhook trigger
+  if (
+    transactionData.status &&
+    oldTransaction.status !== transactionData.status
+  ) {
+    WebhookService.sendStatusChangeWebhook(
+      updatedTransaction,
+      oldTransaction.status,
+      transactionData.status
+    ).catch(console.error);
+  }
+
+  return updatedTransaction;
+},
+
+
+
 
   async delete(id) {
-    return await db("transactions").where({ id }).del();
+     const tx = await this.findById(id);
+    const result = await db("transactions")
+      .where({ id })
+      .update({ deleted_at: db.fn.now() });
+
+    await cacheDel(CacheKeys.byId(id));
+    if (tx?.user_id) await invalidateUserLists(tx.user_id);
+
+    return result;
+  },
+
+
+  async restore(id) {
+    return await db("transactions")
+      .where({ id })
+      .update({ deleted_at: null });
+  },
+
+
+  async searchByUser(userId, queryArg, limit = 10, offset = 0, options = {}) {
+    const { minAmount = null, maxAmount = null, status = null, from = null, to = null } = options;
+
+    let query = db("transactions")
+      .select(
+        "transactions.*",
+        "users.email as user_email",
+        "users.tag as user_tag",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "tokens.logo_url as token_logo_url",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
+      )
+      .leftJoin("users", "transactions.user_id", "users.id")
+      .leftJoin("tokens", "transactions.token_id", "tokens.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id")
+      .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null);
+
+    if (queryArg) {
+      query = query.whereRaw("transactions.search_vector @@ websearch_to_tsquery('simple', ?)", [queryArg]);
+    }
+
+    if (status) query = query.where("transactions.status", status);
+    if (from) query = query.where("transactions.created_at", ">=", from);
+    if (to) query = query.where("transactions.created_at", "<=", to);
+    if (minAmount !== null) query = query.where("transactions.usd_value", ">=", minAmount);
+    if (maxAmount !== null) query = query.where("transactions.usd_value", "<=", maxAmount);
+
+    const countQuery = db("transactions")
+      .count("* as total")
+      .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null);
+      
+    if (queryArg) countQuery.whereRaw("transactions.search_vector @@ websearch_to_tsquery('simple', ?)", [queryArg]);
+    if (status) countQuery.where("transactions.status", status);
+    if (from) countQuery.where("transactions.created_at", ">=", from);
+    if (to) countQuery.where("transactions.created_at", "<=", to);
+    if (minAmount !== null) countQuery.where("transactions.usd_value", ">=", minAmount);
+    if (maxAmount !== null) countQuery.where("transactions.usd_value", "<=", maxAmount);
+
+    query = query.limit(limit).offset(offset);
+    if (queryArg) {
+      query = query.orderByRaw("ts_rank(transactions.search_vector, websearch_to_tsquery('simple', ?)) DESC", [queryArg]);
+    } else {
+      query = query.orderBy("transactions.created_at", "desc");
+    }
+
+    const [totalResult, transactions] = await Promise.all([
+      countQuery.first(),
+      query
+    ]);
+
+    const result = transactions.map((tx) => ({
+      ...tx,
+      explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
+    }));
+
+    return {
+      data: result,
+      total: totalResult ? parseInt(totalResult.total, 10) : 0
+    };
+  },
+
+  async getForExport(userId, options = {}) {
+    const { from = null, to = null, status = null, chain = null, token = null } = options;
+
+    let query = db("transactions")
+      .select(
+        "transactions.*",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol"
+      )
+      .leftJoin("tokens", "transactions.token_id", "tokens.id")
+      .leftJoin("chains", "transactions.chain_id", "chains.id")
+      .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null)
+      .orderBy("transactions.created_at", "desc");
+
+    if (status) query = query.where("transactions.status", status);
+    if (from) query = query.where("transactions.created_at", ">=", from);
+    if (to) query = query.where("transactions.created_at", "<=", to);
+    if (chain) {
+      query = query.where((qb) =>
+        qb.where("chains.symbol", "ilike", chain).orWhere("chains.name", "ilike", chain)
+      );
+    }
+    if (token) {
+      query = query.where((qb) =>
+        qb.where("tokens.symbol", "ilike", token).orWhere("tokens.name", "ilike", token)
+      );
+    }
+
+    return await query;
   },
 
   async getByBatchId(batchId) {
@@ -178,6 +509,7 @@ const Transaction = {
       maxAmount = null,
       sortBy = "created_at",
       sortOrder = "desc",
+      noteSearch = null,
     } = options;
 
     let query = db("transactions")
@@ -189,12 +521,18 @@ const Transaction = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "chains.name as chain_name",
-        "chains.symbol as chain_symbol"
+        "chains.symbol as chain_symbol",
+        "chains.block_explorer as chain_explorer"
       )
       .leftJoin("users", "transactions.user_id", "users.id")
       .leftJoin("tokens", "transactions.token_id", "tokens.id")
       .leftJoin("chains", "transactions.chain_id", "chains.id")
-      .where("transactions.user_id", userId);
+      .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null);
+
+    if (noteSearch) {
+      query = query.where("transactions.notes", "ILIKE", `%${noteSearch}%`);
+    }
 
     if (from) {
       query = query.where("transactions.created_at", ">=", from);
@@ -220,18 +558,62 @@ const Transaction = {
     const sanitizedSortBy = allowedSortFields.includes(sortBy) ? sortBy : "created_at";
     const sanitizedSortOrder = sortOrder === "asc" ? "asc" : "desc";
 
-    return await query
+    const transactions = await query
       .orderBy(`transactions.${sanitizedSortBy}`, sanitizedSortOrder)
       .limit(limit)
       .offset(offset);
+
+    return transactions.map((tx) => ({
+      ...tx,
+      explorer_link: getExplorerLink(tx.chain_name, tx.tx_hash, tx.chain_explorer),
+    }));
+  },
+
+
+  /**
+   * Find a transaction by its idempotency key.
+   *
+   * @param {string} key
+   * @param {import("knex").Knex.Transaction|null} trx
+   * @returns {Promise<Object|undefined>}
+   */
+  async findByIdempotencyKey(key, trx = null) {
+    const query = trx || db;
+    return await query("transactions").where({ idempotency_key: key }).first();
+  },
+
+  /**
+   * Find the most recent payment transaction whose `extra` JSON contains a
+   * matching fingerprint, created within `windowMs` milliseconds ago, and
+   * currently pending or completed.
+   *
+   * @param {string} fingerprint - SHA-256 hex fingerprint
+   * @param {number} windowMs    - Look-back window in milliseconds
+   * @returns {Promise<Object|undefined>}
+   */
+  async findByFingerprint(fingerprint, windowMs) {
+    const windowStart = new Date(Date.now() - windowMs).toISOString();
+    return await db("transactions")
+      .whereRaw("extra::json->>'fingerprint' = ?", [fingerprint])
+      .whereIn("status", ["pending", "completed"])
+      .where("type", "payment")
+      .where("created_at", ">=", windowStart)
+      .whereNull("deleted_at")
+      .orderBy("created_at", "desc")
+      .first();
   },
 
   async countByTag(userId, options = {}) {
-    const { from = null, to = null, type = null, minAmount = null, maxAmount = null } = options;
+    const { from = null, to = null, type = null, minAmount = null, maxAmount = null, noteSearch = null } = options;
 
     let query = db("transactions")
       .where("transactions.user_id", userId)
+      .where("transactions.deleted_at", null)
       .count("* as total");
+
+    if (noteSearch) {
+      query = query.where("transactions.notes", "ILIKE", `%${noteSearch}%`);
+    }
 
     if (from) {
       query = query.where("transactions.created_at", ">=", from);

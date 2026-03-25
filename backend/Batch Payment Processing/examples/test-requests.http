@@ -1,0 +1,66 @@
+### Create Batch Payment - Continue Mode
+POST http://localhost:3000/api/transactions/batch
+Content-Type: application/json
+
+{
+  "payments": [
+    {
+      "recipientTag": "@user1",
+      "amount": 100,
+      "asset": "XLM",
+      "memo": "Payment 1"
+    },
+    {
+      "recipientTag": "@user2",
+      "amount": 200,
+      "asset": "XLM",
+      "memo": "Payment 2"
+    }
+  ],
+  "failureMode": "continue"
+}
+
+### Create Batch Payment - Abort Mode
+POST http://localhost:3000/api/transactions/batch
+Content-Type: application/json
+
+{
+  "payments": [
+    {
+      "recipientTag": "@user1",
+      "amount": 100,
+      "asset": "XLM",
+      "memo": "Payment 1"
+    },
+    {
+      "recipientTag": "@user2",
+      "amount": 200,
+      "asset": "XLM",
+      "memo": "Payment 2"
+    }
+  ],
+  "failureMode": "abort"
+}
+
+### Get Batch Payment Status
+GET http://localhost:3000/api/transactions/batch/1
+
+### Large Batch Payment (50 payments)
+POST http://localhost:3000/api/transactions/batch
+Content-Type: application/json
+
+{
+  "payments": [
+    {"recipientTag": "@user1", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user2", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user3", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user4", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user5", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user6", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user7", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user8", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user9", "amount": 100, "asset": "XLM"},
+    {"recipientTag": "@user10", "amount": 100, "asset": "XLM"}
+  ],
+  "failureMode": "continue"
+}

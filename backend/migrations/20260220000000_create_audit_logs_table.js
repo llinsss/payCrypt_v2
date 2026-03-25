@@ -1,15 +1,15 @@
 export async function up(knex) {
   return knex.schema.createTable("audit_logs", (table) => {
     table.increments("id").primary();
-    table.uuid("user_id").nullable();
-    table.string("action", 50).notNullable(); 
-    table.string("resource", 100).notNullable(); 
-    table.string("resource_id", 255).nullable(); 
-    table.jsonb("details").nullable(); 
-    table.string("ip_address", 45).nullable(); 
+    table.integer("user_id").unsigned().nullable();
+    table.string("action", 50).notNullable();
+    table.string("resource", 100).notNullable();
+    table.string("resource_id", 255).nullable();
+    table.jsonb("details").nullable();
+    table.string("ip_address", 45).nullable();
     table.string("user_agent", 500).nullable();
     table.string("method", 10).notNullable();
-    table.string("endpoint", 500).notNullable(); 
+    table.string("endpoint", 500).notNullable();
     table.integer("status_code").nullable();
     table.timestamp("created_at").defaultTo(knex.fn.now());
 

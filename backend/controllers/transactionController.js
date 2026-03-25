@@ -1,6 +1,7 @@
 import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import PaymentService from "../services/PaymentService.js";
+import ReceiptService from "../services/ReceiptService.js";
 import { processPaymentSchema, transactionHistoryQuerySchema } from "../schemas/payment.js";
 
 export const createTransaction = async (req, res) => {
@@ -19,8 +20,11 @@ export const createTransaction = async (req, res) => {
 
 export const getTransactions = async (req, res) => {
   try {
-    const { page = 1, limit = 10, min_amount, max_amount } = req.query;
-    const offset = (page - 1) * limit;
+    const { page = 1, limit = 10, metadataSearch = null, noteSearch = null, min_amount, max_amount } = req.query;
+
+    const parsedLimit = Number.parseInt(limit);
+    const parsedPage = Number.parseInt(page);
+    const offset = (parsedPage - 1) * parsedLimit;
 
     // Validate amount range parameters
     let minAmount = null;
@@ -45,11 +49,74 @@ export const getTransactions = async (req, res) => {
     }
 
     const transactions = await Transaction.getAll(
-      Number.parseInt(limit),
-      Number.parseInt(offset),
-      { minAmount, maxAmount }
+      parsedLimit,
+      offset,
+      metadataSearch,
+      { minAmount, maxAmount, noteSearch }
     );
+
     res.json(transactions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const searchTransactions = async (req, res) => {
+  try {
+    const { id: userId } = req.user;
+    const {
+      q,
+      page = 1,
+      limit = 20,
+      status,
+      from,
+      to,
+      min_amount,
+      max_amount
+    } = req.query;
+
+    const parsedLimit = Math.min(Math.max(Number.parseInt(limit) || 20, 1), 100);
+    const parsedPage = Math.max(Number.parseInt(page) || 1, 1);
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    let minAmount = null;
+    let maxAmount = null;
+
+    if (min_amount !== undefined) {
+      minAmount = parseFloat(min_amount);
+      if (isNaN(minAmount) || minAmount < 0) {
+        return res.status(400).json({ error: "Invalid min_amount. Must be a positive number." });
+      }
+    }
+
+    if (max_amount !== undefined) {
+      maxAmount = parseFloat(max_amount);
+      if (isNaN(maxAmount) || maxAmount < 0) {
+        return res.status(400).json({ error: "Invalid max_amount. Must be a positive number." });
+      }
+    }
+
+    if (minAmount !== null && maxAmount !== null && minAmount > maxAmount) {
+      return res.status(400).json({ error: "min_amount cannot be greater than max_amount." });
+    }
+
+    const { data: transactions, total } = await Transaction.searchByUser(
+      userId,
+      q,
+      parsedLimit,
+      offset,
+      { status, from, to, minAmount, maxAmount }
+    );
+
+    res.json({
+      data: transactions,
+      pagination: {
+        total,
+        page: parsedPage,
+        limit: parsedLimit,
+        hasMore: offset + transactions.length < total
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -58,7 +125,7 @@ export const getTransactions = async (req, res) => {
 export const getTransactionByUser = async (req, res) => {
   try {
     const { id } = req.user;
-    const { min_amount, max_amount } = req.query;
+    const { min_amount, max_amount, noteSearch } = req.query;
 
     // Validate amount range parameters
     let minAmount = null;
@@ -82,7 +149,7 @@ export const getTransactionByUser = async (req, res) => {
       return res.status(400).json({ error: "min_amount cannot be greater than max_amount." });
     }
 
-    const transactions = await Transaction.getByUser(id, 10, 0, { minAmount, maxAmount });
+    const transactions = await Transaction.getByUser(id, 10, 0, { minAmount, maxAmount, noteSearch });
     res.json(transactions);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -108,6 +175,38 @@ export const getTransactionById = async (req, res) => {
   }
 };
 
+export const getTransactionReceipt = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const transaction = await Transaction.findById(id);
+
+    if (!transaction) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    if (transaction.user_id !== req.user.id) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    if (transaction.status !== "completed") {
+      return res.status(400).json({ error: "Receipt only available for completed transactions" });
+    }
+
+    const pdfBuffer = await ReceiptService.generateReceipt(transaction);
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="receipt-${transaction.id}.pdf"`,
+      "Content-Length": String(pdfBuffer.length),
+    });
+
+    return res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Receipt generation failed:", error);
+    return res.status(500).json({ error: "Failed to generate receipt" });
+  }
+};
+
 export const updateTransaction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -123,6 +222,29 @@ export const updateTransaction = async (req, res) => {
     }
 
     const updatedTransaction = await Transaction.update(id, req.body);
+    res.json(updatedTransaction);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateTransactionNote = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    const transaction = await Transaction.findById(id);
+
+    if (!transaction) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    // Only allow transaction owner to update
+    if (transaction.user_id !== req.user.id) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const updatedTransaction = await Transaction.update(id, { notes });
     res.json(updatedTransaction);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -150,6 +272,33 @@ export const deleteTransaction = async (req, res) => {
   }
 };
 
+export const restoreTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const transaction = await Transaction.findByIdWithDeleted(id);
+
+    if (!transaction) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    // Only allow transaction owner to restore
+    if (transaction.user_id !== req.user.id) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    if (transaction.deleted_at === null) {
+      return res.status(400).json({ error: "Transaction is not deleted" });
+    }
+
+    await Transaction.restore(id);
+    const restoredTransaction = await Transaction.findById(id);
+    res.json(restoredTransaction);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const getTransactionsByTag = async (req, res) => {
   try {
     const { tag } = req.params;
@@ -161,6 +310,7 @@ export const getTransactionsByTag = async (req, res) => {
       type,
       min_amount,
       max_amount,
+      noteSearch,
       sortBy = "created_at",
       sortOrder = "desc",
     } = req.query;
@@ -203,6 +353,7 @@ export const getTransactionsByTag = async (req, res) => {
       type: type || null,
       minAmount,
       maxAmount,
+      noteSearch,
       sortBy,
       sortOrder,
     };
@@ -249,8 +400,20 @@ export const processPayment = async (req, res) => {
       });
     }
 
-    const { senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, senderSecret, additionalSecrets = [] } = value;
+    const {
+      senderTag,
+      recipientTag,
+      amount,
+      asset = 'XLM',
+      assetIssuer,
+      memo,
+      notes,
+      senderSecret,
+      additionalSecrets = [],
+    } = value;
+    const { senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, senderSecret, additionalSecrets = [], idempotencyKey } = value;
     const userId = req.user.id;
+    const idempotencyKeyFromHeader = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
 
     // Combine secrets
     const secrets = [senderSecret, ...additionalSecrets];
@@ -263,8 +426,10 @@ export const processPayment = async (req, res) => {
       asset,
       assetIssuer,
       memo,
+      notes,
       secrets,
-      userId
+      userId,
+      idempotencyKey: idempotencyKey || idempotencyKeyFromHeader || null
     });
 
     res.status(201).json({

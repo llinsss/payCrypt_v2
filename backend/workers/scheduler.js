@@ -3,6 +3,8 @@ import { redisConnection } from "../config/redis.js";
 import ScheduledPayment from "../models/ScheduledPayment.js";
 import Notification from "../models/Notification.js";
 import PaymentService from "../services/PaymentService.js";
+import { apiKeyRotationQueue } from "./apiKeyRotationWorker.js";
+import { reconciliationQueue, registerReconciliationJob } from "./reconciliation.js";
 
 // ========== Queues ==========
 
@@ -190,6 +192,22 @@ async function registerRepeatableJobs() {
         );
         console.log("🔔 Scheduled payment notifier registered (every 5min)");
     }
+
+    if (apiKeyRotationQueue) {
+        // Check for API key rotations every hour
+        await apiKeyRotationQueue.add(
+            "check-api-key-rotations",
+            {},
+            {
+                repeat: { every: 60 * 60_000 }, // every 1 hour
+                removeOnComplete: 50,
+                removeOnFail: false,
+            }
+        );
+        console.log("🔑 API key rotation worker registered (every 1h)");
+    }
+
+    await registerReconciliationJob();
 }
 
 // Register jobs on startup

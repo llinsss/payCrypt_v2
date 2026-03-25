@@ -1,0 +1,7 @@
+<!-- Email body template for "Your export is ready" notification -->
+<!-- Variables: {{name}}, {{downloadUrl}}, {{recordCount}}, {{format}}, {{expiresAt}} -->
+<p>Hi <strong>{{name}}</strong>,</p>
+<p>Your transaction export ({{format}}) with <strong>{{recordCount}}</strong> records is ready for download.</p>
+<p>This link expires on <strong>{{expiresAt}}</strong>. Download your file before it expires.</p>
+<p><a href="{{downloadUrl}}" class="btn">Download Export</a></p>
+<p style="font-size:14px; color:#999;">If the button doesn't work, copy and paste this link into your browser: {{downloadUrl}}</p>

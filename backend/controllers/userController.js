@@ -33,8 +33,11 @@ export const dashboard_summary = async (req, res) => {
     const total_balance = await Balance.totalBalanceByUser(user.id);
     const total_deposit = await Transaction.totalDepositByUser(user.id);
     const total_withdrawal = await Transaction.totalWithdrawalByUser(user.id);
+    const total_balance_data = total_balance[0] || {};
     res.json({
-      total_balance: total_balance[0]?.amount ? Number(total_balance[0].amount) : 0,
+      total_balance: total_balance_data.amount ? Number(total_balance_data.amount) : 0,
+      total_balance_preferred: total_balance_data.preferred_amount ? Number(total_balance_data.preferred_amount) : 0,
+      currency: total_balance_data.currency || 'USD',
       total_deposit: total_deposit[0]?.amount ? Number(total_deposit[0].amount) : 0,
       total_withdrawal: total_withdrawal[0]?.amount
         ? Number(total_withdrawal[0].amount)

@@ -4,6 +4,7 @@ import * as vtu from "../services/external/vtu.js";
 import redis from "../config/redis.js";
 import * as contract from "../contracts/index.js";
 import { ethers } from "ethers";
+import ExchangeRateService from "../services/exchange-rate-api.js";
 
 const CACHE_TTL_LONG = 60 * 24 * 30;
 const CACHE_TTL_SHORT = 60 * 24;
@@ -278,6 +279,41 @@ export const bill_verify_customer = async (req, res, next) => {
     }
 
     return failure(res, "Failed", null, 400);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const get_exchange_rates = async (req, res, next) => {
+  try {
+    const rates = await ExchangeRateService.getRates();
+    return success(res, "Exchange rates fetched successfully", rates, 200);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const convert_currency = async (req, res, next) => {
+  try {
+    const { amount, from = "USD", to } = req.query;
+    if (!amount || !to) {
+      return failure(res, "Amount and 'to' currency are required", null, 422);
+    }
+
+    let usdAmount = Number(amount);
+    if (from !== "USD") {
+      usdAmount = await ExchangeRateService.convertToUSD(Number(amount), from);
+    }
+
+    const convertedAmount = await ExchangeRateService.convertFromUSD(usdAmount, to);
+
+    return success(res, "Conversion successful", {
+      original_amount: amount,
+      from,
+      to,
+      converted_amount: convertedAmount,
+      rate: Number((convertedAmount / amount).toFixed(4))
+    }, 200);
   } catch (err) {
     next(err);
   }

@@ -1,4 +1,6 @@
 import express from "express";
+import * as Sentry from "@sentry/node";
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
@@ -12,16 +14,23 @@ import mongoSanitize from "express-mongo-sanitize";
 import indexRoutes from "./routes/index.js";
 import generalRoutes from "./routes/general.js";
 import bullBoardRouter from "./bullboard.js";
+import swaggerJsdoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
 
 import {
   SIX_HOURS,
   updateNgnRate,
   updateTokenPrices,
 } from "./config/initials.js";
+import { corsOptions } from "./config/cors.js";
 
 import { performanceMonitor } from "./middleware/performance.js";
+import { versionDetection } from "./middleware/apiVersion.js";
 import logger, { stream } from "./utils/logger.js";
-import { sanitizeRequest } from "./middleware/validation.js";
+import {
+  sanitizeRequest,
+  detectSqlInjection,
+} from "./middleware/validation.js";
 
 import {
   globalLimiter,
@@ -35,37 +44,50 @@ dotenv.config();
 
 const app = express();
 
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV || "development",
+  integrations: [nodeProfilingIntegration()],
+  // Performance Monitoring
+  tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
+  profilesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
+});
+
+// Custom Sentry Middleware to attach context
+app.use((req, res, next) => {
+  // Try to use Sentry's newer IsolationScope if available, otherwise just use setContext safely.
+  // Actually, Express requests run in their own async context in Node, so we can do this:
+  Sentry.setContext("request_body", req.body || {});
+  Sentry.setContext("request_query", req.query || {});
+  next();
+});
+
 // ===== SECURITY MIDDLEWARE =====
 
 // Helmet for HTTP security headers
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
     },
-  },
-  hsts: {
-    maxAge: 31536000, // 1 year
-    includeSubDomains: true,
-    preload: true,
-  },
-  frameguard: { action: "deny" },
-  xssFilter: true,
-  noSniff: true,
-  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
-}));
+    hsts: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard: { action: "deny" },
+    xssFilter: true,
+    noSniff: true,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  }),
+);
 
-// CORS configuration
-const corsOptions = {
-  origin: process.env.CORS_ORIGIN?.split(",") || ["*"],
-  credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-request-id"],
-  maxAge: 3600,
-};
+// CORS configuration — origin and credentials resolved from config/cors.js.
+// In production CORS_ORIGIN must be set; the app will not start without it.
 app.use(cors(corsOptions));
 
 // Global rate limiting (applies to all routes)
@@ -78,21 +100,35 @@ app.use(xss());
 app.use(mongoSanitize());
 
 // Prevent HTTP parameter pollution
-app.use(hpp({
-  whitelist: [
-    // Add query params that should be allowed as arrays
-    "sort",
-    "fields",
-    "filter",
-  ],
-}));
+app.use(
+  hpp({
+    whitelist: [
+      // Add query params that should be allowed as arrays
+      "sort",
+      "fields",
+      "filter",
+    ],
+  }),
+);
 
 // Compression (gzip responses)
-app.use(compression());
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.headers["x-no-compression"]) return false;
+      return compression.filter(req, res);
+    },
+    threshold: 1024, // Only compress responses > 1KB
+    level: 6, // Compression level (0-9, 6 is default balance)
+  }),
+);
 
 // Request body parsing with size limits
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Detect SQL Injection attempts
+app.use(detectSqlInjection);
 
 // Sanitize all request inputs
 app.use(sanitizeRequest);
@@ -108,8 +144,8 @@ if (process.env.NODE_ENV === "development") {
 // Performance Monitoring
 app.use(performanceMonitor);
 
-// Performance Monitoring
-app.use(performanceMonitor);
+// API Version Detection
+app.use("/api", versionDetection);
 
 // ===== ROUTES =====
 
@@ -129,6 +165,11 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Test route for user verification of Sentry
+app.get("/test-error", (req, res) => {
+  throw new Error("Sentry Test Error manually triggered");
+});
+
 import tagRoutes from "./routes/tagRoutes.js";
 
 app.use("/", generalRoutes);
@@ -136,28 +177,88 @@ app.use("/api", indexRoutes);
 app.use("/api/tags", tagRoutes);
 
 // Admin routes with basic auth and rate limiting
+if (!process.env.BULL_ADMIN_USER || !process.env.BULL_ADMIN_PASS) {
+  throw new Error("BULL_ADMIN_USER and BULL_ADMIN_PASS env vars must be set");
+}
 app.use(
   "/admin/running-queues",
   basicAuth({
-    users: { admin: process.env.BULL_ADMIN_PASS || "tagg@d" },
+    users: { [process.env.BULL_ADMIN_USER]: process.env.BULL_ADMIN_PASS },
     challenge: true,
   }),
-  bullBoardRouter.getRouter()
+  bullBoardRouter.getRouter(),
+);
+
+// Swagger Documentation setup
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "Tagg@d API",
+      version: "1.0.0",
+      description: "API documentation for the Tagg@d backend",
+    },
+    servers: [
+      {
+        url: `http://localhost:${process.env.PORT || 5002}`,
+        description: "Development Server",
+      },
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
+    },
+  },
+  apis: ["./routes/*.js"], // Path to the API docs
+};
+
+const swaggerDocs = swaggerJsdoc(swaggerOptions);
+
+if (!process.env.SWAGGER_ADMIN_USER || !process.env.SWAGGER_ADMIN_PASS) {
+  throw new Error(
+    "SWAGGER_ADMIN_USER and SWAGGER_ADMIN_PASS env vars must be set",
+  );
+}
+app.use(
+  "/api-docs",
+  basicAuth({
+    users: { [process.env.SWAGGER_ADMIN_USER]: process.env.SWAGGER_ADMIN_PASS },
+    challenge: true,
+  }),
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerDocs),
 );
 
 // ===== ERROR HANDLING =====
 
 app.all("*", (req, res, next) => {
-  res.status(404).json({ 
+  res.status(404).json({
     message: `Route ${req.originalUrl} not found`,
     path: req.originalUrl,
     method: req.method,
   });
 });
 
+// Setup Sentry error handler
+Sentry.setupExpressErrorHandler(app);
+
 // Global error handler
 app.use((error, req, res, next) => {
-  console.error(error.stack);
+  const isDev = process.env.NODE_ENV !== "production";
+
+  logger.error({
+    message: error.message,
+    status: error.status || 500,
+    method: req.method,
+    url: req.originalUrl,
+    requestId: req.headers["x-request-id"] || null,
+    ...(isDev && { stack: error.stack }),
+  });
 
   if (error.type === "entity.parse.failed") {
     return res.status(400).json({ error: "Invalid JSON" });
@@ -171,10 +272,7 @@ app.use((error, req, res, next) => {
   }
 
   res.status(error.status || 500).json({
-    error:
-      process.env.NODE_ENV === "production"
-        ? "Internal server error"
-        : error.message,
+    error: isDev ? error.message : "Internal server error",
   });
 });
 

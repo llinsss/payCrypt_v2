@@ -7,6 +7,7 @@ import {
   revokeApiKey,
   rotateApiKey,
   getApiKeyStats,
+  getApiKeyAuditLogs,
 } from "../controllers/apiKeyController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.js";
@@ -25,12 +26,14 @@ const createApiKeySchema = Joi.object({
   scopes: Joi.string().optional().default("read,write"),
   ipWhitelist: Joi.string().optional(),
   expiresIn: Joi.number().optional().min(1).max(365), // days
+  rotationIntervalDays: Joi.number().optional().min(1).max(365), // days
 });
 
 const updateApiKeySchema = Joi.object({
   name: Joi.string().optional().min(3).max(100),
   scopes: Joi.string().optional(),
   ipWhitelist: Joi.string().optional(),
+  rotationIntervalDays: Joi.number().optional().min(0).max(365), // 0 to disable
 });
 
 // Create new API key (strict rate limiting)
@@ -44,6 +47,9 @@ router.get("/:keyId", getApiKey);
 
 // Get API key statistics
 router.get("/:keyId/stats", getApiKeyStats);
+
+// Get API key rotation logs
+router.get("/:keyId/rotation-logs", getApiKeyAuditLogs);
 
 // Update API key
 router.patch("/:keyId", validate(updateApiKeySchema), auditLog("api_keys"), updateApiKey);

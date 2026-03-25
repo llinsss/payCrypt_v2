@@ -44,14 +44,8 @@ export const getBalances = async (req, res) => {
 export const getBalanceByUser = async (req, res) => {
   try {
     const { id } = req.user;
-    const ngnPrice = Number((await redis.get(NGN_KEY)) ?? 1600);
     const balances = await Balance.getByUser(id);
-    let response = [];
-    for (const balance of balances) {
-      const ngn_value = Number(balance.usd_value) * ngnPrice;
-      response.push({ ...balance, ngn_value });
-    }
-    res.json(response);
+    res.json(balances);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -185,8 +179,7 @@ export const updateUserBalance = async (req, res) => {
           });
         } catch (err) {
           console.warn(
-            `❌ Poll error for ${user?.tag || "unknown"} (${
-              balance.token_symbol || "?"
+            `❌ Poll error for ${user?.tag || "unknown"} (${balance.token_symbol || "?"
             }): ${err.message}`
           );
         }
@@ -203,14 +196,14 @@ export const getBalanceByTag = async (req, res) => {
   try {
     const { tag } = req.params;
 
-    
+
     const cacheKey = `balances:tag:${tag}`;
     const cached = await redis.get(cacheKey);
     if (cached) {
       return res.json(JSON.parse(cached));
     }
 
-    
+
     const user = await db("users").where({ tag }).first();
     if (!user) {
       return res.status(404).json({
@@ -220,7 +213,7 @@ export const getBalanceByTag = async (req, res) => {
       });
     }
 
-    
+
     const balances = await Balance.getByUser(user.id);
 
     // 4️⃣ Format response (IMPORTANT)
@@ -235,7 +228,7 @@ export const getBalanceByTag = async (req, res) => {
       balances: responseBalances,
     };
 
-    
+
     await redis.set(cacheKey, JSON.stringify(response), "EX", 60);
 
     res.json(response);
