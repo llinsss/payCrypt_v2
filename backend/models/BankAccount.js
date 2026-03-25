@@ -14,6 +14,12 @@ const BankAccount = {
       .first();
   },
 
+  async findByAccountNumber(accountNumber, bankCode) {
+    return await db("bank_accounts")
+      .where({ account_number: accountNumber, bank_code: bankCode })
+      .first();
+  },
+
   async getAll(limit = 10, offset = 0) {
     return await db("bank_accounts")
       .select("bank_accounts.*", "users.email", "users.tag")

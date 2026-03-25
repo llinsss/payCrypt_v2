@@ -1,71 +1,90 @@
+import redis from "../config/redis.js";
 import User from "../models/User.js";
-import ApiKey from "../models/ApiKey.js";
-import { TIER_LIMITS, RATE_LIMIT_TIERS } from "../config/rateLimiting.js";
+import { TIER_LIMITS } from "../config/rateLimiting.js"; // We'll update this file next
+
+const TOKEN_BUCKET_LUA = `
+local key = KEYS[1]
+local capacity = tonumber(ARGV[1])
+local refillRate = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local requested = tonumber(ARGV[4]) or 1
+
+local state = redis.call('HMGET', key, 'tokens', 'lastRefill')
+local tokens = tonumber(state[1])
+local lastRefill = tonumber(state[2])
+
+if not tokens then
+    tokens = capacity
+    lastRefill = now
+else
+    local elapsed = math.max(0, now - lastRefill)
+    local refill = elapsed * refillRate
+    tokens = math.min(capacity, tokens + refill)
+    lastRefill = now
+end
+
+local allowed = tokens >= requested
+if allowed then
+    tokens = tokens - requested
+end
+
+redis.call('HMSET', key, 'tokens', tostring(tokens), 'lastRefill', tostring(lastRefill))
+-- Expire the key after enough time to fully refill
+local expireTime = math.ceil(capacity / refillRate / 1000) + 60
+redis.call('EXPIRE', key, math.max(60, expireTime))
+
+return {tostring(allowed), tostring(math.floor(tokens))}
+`;
 
 const RateLimitService = {
-  async getUserTier(userId) {
-    const user = await User.findById(userId);
-    return user?.tier || RATE_LIMIT_TIERS.FREE;
-  },
+  /**
+   * Consume a token from the bucket
+   * @param {string} key - Redis key
+   * @param {number} capacity - Max tokens
+   * @param {number} refillRatePerMs - Refill rate (tokens per ms)
+   * @returns {Promise<{allowed: boolean, remaining: number}>}
+   */
+  async consume(key, capacity, refillRatePerMs) {
+    try {
+      const now = Date.now();
+      const result = await redis.eval(TOKEN_BUCKET_LUA, {
+        keys: [key],
+        arguments: [
+          capacity.toString(),
+          refillRatePerMs.toString(),
+          now.toString(),
+          "1"
+        ]
+      });
 
-  async getApiKeyRateLimit(apiKeyId) {
-    const apiKey = await ApiKey.findById(apiKeyId);
-    return apiKey?.rate_limit || null;
-  },
-
-  async getEffectiveRateLimit(user, apiKey) {
-    if (apiKey?.rate_limit !== null && apiKey?.rate_limit !== undefined) {
-      return apiKey.rate_limit;
+      return {
+        allowed: result[0] === "true",
+        remaining: parseInt(result[1])
+      };
+    } catch (error) {
+      console.error(`[RateLimitService] Error consuming token for ${key}:`, error);
+      // Default to allowed in case of Redis failure to prevent DoS on ourselves, 
+      // or false if we want strict security. We'll use false for safety in prod.
+      return { allowed: false, remaining: 0, error: "Redis utility failure" };
     }
-
-    const tier = user?.tier || RATE_LIMIT_TIERS.FREE;
-    return TIER_LIMITS[tier] || TIER_LIMITS.FREE;
   },
 
-  async setUserTier(userId, tier) {
-    if (!Object.values(RATE_LIMIT_TIERS).includes(tier)) {
-      throw new Error(`Invalid tier: ${tier}. Must be FREE or PREMIUM`);
-    }
-    return await User.updateTier(userId, tier);
-  },
-
-  async setApiKeyRateLimit(apiKeyId, rateLimit) {
-    if (rateLimit !== null && (typeof rateLimit !== "number" || rateLimit < 0)) {
-      throw new Error("rate_limit must be a non-negative number or null");
-    }
-    return await ApiKey.updateRateLimit(apiKeyId, rateLimit);
-  },
-
-  async getRateLimitSettings() {
-    return {
-      tiers: {
-        FREE: {
-          tier: RATE_LIMIT_TIERS.FREE,
-          limit: TIER_LIMITS.FREE,
-          windowMs: 60000,
-        },
-        PREMIUM: {
-          tier: RATE_LIMIT_TIERS.PREMIUM,
-          limit: TIER_LIMITS.PREMIUM,
-          windowMs: 60000,
-        },
-      },
-      defaults: {
-        freeTierLimit: TIER_LIMITS.FREE,
-        premiumTierLimit: TIER_LIMITS.PREMIUM,
-      },
-    };
-  },
-
-  async getUserRateLimitStatus(userId) {
-    const tier = await this.getUserTier(userId);
-    return {
-      userId,
-      tier,
-      limit: TIER_LIMITS[tier] || TIER_LIMITS.FREE,
-      windowMs: 60000,
-    };
-  },
+  /**
+   * Get limits for a user tier
+   * @param {string} tier - FREE, PREMIUM, ENTERPRISE
+   * @returns {Object} { capacity, refillRatePerMs }
+   */
+  getTierLimits(tier = "FREE", endpointType = "api") {
+    // Default fallback limits
+    const config = TIER_LIMITS[tier] || TIER_LIMITS.FREE;
+    const limit = config[endpointType] || config.api || 100; // default 100/hr
+    
+    // Convert to tokens per ms
+    const capacity = limit;
+    const refillRatePerMs = limit / (60 * 60 * 1000); // per hour to per ms
+    
+    return { capacity, refillRatePerMs };
+  }
 };
 
 export default RateLimitService;
