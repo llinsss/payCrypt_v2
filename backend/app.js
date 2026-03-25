@@ -176,6 +176,8 @@ import rateLimitRoutes from "./routes/rateLimit.js";
 app.use("/", generalRoutes);
 app.use("/api", indexRoutes);
 app.use("/api/tags", tagRoutes);
+import withdrawalRoutes from "./routes/withdrawals.js";
+app.use("/api/withdrawals", withdrawalRoutes);
 
 // Rate limit admin routes
 app.use("/admin/rate-limits", rateLimitRoutes);

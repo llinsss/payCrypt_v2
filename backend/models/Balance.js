@@ -324,11 +324,12 @@ const Balance = {
     return result;
   },
 
-  async credit(id, amount) {
-    await db("balances").where({ id }).increment("amount", amount);
+  async credit(id, amount, trx = null) {
+    const query = trx || db;
+    await query("balances").where({ id }).increment("amount", amount);
 
     // Invalidate cache
-    const balance = await db("balances").where({ id }).first();
+    const balance = await query("balances").where({ id }).first();
     if (balance) {
       await invalidateUserCache(balance.user_id);
       await redis.del(cacheKeys.balanceById(id));
@@ -337,11 +338,12 @@ const Balance = {
     return this.findById(id);
   },
 
-  async debit(id, amount) {
-    await db("balances").where({ id }).decrement("amount", amount);
+  async debit(id, amount, trx = null) {
+    const query = trx || db;
+    await query("balances").where({ id }).decrement("amount", amount);
 
     // Invalidate cache
-    const balance = await db("balances").where({ id }).first();
+    const balance = await query("balances").where({ id }).first();
     if (balance) {
       await invalidateUserCache(balance.user_id);
       await redis.del(cacheKeys.balanceById(id));
