@@ -594,12 +594,34 @@ async update(id, transactionData, trx = null) {
   async findByFingerprint(fingerprint, windowMs) {
     const windowStart = new Date(Date.now() - windowMs).toISOString();
     return await db("transactions")
-      .whereRaw("extra::json->>'fingerprint' = ?", [fingerprint])
+      .where("fingerprint", fingerprint)
       .whereIn("status", ["pending", "completed"])
       .where("type", "payment")
       .where("created_at", ">=", windowStart)
       .whereNull("deleted_at")
       .orderBy("created_at", "desc")
+      .first();
+  },
+
+  /**
+   * Same as findByFingerprint but acquires a row-level lock (SELECT ... FOR UPDATE)
+   * so concurrent callers serialize. Must be called inside an open `trx`.
+   *
+   * @param {string} fingerprint
+   * @param {number} windowMs
+   * @param {import("knex").Knex.Transaction} trx
+   * @returns {Promise<Object|undefined>}
+   */
+  async findByFingerprintForUpdate(fingerprint, windowMs, trx) {
+    const windowStart = new Date(Date.now() - windowMs).toISOString();
+    return await trx("transactions")
+      .where("fingerprint", fingerprint)
+      .whereIn("status", ["pending", "completed"])
+      .where("type", "payment")
+      .where("created_at", ">=", windowStart)
+      .whereNull("deleted_at")
+      .orderBy("created_at", "desc")
+      .forUpdate()
       .first();
   },
 

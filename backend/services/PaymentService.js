@@ -378,38 +378,37 @@ class PaymentService {
    * @throws {Error} if payment processing fails
    */
   async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, notes, secrets, userId, idempotencyKey }) {
-    // ── Duplicate detection (fast-fail, before opening a DB transaction) ──────
     const fingerprint = this._fingerprintTransaction({ userId, senderTag, recipientTag, amount, asset });
-    const duplicate = await this._checkDuplicate(fingerprint);
-    if (duplicate) {
-      if (duplicate.status === 'completed') {
-        const dupExtra = typeof duplicate.extra === 'string'
-          ? JSON.parse(duplicate.extra || '{}')
-          : (duplicate.extra || {});
-        this.logger.log(`Duplicate payment detected (fingerprint ${fingerprint}), returning existing tx ${duplicate.id}`);
-        return {
-          success: true,
-          transactionId: duplicate.id,
-          txHash: duplicate.tx_hash,
-          amount: parseFloat(duplicate.amount),
-          asset: dupExtra.asset || asset,
-          senderTag,
-          recipientTag,
-          duplicateDetected: true,
-        };
-      }
-      throw new Error(
-        'Duplicate transaction submission detected. An identical payment is already being processed. ' +
-        `Please wait ${PAYMENT_CONFIG.DUPLICATE_WINDOW_MS / 1000} seconds before retrying.`
-      );
-    }
-
     const effectiveIdempotencyKey = idempotencyKey || this._generateIdempotencyKey({ senderTag, recipientTag, amount, userId });
     const trx = await db.transaction();
     let transactionRecord = null;
 
     try {
-      // Step 0: Idempotency check - return existing completed result or reject duplicates
+      // Step 0a: Locked duplicate check — serializes concurrent identical requests.
+      // FOR UPDATE ensures only one request proceeds past this point at a time.
+      const duplicate = await Transaction.findByFingerprintForUpdate(fingerprint, PAYMENT_CONFIG.DUPLICATE_WINDOW_MS, trx);
+      if (duplicate) {
+        await trx.commit();
+        if (duplicate.status === 'completed') {
+          this.logger.log(`Duplicate payment detected (fingerprint ${fingerprint}), returning existing tx ${duplicate.id}`);
+          return {
+            success: true,
+            transactionId: duplicate.id,
+            txHash: duplicate.tx_hash,
+            amount: parseFloat(duplicate.amount),
+            asset,
+            senderTag,
+            recipientTag,
+            duplicateDetected: true,
+          };
+        }
+        throw new Error(
+          'Duplicate transaction submission detected. An identical payment is already being processed. ' +
+          `Please wait ${PAYMENT_CONFIG.DUPLICATE_WINDOW_MS / 1000} seconds before retrying.`
+        );
+      }
+
+      // Step 0b: Idempotency check
       const existingTransaction = await Transaction.findByIdempotencyKey(effectiveIdempotencyKey, trx);
       if (existingTransaction) {
         await trx.commit();
@@ -486,8 +485,8 @@ class PaymentService {
         to_address: recipientAddress,
         description: memo || `Payment from ${senderTag} to ${recipientTag}`,
         notes: notes || null,
+        fingerprint,
         extra: JSON.stringify({
-          fingerprint,
           fee: feeInfo.fee,
           baseFee: feeInfo.baseFee,
           networkFee: feeInfo.networkFee,
@@ -748,19 +747,6 @@ class PaymentService {
       asset.toUpperCase(),
     ];
     return crypto.createHash('sha256').update(parts.join(':')).digest('hex');
-  }
-
-  /**
-   * Return the most recent payment transaction that shares the same fingerprint
-   * and was created within the configured duplicate-detection window.
-   * Returns `undefined` when no duplicate is found.
-   *
-   * @private
-   * @param {string} fingerprint
-   * @returns {Promise<Object|undefined>}
-   */
-  async _checkDuplicate(fingerprint) {
-    return Transaction.findByFingerprint(fingerprint, PAYMENT_CONFIG.DUPLICATE_WINDOW_MS);
   }
 
   /**
