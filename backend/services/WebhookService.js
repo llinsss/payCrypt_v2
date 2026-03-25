@@ -34,8 +34,6 @@ const WebhookService = {
     );
   },
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   generateSecret() {
     return crypto.randomBytes(32).toString("hex");
   },
@@ -44,11 +42,10 @@ const WebhookService = {
     return WebhookSignature.generateSignature(payload, secret);
   },
 
+  // FIXED FUNCTION
   verifySignature(payload, signature, secret) {
     return WebhookSignature.verifySignature(payload, signature, secret);
   },
-
-  // ── Registration ────────────────────────────────────────────────────────────
 
   async register({ user_id, url, events, secret }) {
     const validEvents = Object.values(WEBHOOK_EVENTS);
@@ -119,8 +116,6 @@ const WebhookService = {
     await Webhook.update(id, { secret: newSecret });
     return { secret: newSecret };
   },
-
-  // ── Delivery ─────────────────────────────────────────────────────────────────
 
   async dispatch(eventType, data, user_id = null) {
     const webhooks = await Webhook.findActive(user_id || undefined);

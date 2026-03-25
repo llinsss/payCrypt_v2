@@ -8,10 +8,8 @@ import {
   LogOut,
   Settings as SettingsIcon,
   Mail,
-  MapPin,
   Lock,
   Eye,
-  EyeOff,
   CheckCircle2,
   Smartphone,
   Zap,
@@ -451,30 +449,6 @@ const InfoField: React.FC<{
     >
       {value}
     </div>
-  </div>
-);
-
-const StatCard: React.FC<{
-  label: string;
-  value: string;
-  status?: "verified" | "active" | "inactive";
-}> = ({ label, value, status }) => (
-  <div className="text-center p-4 bg-white rounded-xl border border-gray-200 hover:shadow-md transition-all duration-300">
-    <div className="text-2xl font-bold text-gray-900 mb-1">{value}</div>
-    <div className="text-sm text-gray-600">{label}</div>
-    {status && (
-      <div
-        className={`mt-2 text-xs px-2 py-1 rounded-full ${
-          status === "verified"
-            ? "bg-green-100 text-green-700"
-            : status === "active"
-            ? "bg-blue-100 text-blue-700"
-            : "bg-gray-100 text-gray-600"
-        }`}
-      >
-        {status}
-      </div>
-    )}
   </div>
 );
 
