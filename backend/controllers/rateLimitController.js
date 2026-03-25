@@ -144,3 +144,38 @@ export const updateApiKeyRateLimit = async (req, res) => {
     res.status(500).json({ error: "Failed to update API key rate limit" });
   }
 };
+import AuditLog from "../models/AuditLog.js";
+
+/**
+ * Get top rate limit violators
+ * GET /admin/rate-limits/violations
+ */
+export const getRateLimitViolations = async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+    
+    const violations = await AuditLog.query({
+      action: "rate_limit_exceeded",
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      sortBy: "created_at",
+      sortOrder: "desc"
+    });
+
+    const total = await AuditLog.countByFilters({
+      action: "rate_limit_exceeded"
+    });
+
+    res.status(200).json({
+      data: violations,
+      pagination: {
+        total,
+        limit: parseInt(limit),
+        offset: parseInt(offset)
+      }
+    });
+  } catch (error) {
+    console.error("Get rate limit violations error:", error);
+    res.status(500).json({ error: "Failed to retrieve rate limit violations" });
+  }
+};
