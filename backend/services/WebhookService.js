@@ -3,6 +3,7 @@ import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import { webhookQueue } from "../queues/webhook.js";
+import WebhookSignature from "../utils/webhookSignature.js";
 
 export const WEBHOOK_EVENTS = {
   PAYMENT_COMPLETED: "payment.completed",
@@ -40,19 +41,11 @@ const WebhookService = {
   },
 
   generateSignature(payload, secret) {
-    return (
-      "sha256=" +
-      crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex")
-    );
+    return WebhookSignature.generateSignature(payload, secret);
   },
 
   verifySignature(payload, signature, secret) {
-    const expected = this.generateSignature(payload, secret);
-    try {
-      return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-    } catch {
-      return false;
-    }
+    return WebhookSignature.verifySignature(payload, signature, secret);
   },
 
   // ── Registration ────────────────────────────────────────────────────────────
