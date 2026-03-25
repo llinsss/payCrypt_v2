@@ -22,6 +22,7 @@ import {
   updateNgnRate,
   updateTokenPrices,
 } from "./config/initials.js";
+import { corsOptions } from "./config/cors.js";
 
 import { performanceMonitor } from "./middleware/performance.js";
 import { versionDetection } from "./middleware/apiVersion.js";
@@ -85,26 +86,8 @@ app.use(
   }),
 );
 
-// CORS configuration
-const corsOptions = {
-  origin: process.env.CORS_ORIGIN?.split(",") || ["*"],
-  credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "x-api-key",
-    "x-request-id",
-  ],
-  exposedHeaders: [
-    "X-RateLimit-Limit",
-    "X-RateLimit-Remaining",
-    "X-RateLimit-Reset",
-    "Retry-After",
-  ],
-  maxAge: 3600,
-};
+// CORS configuration — origin and credentials resolved from config/cors.js.
+// In production CORS_ORIGIN must be set; the app will not start without it.
 app.use(cors(corsOptions));
 
 // Global rate limiting (applies to all routes)
@@ -188,10 +171,14 @@ app.get("/test-error", (req, res) => {
 });
 
 import tagRoutes from "./routes/tagRoutes.js";
+import rateLimitRoutes from "./routes/rateLimit.js";
 
 app.use("/", generalRoutes);
 app.use("/api", indexRoutes);
 app.use("/api/tags", tagRoutes);
+
+// Rate limit admin routes
+app.use("/admin/rate-limits", rateLimitRoutes);
 
 // Admin routes with basic auth and rate limiting
 if (!process.env.BULL_ADMIN_USER || !process.env.BULL_ADMIN_PASS) {

@@ -2,7 +2,7 @@ import request from "supertest";
 import express from "express";
 import { initApollo } from "../graphql/apollo.js";
 import knex from "knex";
-import jwt from "jsonwebtoken";
+import { signToken } from "../config/jwt.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -41,9 +41,8 @@ beforeAll(async () => {
         testUser = await db("users").where({ id }).first();
     }
 
-    validToken = jwt.sign(
+    validToken = signToken(
         { userId: testUser.id },
-        process.env.JWT_SECRET || "default_secret",
         { expiresIn: "10h" }
     );
 });

@@ -2,6 +2,16 @@ import rateLimit from "express-rate-limit";
 import redis from "redis";
 import RedisStore from "rate-limit-redis";
 
+export const TIER_LIMITS = {
+  FREE: parseInt(process.env.RATE_LIMIT_FREE_TIER) || 100,
+  PREMIUM: parseInt(process.env.RATE_LIMIT_PREMIUM_TIER) || 1000,
+};
+
+export const RATE_LIMIT_TIERS = {
+  FREE: "FREE",
+  PREMIUM: "PREMIUM",
+};
+
 const redisClient = redis.createClient({
   host: process.env.REDIS_HOST || "localhost",
   port: process.env.REDIS_PORT || 6379,
@@ -281,6 +291,20 @@ export const exportLimiter = createUserRateLimiter({
   message: "Export limit exceeded. You can export up to 5 times per hour.",
 });
 
+/**
+ * Download rate limiter — 10 requests per 15 minutes per IP
+ * Applied to GET /api/transactions/export/download which uses a signed
+ * query-param token (email link) and must not be brute-forceable.
+ */
+export const downloadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: "Too many download requests from this IP, please try again later",
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+});
+
 export default {
   globalLimiter,
   accountCreationLimiter,
@@ -291,4 +315,5 @@ export default {
   createUserRateLimiter,
   userRateLimiter,
   exportLimiter,
+  downloadLimiter,
 };

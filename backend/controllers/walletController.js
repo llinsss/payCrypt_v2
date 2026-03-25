@@ -15,6 +15,7 @@ import { ethers } from "ethers";
 import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
+import { transactionConfirmationQueue } from "../queues/transactionConfirmation.js";
 
 export const getWalletByUserId = async (req, res) => {
   try {
@@ -53,15 +54,17 @@ export const updateWallet = async (req, res) => {
       return res.status(400).json({ error: "Wallet not found" });
     }
 
-    // Only allow wallet owner to update
     if (wallet.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updatedWallet = await Wallet.update(id, {
-      auto_convert_threshold: req.body.auto_convert_threshold,
+    // Note: Wallets currently have no user-updatable fields.
+    // auto_convert_threshold is a balance-level setting, not wallet-level.
+    // If you need to update balance settings, use the balance update endpoint.
+    
+    return res.status(400).json({ 
+      error: "No updatable fields available. Use balance endpoints to update balance settings." 
     });
-    res.json(updatedWallet);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -76,12 +79,10 @@ export const deleteWallet = async (req, res) => {
       return res.status(400).json({ error: "Wallet not found" });
     }
 
-    // Only allow wallet owner to delete
     if (wallet.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    // await Wallet.delete(id);
     res.json({ message: "Wallet deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -105,13 +106,10 @@ export const send_to_tag = async (req, res) => {
     ]);
 
     if (!user) return res.status(400).json({ error: "User not found" });
-    if (!recipient)
-      return res.status(400).json({ error: "Recipient not found" });
-    if (recipient.id === user.id)
-      return res.status(400).json({ error: "Cannot send to self" });
+    if (!recipient) return res.status(400).json({ error: "Recipient not found" });
+    if (recipient.id === user.id) return res.status(400).json({ error: "Cannot send to self" });
     if (!balance) return res.status(400).json({ error: "Balance not found" });
-    if (balance.user_id !== id)
-      return res.status(403).json({ error: "Unauthorized" });
+    if (balance.user_id !== id) return res.status(403).json({ error: "Unauthorized" });
 
     if (amount > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
@@ -121,36 +119,33 @@ export const send_to_tag = async (req, res) => {
     if (!token) return res.status(400).json({ error: "Token not found" });
 
     const timestamp = new Date();
-    const usdPrice = token.price ?? 1;
-    const usdValue = amount * usdPrice;
-    const reference = secureRandomString(16);
+    const usdValue = amount * (token.price ?? 1);
+    const reference = secureRandomString(16); // shared reference
     const chain = contract.chains[token.symbol];
     const sender_tag = user.tag;
-    const payload = {
+
+    const txHash = await contract.send_via_tag({
       chain,
       sender_tag,
       receiver_tag,
       amount,
-    };
-    const txHash = await contract.send_via_tag(payload);
-    console.log("Hash:", txHash)
+    });
 
     if (!txHash) {
       return res.status(422).json({ error: "Failed to transfer" });
     }
 
-    // ====== ⛓ Common database updates ======
     await Promise.all([
       Transaction.create({
         user_id: user.id,
-        status: "completed",
+        status: "pending",
         token_id: balance.token_id,
-        chain_id: token.id,
+        chain_id: token.chain_id,
         reference,
         type: "debit",
         tx_hash: txHash,
         usd_value: usdValue,
-        amount: amount,
+        amount,
         timestamp,
         from_address: sender_tag,
         to_address: receiver_tag,
@@ -158,30 +153,39 @@ export const send_to_tag = async (req, res) => {
       }),
       Notification.create({
         user_id: user.id,
-        title: "Fund transfer",
-        body: `You transferred ${amount} ${token.symbol} to ${receiver_tag}`,
+        title: "Fund transfer initiated",
+        body: `Transfer of ${amount} ${token.symbol} to ${receiver_tag} is being processed`,
       }),
       Transaction.create({
         user_id: recipient.id,
-        status: "completed",
+        status: "pending",
         token_id: balance.token_id,
         chain_id: token.chain_id,
-        reference: secureRandomString(16),
+        reference, // FIX
         type: "credit",
         tx_hash: txHash,
         usd_value: usdValue,
-        amount: amount,
+        amount,
         timestamp,
         from_address: sender_tag,
         to_address: receiver_tag,
         description: "Fund received",
       }),
-      Notification.create({
-        user_id: recipient.id,
-        title: "Fund received",
-        body: `You received ${amount} ${token.symbol} from ${sender_tag}`,
-      }),
     ]);
+
+    // Enqueue transaction confirmation job
+    if (transactionConfirmationQueue) {
+      await transactionConfirmationQueue.add(
+        "confirm-transaction",
+        {
+          txHash,
+          chain: token.chain_id || chain,
+        },
+        {
+          delay: 10000, // Start checking after 10 seconds
+        }
+      );
+    }
 
     return res.json({ data: "success", txHash });
   } catch (error) {
@@ -194,6 +198,7 @@ export const send_to_wallet = async (req, res) => {
   try {
     const { id } = req.user;
     const { receiver_address, amount: _amount, balance_id } = req.body;
+
     const amount = Number(_amount);
     if (!amount || !balance_id) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -211,6 +216,7 @@ export const send_to_wallet = async (req, res) => {
     if (!balance) return res.status(400).json({ error: "Balance not found" });
     if (balance.user_id !== id)
       return res.status(403).json({ error: "Unauthorized" });
+
     if (amount > Number(balance.amount)) {
       return res.status(422).json({ error: "Insufficient wallet balance" });
     }
@@ -219,37 +225,34 @@ export const send_to_wallet = async (req, res) => {
     if (!token) return res.status(400).json({ error: "Token not found" });
 
     const timestamp = new Date();
-    const usdPrice = token.price ?? 1;
-    const usdValue = amount * usdPrice;
-    const reference = secureRandomString(16);
+    const usdValue = amount * (token.price ?? 1);
+    const reference = secureRandomString(16); // shared
     const chain = contract.chains[token.symbol];
-    const sender_tag = user.tag;
     const sender_address = balance.address;
-    const payload = {
+    const sender_tag = user.tag;
+
+    const txHash = await contract.send_via_wallet({
       chain,
       sender_tag,
       receiver_address,
       amount,
-    };
-    const txHash = await contract.send_via_wallet(payload);
-    console.log("Hash:", txHash)
+    });
 
     if (!txHash) {
       return res.status(422).json({ error: "Failed to transfer" });
     }
 
-    // ====== ⛓ Common database updates ======
     await Promise.all([
       Transaction.create({
         user_id: user.id,
-        status: "completed",
+        status: "pending",
         token_id: balance.token_id,
-        chain_id: token.id,
+        chain_id: token.chain_id,
         reference,
         type: "debit",
         tx_hash: txHash,
         usd_value: usdValue,
-        amount: amount,
+        amount,
         timestamp,
         from_address: sender_address,
         to_address: receiver_address,
@@ -257,33 +260,43 @@ export const send_to_wallet = async (req, res) => {
       }),
       Notification.create({
         user_id: user.id,
-        title: "Fund transfer",
-        body: `You transferred ${amount} ${token.symbol} to ${receiver_address}`,
+        title: "Fund transfer initiated",
+        body: `Transfer of ${amount} ${token.symbol} to ${receiver_address} is being processed`,
       }),
     ]);
+
     if (recipient) {
       await Promise.all([
         Transaction.create({
           user_id: recipient.id,
-          status: "completed",
+          status: "pending",
           token_id: balance.token_id,
           chain_id: token.chain_id,
-          reference: secureRandomString(16),
+          reference, // FIX
           type: "credit",
           tx_hash: txHash,
           usd_value: usdValue,
-          amount: amount,
+          amount,
           timestamp,
           from_address: sender_address,
           to_address: receiver_address,
           description: "Fund received",
         }),
-        Notification.create({
-          user_id: recipient.id,
-          title: "Fund received",
-          body: `You received ${amount} ${token.symbol} from ${sender_address}`,
-        }),
       ]);
+    }
+
+    // Enqueue transaction confirmation job
+    if (transactionConfirmationQueue) {
+      await transactionConfirmationQueue.add(
+        "confirm-transaction",
+        {
+          txHash,
+          chain: token.chain_id || chain,
+        },
+        {
+          delay: 10000, // Start checking after 10 seconds
+        }
+      );
     }
 
     return res.json({ data: "success", txHash });

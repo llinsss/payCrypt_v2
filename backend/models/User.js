@@ -104,6 +104,7 @@ const User = {
         "email",
         "kyc_status",
         "currency_preference",
+        "tier",
         "created_at"
       )
       .limit(limit)
@@ -136,6 +137,17 @@ const User = {
 
   async updateNotificationPreferences(id, preferences) {
     return await NotificationPreference.update(id, preferences);
+  },
+
+  async updateTier(id, tier) {
+    await db("users")
+      .where({ id })
+      .update({
+        tier,
+        updated_at: db.fn.now(),
+      });
+
+    return this.findById(id);
   },
 };
 

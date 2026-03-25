@@ -224,6 +224,7 @@ describe("POST /transactions/payment validation", () => {
             senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             notes: "Test notes for this transaction",
             idempotencyKey: "abc123yz",
+            senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         });
         expect(res.status).toBe(200);
     });

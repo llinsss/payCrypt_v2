@@ -3,10 +3,11 @@ import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import { generateCsv } from "./CsvGenerator.js";
 import { generatePdf } from "./PdfGenerator.js";
-import jwt from "jsonwebtoken";
+import { signToken, verifyToken } from "../config/jwt.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { randomUUID } from "crypto";
 import { sendTemplatedEmail } from "./external/smtp.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,14 +24,19 @@ function getExportStoragePath() {
   return base;
 }
 
-function buildDownloadUrl(exportId, userId) {
+async function buildDownloadUrl(exportId, userId) {
   const baseUrl = process.env.API_BASE_URL || process.env.FRONTEND_URL || `http://localhost:${process.env.PORT || 3000}`;
   const apiBase = baseUrl.replace(/\/$/, "");
-  const token = jwt.sign(
+  const token = signToken(
     { exportId, userId },
+  const jti = randomUUID();
+  const token = jwt.sign(
+    { exportId, userId, jti },
     process.env.JWT_SECRET,
     { expiresIn: DOWNLOAD_TOKEN_EXPIRY }
   );
+  // Persist jti so serveDownload can validate it (one-time use)
+  await db("export_exports").where({ id: exportId }).update({ download_jti: jti });
   return `${apiBase}/api/transactions/export/download?token=${encodeURIComponent(token)}`;
 }
 
@@ -99,8 +105,15 @@ export default {
 
   async serveDownload(token) {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = verifyToken(token);
       const { exportId, userId } = decoded;
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const { exportId, userId, jti } = decoded;
+
+      // Require jti claim — tokens issued before this fix lack it
+      if (!jti) {
+        return { statusCode: 400, error: "Invalid download token." };
+      }
 
       const exportRecord = await db("export_exports")
         .where({ id: exportId, user_id: userId })
@@ -114,18 +127,34 @@ export default {
         return { statusCode: 410, error: "Export has expired." };
       }
 
+      // JTI validation — null means already used (one-time download)
+      if (exportRecord.download_jti === null || exportRecord.download_jti !== jti) {
+        return { statusCode: 410, error: "Download link has already been used." };
+      }
+
       const filePath = exportRecord.file_path;
-      if (!fs.existsSync(filePath)) {
+
+      // Path-traversal guard: restrict to the known export storage directory
+      const storageDir = path.resolve(getExportStoragePath());
+      const resolvedPath = path.resolve(filePath);
+      if (!resolvedPath.startsWith(storageDir + path.sep)) {
+        return { statusCode: 403, error: "Access denied." };
+      }
+
+      if (!fs.existsSync(resolvedPath)) {
         return { statusCode: 404, error: "Export file not found." };
       }
 
-      const ext = path.extname(filePath);
+      // Invalidate the JTI so this link cannot be reused
+      await db("export_exports").where({ id: exportId }).update({ download_jti: null });
+
+      const ext = path.extname(resolvedPath);
       const contentType = ext === ".csv" ? "text/csv" : "application/pdf";
       const filename = `transactions-export${ext}`;
 
       return {
         statusCode: 200,
-        filePath,
+        filePath: resolvedPath,
         contentType,
         filename,
       };

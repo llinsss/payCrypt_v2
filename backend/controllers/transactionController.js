@@ -411,6 +411,7 @@ export const processPayment = async (req, res) => {
       senderSecret,
       additionalSecrets = [],
       idempotencyKey
+      idempotencyKey,
     } = value;
     const userId = req.user.id;
     const idempotencyKeyFromHeader = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];

@@ -66,10 +66,10 @@ const AuthPage: React.FC = () => {
         <div className="absolute bottom-20 left-20 w-24 h-24 bg-purple-400/20 rounded-full blur-xl"></div>
       </div>
 
-      {/* Right Side - Auth Forms */}
+        {/* Right Side - Auth Forms */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         {isLogin ? (
-          <LoginForm onSwitchToRegister={() => setIsLogin(false)} />
+          <LoginForm />
         ) : (
           <RegisterForm onSwitchToLogin={() => setIsLogin(true)} />
         )}

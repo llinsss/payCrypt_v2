@@ -34,3 +34,17 @@ export const multilogin = (res) => {
     data: null,
   });
 };
+
+/**
+ * Return a structured 400 response for Joi validation failures.
+ *
+ * @param {import('express').Response} res
+ * @param {Array<{ field: string, message: string }>} errors - formatted Joi error details
+ */
+export const validationError = (res, errors = []) => {
+  return res.status(400).json({
+    error: true,
+    message: "Validation failed",
+    errors,
+  });
+};

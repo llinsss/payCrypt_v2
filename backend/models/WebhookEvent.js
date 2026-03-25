@@ -91,6 +91,25 @@ const WebhookEvent = {
       .del();
   },
 
+  async findDeadLetters(limit = 50, offset = 0) {
+    return await db("webhook_events")
+      .where({ status: 'dead_letter' })
+      .limit(limit)
+      .offset(offset)
+      .orderBy("updated_at", "desc");
+  },
+
+  async markDeadLetter(id, error_message) {
+    await db("webhook_events")
+      .where({ id })
+      .update({
+        status: 'dead_letter',
+        error_message,
+        updated_at: db.fn.now(),
+      });
+    return this.findById(id);
+  },
+
   async getStats(webhook_id) {
     const stats = await db("webhook_events")
       .where({ webhook_id })
