@@ -1,52 +1,55 @@
 import Joi from "joi";
+import { SUPPORTED_CHAINS } from "../validators/blockchainValidators.js";
+import { assetSymbolField, nonNegativeAmountField } from "../validators/customValidators.js";
 
 /**
  * Schema for creating a new balance entry.
  */
 export const balanceCreateSchema = Joi.object({
   token: Joi.string()
+    .trim()
     .required()
     .messages({
       "any.required": "Token is required",
       "string.empty": "Token cannot be empty",
     }),
 
-  symbol: Joi.string()
-    .uppercase()
-    .max(12)
+  symbol: assetSymbolField()
     .required()
     .messages({
-      "string.max": "Symbol must be at most 12 characters",
       "any.required": "Symbol is required",
       "string.empty": "Symbol cannot be empty",
     }),
 
   chain: Joi.string()
+    .valid(...SUPPORTED_CHAINS)
     .required()
     .messages({
+      "any.only": `Chain must be one of: ${SUPPORTED_CHAINS.join(", ")}`,
       "any.required": "Chain is required",
       "string.empty": "Chain cannot be empty",
     }),
 
-  amount: Joi.number()
-    .min(0)
+  amount: nonNegativeAmountField().optional(),
+
+  usd_value: nonNegativeAmountField()
     .optional()
     .messages({
-      "number.min": "Amount cannot be negative",
-      "number.base": "Amount must be a number",
+      "number.min": "USD value cannot be negative",
+      "number.base": "USD value must be a number",
     }),
 
-  usd_value: Joi.number().min(0).optional().messages({
-    "number.min": "USD value cannot be negative",
-    "number.base": "USD value must be a number",
-  }),
+  tag: Joi.string()
+    .trim()
+    .allow("", null)
+    .optional(),
 
-  tag: Joi.string().allow("", null).optional(),
+  address: Joi.string()
+    .trim()
+    .allow("", null)
+    .optional(),
 
-  address: Joi.string().allow("", null).optional(),
-
-  auto_convert_threshold: Joi.number()
-    .min(0)
+  auto_convert_threshold: nonNegativeAmountField()
     .allow(null)
     .optional()
     .messages({
@@ -54,6 +57,20 @@ export const balanceCreateSchema = Joi.object({
       "number.base": "Auto-convert threshold must be a number",
     }),
 });
+
+/**
+ * Schema for updating an existing balance (all fields optional).
+ */
+export const balanceUpdateSchema = Joi.object({
+  amount: nonNegativeAmountField().optional(),
+  usd_value: nonNegativeAmountField().optional(),
+  address: Joi.string().trim().allow("", null).optional(),
+  auto_convert_threshold: nonNegativeAmountField().allow(null).optional(),
+})
+  .min(1)
+  .messages({
+    "object.min": "At least one field must be provided for update",
+  });
 
 /**
  * Alias used in existing route (kept for backwards compatibility).

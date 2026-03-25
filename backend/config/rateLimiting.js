@@ -2,6 +2,16 @@ import rateLimit from "express-rate-limit";
 import redis from "redis";
 import RedisStore from "rate-limit-redis";
 
+export const TIER_LIMITS = {
+  FREE: parseInt(process.env.RATE_LIMIT_FREE_TIER) || 100,
+  PREMIUM: parseInt(process.env.RATE_LIMIT_PREMIUM_TIER) || 1000,
+};
+
+export const RATE_LIMIT_TIERS = {
+  FREE: "FREE",
+  PREMIUM: "PREMIUM",
+};
+
 const redisClient = redis.createClient({
   host: process.env.REDIS_HOST || "localhost",
   port: process.env.REDIS_PORT || 6379,

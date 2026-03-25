@@ -15,8 +15,11 @@ import {
   updateTransactionNote,
   searchTransactions
 } from "../controllers/transactionController.js";
-import { exportTransactions, downloadExport } from "../controllers/exportController.js";
-import { authenticate, authenticateJwtOrApiKey, userRateLimiter } from "../middleware/auth.js";
+import {
+  createBatchPayment,
+  getBatchPaymentStatus,
+} from "../controllers/batchController.js";
+import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
@@ -29,31 +32,16 @@ router.get("/search", authenticate, userRateLimiter, searchTransactions);
 router.get("/", authenticate, userRateLimiter, getTransactionByUser);
 router.get("/export/download", downloadLimiter, downloadExport);
 router.get("/export", authenticateJwtOrApiKey, userRateLimiter, exportLimiter, exportTransactions);
-router.get("/tag/:tag", validateQuery(transactionQuerySchema), getTransactionsByTag);
-router.get("/:id", authenticate, userRateLimiter, getTransactionById);
-router.put("/:id", authenticate, userRateLimiter, paymentLimiter, validate(transactionSchema), auditLog("transactions"), updateTransaction);
-router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, auditLog("transactions"), deleteTransaction);
+router.get("/tag/:tag", validateParams(transactionTagParamSchema), validateQuery(transactionQuerySchema), getTransactionsByTag);
+router.get("/:id", authenticate, userRateLimiter, validateParams(transactionIdParamSchema), getTransactionById);
+router.put("/:id", authenticate, userRateLimiter, paymentLimiter, validateParams(transactionIdParamSchema), validate(transactionSchema), auditLog("transactions"), updateTransaction);
+router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, validateParams(transactionIdParamSchema), auditLog("transactions"), deleteTransaction);
 
 // Payment operations
-router.post("/payment", authenticate, userRateLimiter, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
+router.post("/payment", authenticate, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
+router.post("/batches", authenticate, paymentLimiter, validate(batchPaymentSchema), auditLog("transactions"), createBatchPayment);
 router.get("/payment/limits", getPaymentLimits);
-
-/**
- * @swagger
- * /api/transactions/tag/{tag}/history:
- *   get:
- *     summary: Get payment history by tag
- *     tags: [Transactions]
- *     parameters:
- *       - in: path
- *         name: tag
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Payment history
- */
+router.get("/batches/:id", authenticate, getBatchPaymentStatus);
 router.get("/tag/:tag/history", getPaymentHistory);
 
 export default router;
