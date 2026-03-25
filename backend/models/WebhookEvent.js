@@ -30,6 +30,14 @@ const WebhookEvent = {
     return this.findById(id);
   },
 
+  // Returns existing row if idempotency_key already exists, otherwise inserts.
+  async createIdempotent(eventData) {
+    const { webhook_id, idempotency_key } = eventData;
+    const existing = await db("webhook_events").where({ webhook_id, idempotency_key }).first();
+    if (existing) return existing;
+    return this.create(eventData);
+  },
+
   async update(id, eventData) {
     await db("webhook_events")
       .where({ id })

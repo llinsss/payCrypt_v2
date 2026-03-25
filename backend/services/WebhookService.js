@@ -166,16 +166,25 @@ const WebhookService = {
 
       if (!subscribedEvents.includes(eventType)) continue;
 
+      // Deterministic key: SHA256(webhook_id + event_type + stable payload fields)
+      const idempotencyKey = crypto
+        .createHash("sha256")
+        .update(`${webhook.id}:${eventType}:${JSON.stringify(data)}`)
+        .digest("hex");
+
       let eventId = null;
+      let isNew = true;
       try {
-        const event = await WebhookEvent.create({
+        const event = await WebhookEvent.createIdempotent({
           webhook_id: webhook.id,
           event_type: eventType,
           payload: JSON.stringify(payload),
+          idempotency_key: idempotencyKey,
           status: "pending",
           attempts: 0,
         });
         eventId = event.id;
+        isNew = event.status === "pending" && event.attempt_count === 0;
       } catch (err) {
         console.error("Failed to create WebhookEvent record:", err.message);
       }
@@ -184,6 +193,9 @@ const WebhookService = {
         console.warn("Webhook queue unavailable — skipping delivery");
         continue;
       }
+
+      // jobId is always deterministic — BullMQ deduplicates by jobId automatically
+      const jobId = `event-${idempotencyKey}`;
 
       await webhookQueue.add(
         "deliver",
@@ -194,9 +206,7 @@ const WebhookService = {
           secret: webhook.secret,
           payload,
         },
-        {
-          jobId: eventId ? `event-${eventId}` : undefined,
-        },
+        { jobId },
       );
     }
   },
