@@ -222,7 +222,8 @@ export const updateTransaction = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updatedTransaction = await Transaction.update(id, req.body);
+    const { notes } = req.body;
+    const updatedTransaction = await Transaction.update(id, { notes });
     res.json(updatedTransaction);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -414,7 +415,6 @@ export const processPayment = async (req, res) => {
       idempotencyKey,
     } = value;
     const userId = req.user.id;
-    const idempotencyKey = req.headers['x-idempotency-key'] || req.headers['idempotency-key'];
 
     // Combine secrets
     const secrets = [senderSecret, ...additionalSecrets];

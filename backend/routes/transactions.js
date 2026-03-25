@@ -15,8 +15,12 @@ import {
   updateTransactionNote,
   searchTransactions
 } from "../controllers/transactionController.js";
-import { authenticate } from "../middleware/auth.js";
-import { validate, validateQuery } from "../middleware/validation.js";
+import {
+  authenticate,
+  authenticateJwtOrApiKey,
+  userRateLimiter
+} from "../middleware/auth.js";
+import { validate, validateQuery, validateParams } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
 import { processPaymentSchema } from "../schemas/payment.js";

@@ -646,6 +646,10 @@ class BatchPaymentService {
 
   async sendSummaryNotification(batch) {
     try {
+      if (!batch) {
+        console.warn("sendSummaryNotification called with null/undefined batch");
+        return;
+      }
       // In a real app, this would use a NotificationService
       console.log(`Summary notification for batch ${batch.reference}:`);
       console.log(`Status: ${batch.status}`);
@@ -653,15 +657,15 @@ class BatchPaymentService {
       console.log(`Failed: ${batch.failed_items}/${batch.total_items}`);
 
       // Emit event for real-time UI updates
-      if (typeof publish === 'function') {
-        publish('batch:completed', {
+      if (typeof publish === "function") {
+        publish("batch:completed", {
           batchId: batch.id,
           userId: batch.user_id,
           reference: batch.reference,
           status: batch.status,
           successful: batch.successful_items,
           failed: batch.failed_items,
-          total: batch.total_items
+          total: batch.total_items,
         });
       }
     } catch (error) {

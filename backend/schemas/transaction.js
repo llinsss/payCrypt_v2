@@ -133,39 +133,6 @@ export const transactionSearchQuerySchema = Joi.object({
  * Body schema for updating a transaction (all fields optional — partial update).
  */
 export const transactionSchema = Joi.object({
-  reference: Joi.string().trim().max(100).optional(),
-
-  type: Joi.string()
-    .valid("payment", "credit", "debit", "transfer", "deposit", "withdrawal")
-    .optional()
-    .messages({
-      "any.only": "Type must be one of: payment, credit, debit, transfer, deposit, withdrawal",
-    }),
-
-  action: Joi.string().trim().max(50).allow(null, "").optional(),
-
-  amount: Joi.number()
-    .positive()
-    .optional()
-    .messages({
-      "number.positive": "Amount must be greater than 0",
-      "number.base": "Amount must be a number",
-    }),
-
-  status: Joi.string()
-    .valid("pending", "completed", "failed", "cancelled")
-    .optional()
-    .messages({
-      "any.only": "Status must be one of: pending, completed, failed, cancelled",
-    }),
-
-  hash: Joi.string().trim().allow(null, "").optional(),
-  token: Joi.string().trim().allow(null, "").optional(),
-
-  rate: Joi.number().min(0).allow(null).optional(),
-
-  description: Joi.string().trim().max(500).allow(null, "").optional(),
-
   notes: Joi.string()
     .trim()
     .max(1000)
@@ -174,8 +141,6 @@ export const transactionSchema = Joi.object({
     .messages({
       "string.max": "Notes cannot exceed 1000 characters",
     }),
-
-  extra: Joi.object().allow(null).optional(),
 })
   .min(1)
   .messages({

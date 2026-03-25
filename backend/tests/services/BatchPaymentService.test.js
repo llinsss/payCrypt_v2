@@ -64,6 +64,7 @@ const { default: batchPaymentQueue } = await import("../../queues/batchPaymentQu
 describe("BatchPaymentService", () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        BatchPayment.update.mockImplementation((id, data) => Promise.resolve({ id, reference: "REF-123", ...data }));
     });
 
     describe("createBatchPayment", () => {
