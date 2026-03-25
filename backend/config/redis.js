@@ -59,5 +59,7 @@ export const getCacheMetrics = () => ({
     : (metrics.hits / (metrics.hits + metrics.misses)).toFixed(4),
 });
 
+export const IDEMPOTENCY_PREFIX = 'idempotency:';
+
 export { redisConnection, subClient, publish };
 export default redis;

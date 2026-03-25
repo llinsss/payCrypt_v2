@@ -22,6 +22,7 @@ import { auditLog } from "../middleware/audit.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
 import { processPaymentSchema } from "../schemas/payment.js";
 import { paymentLimiter, exportLimiter } from "../config/rateLimiting.js";
+import { idempotency } from "../middleware/idempotency.js";
 
 const router = express.Router();
 
@@ -35,7 +36,7 @@ router.put("/:id", authenticate, userRateLimiter, paymentLimiter, validate(trans
 router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, auditLog("transactions"), deleteTransaction);
 
 // Payment operations
-router.post("/payment", authenticate, userRateLimiter, paymentLimiter, validate(processPaymentSchema), auditLog("transactions"), processPayment);
+router.post("/payment", authenticate, userRateLimiter, paymentLimiter, idempotency, validate(processPaymentSchema), auditLog("transactions"), processPayment);
 router.get("/payment/limits", getPaymentLimits);
 
 /**
