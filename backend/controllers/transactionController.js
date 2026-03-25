@@ -2,6 +2,7 @@ import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import PaymentService from "../services/PaymentService.js";
 import ReceiptService from "../services/ReceiptService.js";
+import LockService from "../services/LockService.js";
 import { processPaymentSchema, transactionHistoryQuerySchema } from "../schemas/payment.js";
 
 export const createTransaction = async (req, res) => {
@@ -418,25 +419,35 @@ export const processPayment = async (req, res) => {
     // Combine secrets
     const secrets = [senderSecret, ...additionalSecrets];
 
-    // Process the payment
-    const result = await PaymentService.processPayment({
-      senderTag,
-      recipientTag,
-      amount,
-      asset,
-      assetIssuer,
-      memo,
-      notes,
-      secrets,
-      userId,
-      idempotencyKey: idempotencyKey || idempotencyKeyFromHeader || null
-    });
+    // Acquire lock to prevent race conditions (e.g., double spend)
+    const lockIdentifier = await LockService.acquireUserLock(userId);
+    if (!lockIdentifier) {
+      return res.status(429).json({ error: "Another transaction is in progress for this user. Please try again." });
+    }
 
-    res.status(201).json({
-      success: true,
-      message: 'Payment processed successfully',
-      data: result
-    });
+    try {
+      // Process the payment
+      const result = await PaymentService.processPayment({
+        senderTag,
+        recipientTag,
+        amount,
+        asset,
+        assetIssuer,
+        memo,
+        notes,
+        secrets,
+        userId,
+        idempotencyKey: idempotencyKey || idempotencyKeyFromHeader || null
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Payment processed successfully',
+        data: result
+      });
+    } finally {
+      await LockService.releaseUserLock(userId, lockIdentifier);
+    }
   } catch (error) {
     console.error('Payment processing error:', error);
     
