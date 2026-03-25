@@ -3,6 +3,7 @@ import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import { webhookQueue } from "../queues/webhook.js";
+import WebhookSignature from "../utils/webhookSignature.js";
 
 export const WEBHOOK_EVENTS = {
   PAYMENT_COMPLETED: "payment.completed",
@@ -38,46 +39,12 @@ const WebhookService = {
   },
 
   generateSignature(payload, secret) {
-    return (
-      "sha256=" +
-      crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex")
-    );
+    return WebhookSignature.generateSignature(payload, secret);
   },
 
   // FIXED FUNCTION
   verifySignature(payload, signature, secret) {
-    try {
-      if (!signature || typeof signature !== "string") return false;
-
-      // Remove "sha256=" prefix if present
-      let normalized = signature.startsWith("sha256=")
-        ? signature.slice(7)
-        : signature;
-
-      normalized = normalized.trim().toLowerCase();
-
-      // Validate hex format
-      if (!/^[a-f0-9]+$/.test(normalized)) return false;
-
-      // SHA256 hex must be 64 chars
-      if (normalized.length !== 64) return false;
-
-      // Generate expected signature (hex only)
-      const expected = crypto
-        .createHmac("sha256", secret)
-        .update(JSON.stringify(payload))
-        .digest("hex");
-
-      const expectedBuffer = Buffer.from(expected, "hex");
-      const receivedBuffer = Buffer.from(normalized, "hex");
-
-      // Prevent timingSafeEqual crash
-      if (expectedBuffer.length !== receivedBuffer.length) return false;
-
-      return crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
-    } catch {
-      return false;
-    }
+    return WebhookSignature.verifySignature(payload, signature, secret);
   },
 
   async register({ user_id, url, events, secret }) {
