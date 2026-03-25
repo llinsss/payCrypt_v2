@@ -6,14 +6,41 @@ export const createKyc = async (req, res) => {
     const kycData = {
       ...req.body,
       user_id: req.user.id,
+      status: 'pending',
     };
 
     const kyc = await Kyc.create(kycData);
-    const update_user = await User.update(req.user.id, {
-      is_verified: 1,
-      kyc_status: "verified",
-    });
+    await User.update(req.user.id, { kyc_status: 'pending' });
     res.status(201).json(kyc);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const approveKyc = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const kyc = await Kyc.findById(id);
+    if (!kyc) return res.status(404).json({ error: 'KYC not found' });
+
+    await Kyc.update(id, { status: 'approved' });
+    await User.update(kyc.user_id, { is_verified: 1, kyc_status: 'verified' });
+    res.json({ message: 'KYC approved' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const rejectKyc = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const kyc = await Kyc.findById(id);
+    if (!kyc) return res.status(404).json({ error: 'KYC not found' });
+
+    await Kyc.update(id, { status: 'rejected', rejection_reason: reason || null });
+    await User.update(kyc.user_id, { is_verified: 0, kyc_status: 'rejected' });
+    res.json({ message: 'KYC rejected' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

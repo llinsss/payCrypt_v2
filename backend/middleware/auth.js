@@ -3,6 +3,13 @@ import { createUserRateLimiter, createTierRateLimiter } from "../config/rateLimi
 import * as Sentry from "@sentry/node";
 import { verifyToken } from "../config/jwt.js";
 
+export const requireAdmin = (req, res, next) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
 export const authenticate = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
