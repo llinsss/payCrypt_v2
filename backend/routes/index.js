@@ -20,6 +20,7 @@ import webhookRoutes from "./webhooks.js";
 import webhookAdminRoutes from "./webhookAdmin.js";
 import exportRoutes from "./exports.js";
 import ussdRoutes from "./ussd.js";
+import batchPaymentRoutes from "./batchPayments.js";
 import { deprecationWarning } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -46,6 +47,7 @@ const registerRoutes = (router) => {
   router.use("/admin/webhooks", webhookAdminRoutes);
   router.use("/exports", exportRoutes);
   router.use("/ussd", ussdRoutes);
+  router.use("/batches", batchPaymentRoutes);
 };
 
 // V1 routes (deprecated)

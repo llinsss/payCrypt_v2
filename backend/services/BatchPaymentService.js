@@ -4,6 +4,8 @@ import BatchPayment from "../models/BatchPayment.js";
 import PaymentService from "./PaymentService.js";
 import Token from "../models/Token.js";
 import Transaction from "../models/Transaction.js";
+import pLimit from "p-limit";
+import batchPaymentQueue from "../queues/batchPaymentQueue.js";
 
 const { TransactionBuilder, Operation, Asset, Keypair, Memo } = StellarSdk;
 
@@ -43,6 +45,51 @@ class BatchPaymentService {
     const normalizedAsset = asset || "XLM";
     const normalizedAssetIssuer = normalizedAsset === "XLM" ? null : assetIssuer;
     const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const BATCH_QUEUE_THRESHOLD = 20;
+
+    if (payments.length > BATCH_QUEUE_THRESHOLD) {
+      const batch = await BatchPayment.create({
+        user_id: userId,
+        reference: this.createBatchReference(),
+        sender_tag: senderTag,
+        asset: normalizedAsset,
+        asset_issuer: normalizedAssetIssuer,
+        memo: memo || null,
+        atomic,
+        status: BATCH_STATUS.PENDING,
+        total_items: payments.length,
+        processed_items: 0,
+        successful_items: 0,
+        failed_items: 0,
+        total_amount: totalAmount,
+        results: [],
+      });
+
+      await batchPaymentQueue.add("process-batch", {
+        userId,
+        senderTag,
+        payments,
+        atomic,
+        asset: normalizedAsset,
+        assetIssuer: normalizedAssetIssuer,
+        memo,
+        senderSecret,
+        additionalSecrets,
+        batchId: batch.id,
+      });
+
+      return {
+        success: true,
+        httpStatus: 202,
+        message: "Batch payment queued for background processing",
+        data: {
+          batchId: batch.id,
+          reference: batch.reference,
+          status: batch.status,
+          total_items: batch.total_items
+        },
+      };
+    }
 
     const batch = await BatchPayment.create({
       user_id: userId,
@@ -323,6 +370,70 @@ class BatchPaymentService {
     }
   }
 
+  /**
+   * Internal method called by worker to process a queued batch
+   */
+  async processQueuedBatch({
+    batchId,
+    userId,
+    senderTag,
+    payments,
+    atomic,
+    asset,
+    assetIssuer,
+    memo,
+    senderSecret,
+    additionalSecrets
+  }) {
+    const batch = await BatchPayment.findById(batchId);
+    if (!batch) throw new Error(`Batch ${batchId} not found`);
+
+    try {
+      const token = await Token.findBySymbol(asset);
+      const preparedBatch = await this.prepareBatch({
+        senderTag,
+        payments,
+        asset,
+        assetIssuer,
+        token,
+      });
+
+      if (atomic) {
+        return await this.processAtomicBatch({
+          batch,
+          preparedBatch,
+          userId,
+          senderTag,
+          asset,
+          assetIssuer,
+          memo,
+          secrets: [senderSecret, ...additionalSecrets],
+        });
+      }
+
+      return await this.processNonAtomicBatch({
+        batch,
+        preparedBatch,
+        userId,
+        senderTag,
+        asset,
+        assetIssuer,
+        memo,
+        senderSecret,
+        additionalSecrets,
+      });
+    } catch (error) {
+      await this.failBatch(
+        batch.id,
+        error.message,
+        error.results && error.results.length > 0
+          ? error.results
+          : payments.map((payment, index) => this.buildFailedResult(index, payment, error.message))
+      );
+      throw error;
+    }
+  }
+
   async processNonAtomicBatch({
     batch,
     preparedBatch,
@@ -367,14 +478,66 @@ class BatchPaymentService {
       results: results.filter(Boolean),
     });
 
-    for (const item of validItems) {
-      if (remainingBalance < item.totalCost) {
-        results[item.index] = this.buildFailedResult(
-          item.index,
-          item,
-          `Insufficient funds for batch item. Remaining balance: ${remainingBalance} ${asset}, required: ${item.totalCost} ${asset}`
-        );
-        failedItems += 1;
+    const limit = pLimit(10);
+    const tasks = validItems.map((item) => {
+      return limit(async () => {
+        if (remainingBalance < item.totalCost) {
+          results[item.index] = this.buildFailedResult(
+            item.index,
+            item,
+            `Insufficient funds for batch item. Remaining balance: ${remainingBalance} ${asset}, required: ${item.totalCost} ${asset}`
+          );
+          failedItems += 1;
+          processedItems += 1;
+          return;
+        }
+
+        try {
+          const paymentResult = await PaymentService.processPayment({
+            senderTag,
+            recipientTag: item.recipientTag,
+            amount: item.amount,
+            asset,
+            assetIssuer,
+            memo,
+            secrets: [senderSecret, ...additionalSecrets],
+            userId,
+          });
+
+          const transaction = await Transaction.findById(paymentResult.transactionId);
+          const existingExtra = transaction?.extra ? this.parseExtra(transaction.extra) : {};
+
+          await Transaction.update(paymentResult.transactionId, {
+            batch_id: batch.id,
+            batch_item_index: item.index,
+            extra: JSON.stringify({
+              ...existingExtra,
+              notes: item.notes,
+              batchId: batch.id,
+              batchReference: batch.reference,
+              batchItemIndex: item.index,
+              atomic: false,
+            }),
+          });
+
+          results[item.index] = {
+            index: item.index,
+            recipientTag: item.recipientTag,
+            amount: item.amount,
+            notes: item.notes,
+            status: "completed",
+            fee: paymentResult.fee,
+            transactionId: paymentResult.transactionId,
+            txHash: paymentResult.txHash,
+          };
+
+          remainingBalance -= item.totalCost;
+          successfulItems += 1;
+        } catch (error) {
+          results[item.index] = this.buildFailedResult(item.index, item, error.message);
+          failedItems += 1;
+        }
+
         processedItems += 1;
 
         await BatchPayment.update(batch.id, {
@@ -382,68 +545,12 @@ class BatchPaymentService {
           successful_items: successfulItems,
           failed_items: failedItems,
           results: results.filter(Boolean),
-          failure_reason: "One or more batch items failed",
+          failure_reason: failedItems > 0 ? "One or more batch items failed" : null,
         });
-
-        continue;
-      }
-
-      try {
-        const paymentResult = await PaymentService.processPayment({
-          senderTag,
-          recipientTag: item.recipientTag,
-          amount: item.amount,
-          asset,
-          assetIssuer,
-          memo,
-          secrets: [senderSecret, ...additionalSecrets],
-          userId,
-        });
-
-        const transaction = await Transaction.findById(paymentResult.transactionId);
-        const existingExtra = transaction?.extra ? this.parseExtra(transaction.extra) : {};
-
-        await Transaction.update(paymentResult.transactionId, {
-          batch_id: batch.id,
-          batch_item_index: item.index,
-          extra: JSON.stringify({
-            ...existingExtra,
-            notes: item.notes,
-            batchId: batch.id,
-            batchReference: batch.reference,
-            batchItemIndex: item.index,
-            atomic: false,
-          }),
-        });
-
-        results[item.index] = {
-          index: item.index,
-          recipientTag: item.recipientTag,
-          amount: item.amount,
-          notes: item.notes,
-          status: "completed",
-          fee: paymentResult.fee,
-          transactionId: paymentResult.transactionId,
-          txHash: paymentResult.txHash,
-        };
-
-        remainingBalance -= item.totalCost;
-        successfulItems += 1;
-      } catch (error) {
-        results[item.index] = this.buildFailedResult(item.index, item, error.message);
-        failedItems += 1;
-      }
-
-      processedItems += 1;
-
-      await BatchPayment.update(batch.id, {
-        processed_items: processedItems,
-        successful_items: successfulItems,
-        failed_items: failedItems,
-        results: results.filter(Boolean),
-        failure_reason: failedItems > 0 ? "One or more batch items failed" : null,
       });
-    }
+    });
+
+    await Promise.all(tasks);
 
     const finalStatus = this.getFinalStatus(successfulItems, failedItems);
     const updatedBatch = await BatchPayment.update(batch.id, {
@@ -455,6 +562,9 @@ class BatchPaymentService {
       failure_reason: failedItems > 0 ? "One or more batch items failed" : null,
       completed_at: db.fn.now(),
     });
+
+    // Send summary notification
+    await this.sendSummaryNotification(updatedBatch);
 
     return {
       success: finalStatus === BATCH_STATUS.COMPLETED,
@@ -520,7 +630,7 @@ class BatchPaymentService {
   }
 
   async failBatch(batchId, message, results) {
-    return await BatchPayment.update(batchId, {
+    const updatedBatch = await BatchPayment.update(batchId, {
       status: BATCH_STATUS.FAILED,
       processed_items: results.length,
       successful_items: 0,
@@ -529,6 +639,34 @@ class BatchPaymentService {
       results,
       completed_at: db.fn.now(),
     });
+
+    await this.sendSummaryNotification(updatedBatch);
+    return updatedBatch;
+  }
+
+  async sendSummaryNotification(batch) {
+    try {
+      // In a real app, this would use a NotificationService
+      console.log(`Summary notification for batch ${batch.reference}:`);
+      console.log(`Status: ${batch.status}`);
+      console.log(`Successful: ${batch.successful_items}/${batch.total_items}`);
+      console.log(`Failed: ${batch.failed_items}/${batch.total_items}`);
+
+      // Emit event for real-time UI updates
+      if (typeof publish === 'function') {
+        publish('batch:completed', {
+          batchId: batch.id,
+          userId: batch.user_id,
+          reference: batch.reference,
+          status: batch.status,
+          successful: batch.successful_items,
+          failed: batch.failed_items,
+          total: batch.total_items
+        });
+      }
+    } catch (error) {
+      console.error("Failed to send batch summary notification:", error);
+    }
   }
 
   buildAtomicFailureResults(totalItems, validItems, failures) {

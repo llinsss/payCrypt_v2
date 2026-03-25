@@ -15,10 +15,6 @@ import {
   updateTransactionNote,
   searchTransactions
 } from "../controllers/transactionController.js";
-import {
-  createBatchPayment,
-  getBatchPaymentStatus,
-} from "../controllers/batchController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateQuery } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
@@ -41,9 +37,7 @@ router.delete("/:id", authenticate, userRateLimiter, paymentLimiter, validatePar
 // Payment operations
 // Payment operations
 router.post("/payment", authenticate, paymentLimiter, idempotency, validate(processPaymentSchema), auditLog("transactions"), processPayment);
-router.post("/batches", authenticate, paymentLimiter, idempotency, validate(batchPaymentSchema), auditLog("transactions"), createBatchPayment);
 router.get("/payment/limits", getPaymentLimits);
-router.get("/batches/:id", authenticate, getBatchPaymentStatus);
 router.get("/tag/:tag/history", getPaymentHistory);
 
 export default router;
