@@ -11,7 +11,6 @@ import { require2FA } from "../controllers/authController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateParams } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
-import { sendToTagSchema, sendToWalletSchema, updateWalletSchema } from "../schemas/wallet.js";
 import { sendToTagSchema, sendToWalletSchema, walletUpdateSchema } from "../schemas/wallet.js";
 import { numericIdParamSchema } from "../validators/customValidators.js";
 import { idempotency } from "../middleware/idempotency.js";

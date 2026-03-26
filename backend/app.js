@@ -26,6 +26,8 @@ import { corsOptions } from "./config/cors.js";
 
 import { performanceMonitor } from "./middleware/performance.js";
 import { versionDetection } from "./middleware/apiVersion.js";
+import { correlationId } from "./middleware/correlationId.js";
+import { requestLogger } from "./middleware/requestLogger.js";
 import logger, { stream } from "./utils/logger.js";
 import {
   sanitizeRequest,
@@ -137,6 +139,10 @@ if (process.env.NODE_ENV === "development") {
 
 // Performance Monitoring
 app.use(performanceMonitor);
+
+// Request/Response Logging with Correlation IDs
+app.use(correlationId);
+app.use(requestLogger);
 
 // API Version Detection
 app.use("/api", versionDetection);

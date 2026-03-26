@@ -10,8 +10,6 @@ import {
   getBalanceByTag,
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
-import { validate } from "../middleware/validation.js";
-import { balanceCreateSchema, balanceUpdateSchema } from "../schemas/balance.js";
 import { validate, validateParams } from "../middleware/validation.js";
 import { balanceCreateSchema, balanceUpdateSchema } from "../schemas/balance.js";
 import { numericIdParamSchema } from "../validators/customValidators.js";
