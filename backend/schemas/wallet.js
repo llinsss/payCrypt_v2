@@ -64,6 +64,8 @@ export const updateWalletSchema = Joi.object({
 }).unknown(false).messages({
     "object.unknown": "Invalid field provided. Wallets have no user-updatable fields.",
 });
+
+/**
  * Schema for updating wallet metadata (name, notes, etc.).
  * All fields are optional; at least one must be provided.
  */

@@ -157,8 +157,8 @@ export const requestLogger = (req, res, next) => {
       statusCode: res.statusCode,
       durationMs: parseFloat(durationMs.toFixed(3)),
       contentLength: res.getHeader("content-length") ?? null,
-      correlationIdHeader: CORRELATION_ID_HEADER,
-      requestIdHeader: REQUEST_ID_HEADER,
+      correlationId: req.correlationId,
+      requestId: req.requestId,
     });
   };
 

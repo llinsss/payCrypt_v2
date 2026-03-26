@@ -81,7 +81,7 @@ export const balanceSchema = balanceCreateSchema;
  * Schema for updating balance settings.
  * Only allows updating user-configurable fields.
  */
-export const balanceUpdateSchema = Joi.object({
+export const balanceSettingsUpdateSchema = Joi.object({
   auto_convert_threshold: Joi.number()
     .min(0)
     .allow(null)
