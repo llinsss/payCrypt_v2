@@ -38,7 +38,7 @@ export const getKycByUser = async (req, res) => {
   try {
     const { id } = req.user;
     const kycs = await Kyc.getByUser(id);
-    if (kyc.length === 0) {
+    if (kycs.length === 0) {
       return res.status(400).json({ error: "No Kyc yet" });
     }
     res.json(kycs);
