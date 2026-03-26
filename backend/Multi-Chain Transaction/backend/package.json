@@ -1,0 +1,25 @@
+{
+  "name": "multi-chain-transaction-backend",
+  "version": "1.0.0",
+  "main": "workers.js",
+  "scripts": {
+    "start": "node workers.js",
+    "test": "jest --testPathPattern=tests/"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "bull": "^4.12.0",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.9.0",
+    "express": "^4.18.2",
+    "ioredis": "^5.3.2",
+    "prom-client": "^15.1.0",
+    "starknet": "^5.24.3",
+    "@onflow/fcl": "^1.9.0",
+    "nodemailer": "^6.9.7",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
