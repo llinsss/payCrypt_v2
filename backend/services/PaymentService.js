@@ -136,7 +136,7 @@ class PaymentService {
     for (let attempt = 1; attempt <= PAYMENT_CONFIG.MAX_RETRIES; attempt++) {
       try {
         const account = await this.server.loadAccount(address);
-        
+
         const balance = account.balances.find(b => {
           if (asset === 'XLM') {
             return b.asset_type === 'native';
@@ -210,10 +210,10 @@ class PaymentService {
   calculateFee(amount, _asset = 'XLM') {
     // Base fee: 0.1% of transaction amount, minimum 0.00001 XLM
     const baseFee = Math.max(amount * PAYMENT_CONFIG.BASE_FEE_PERCENTAGE, PAYMENT_CONFIG.MIN_FEE);
-    
+
     // Network fee (Stellar base fee in stroops converted to XLM)
     const networkFee = 0.00001; // 100 stroops = 0.00001 XLM
-    
+
     const totalFee = baseFee + networkFee;
 
     return {
@@ -245,7 +245,7 @@ class PaymentService {
 
       // Check multi-sig requirement
       const multiSigInfo = await this.checkMultiSigRequirement(senderAddress);
-      
+
       if (multiSigInfo.required && secrets.length < 2) {
         throw new Error(`Multi-signature account requires at least 2 signatures, but only ${secrets.length} provided`);
       }
@@ -347,7 +347,7 @@ class PaymentService {
           const baseDelay = PAYMENT_CONFIG.RETRY_DELAY_MS * Math.pow(2, attempt - 1);
           const jitter = Math.random() * 1000;
           const delay = Math.min(baseDelay + jitter, 10000); // Max 10s
-          
+
           this.logger.log(`Retrying in ${Math.round(delay)}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
@@ -377,39 +377,38 @@ class PaymentService {
    * @returns {Object} payment result with transaction ID and hash
    * @throws {Error} if payment processing fails
    */
-  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, secrets, userId, idempotencyKey }) {
-    // ── Duplicate detection (fast-fail, before opening a DB transaction) ──────
+  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, notes, secrets, userId, idempotencyKey }) {
     const fingerprint = this._fingerprintTransaction({ userId, senderTag, recipientTag, amount, asset });
-    const duplicate = await this._checkDuplicate(fingerprint);
-    if (duplicate) {
-      if (duplicate.status === 'completed') {
-        const dupExtra = typeof duplicate.extra === 'string'
-          ? JSON.parse(duplicate.extra || '{}')
-          : (duplicate.extra || {});
-        this.logger.log(`Duplicate payment detected (fingerprint ${fingerprint}), returning existing tx ${duplicate.id}`);
-        return {
-          success: true,
-          transactionId: duplicate.id,
-          txHash: duplicate.tx_hash,
-          amount: parseFloat(duplicate.amount),
-          asset: dupExtra.asset || asset,
-          senderTag,
-          recipientTag,
-          duplicateDetected: true,
-        };
-      }
-      throw new Error(
-        'Duplicate transaction submission detected. An identical payment is already being processed. ' +
-        `Please wait ${PAYMENT_CONFIG.DUPLICATE_WINDOW_MS / 1000} seconds before retrying.`
-      );
-    }
-
-    const effectiveIdempotencyKey = idempotencyKey || this._generateIdempotencyKey({ senderTag, recipientTag, amount, userId });
+    const effectiveIdempotencyKey = idempotencyKey || this._generateIdempotencyKey({ senderTag, recipientTag, amount, asset, memo, userId });
     const trx = await db.transaction();
     let transactionRecord = null;
 
     try {
-      // Step 0: Idempotency check - return existing completed result or reject duplicates
+      // Step 0a: Locked duplicate check — serializes concurrent identical requests.
+      // FOR UPDATE ensures only one request proceeds past this point at a time.
+      const duplicate = await Transaction.findByFingerprintForUpdate(fingerprint, PAYMENT_CONFIG.DUPLICATE_WINDOW_MS, trx);
+      if (duplicate) {
+        await trx.commit();
+        if (duplicate.status === 'completed') {
+          this.logger.log(`Duplicate payment detected (fingerprint ${fingerprint}), returning existing tx ${duplicate.id}`);
+          return {
+            success: true,
+            transactionId: duplicate.id,
+            txHash: duplicate.tx_hash,
+            amount: parseFloat(duplicate.amount),
+            asset,
+            senderTag,
+            recipientTag,
+            duplicateDetected: true,
+          };
+        }
+        throw new Error(
+          'Duplicate transaction submission detected. An identical payment is already being processed. ' +
+          `Please wait ${PAYMENT_CONFIG.DUPLICATE_WINDOW_MS / 1000} seconds before retrying.`
+        );
+      }
+
+      // Step 0b: Idempotency check
       const existingTransaction = await Transaction.findByIdempotencyKey(effectiveIdempotencyKey, trx);
       if (existingTransaction) {
         await trx.commit();
@@ -433,7 +432,7 @@ class PaymentService {
 
       // Step 1: Validate payment parameters
       this.logger.log(`Processing payment: ${senderTag} -> ${recipientTag}, amount: ${amount} ${asset}`);
-      
+
       const { senderAddress, recipientAddress, amount: validatedAmount, assetIssuer: validatedAssetIssuer } = await this.validatePayment({
         senderTag,
         recipientTag,
@@ -486,8 +485,8 @@ class PaymentService {
         to_address: recipientAddress,
         description: memo || `Payment from ${senderTag} to ${recipientTag}`,
         notes: notes || null,
+        fingerprint,
         extra: JSON.stringify({
-          fingerprint,
           fee: feeInfo.fee,
           baseFee: feeInfo.baseFee,
           networkFee: feeInfo.networkFee,
@@ -600,7 +599,7 @@ class PaymentService {
         this.logger.error(`Rollback failed: ${rollbackError.message}`);
       }
       this.logger.error(`Payment processing failed: ${error.message}`);
-      
+
       // If we have a transaction record ID, we should publish a failure event
       if (transactionRecord && transactionRecord.id) {
         try {
@@ -623,7 +622,7 @@ class PaymentService {
           this.logger.error(`Failed to publish failure event: ${pubError.message}`);
         }
       }
-      
+
       throw error;
     }
   }
@@ -707,17 +706,27 @@ class PaymentService {
   }
 
   /**
-   * Generate idempotency key from payment params (used when client doesn't provide one).
-   * Includes Date.now() so each new submission gets a unique key unless the caller
-   * supplies an explicit idempotencyKey.
+   * Generate a deterministic idempotency key from payment params.
+   * Used when the client doesn't provide an explicit X-Idempotency-Key.
+   * This ensures that retries of identical requests hash to the same key.
+   *
    * @private
+   * @param {Object} params
+   * @param {string} params.senderTag
+   * @param {string} params.recipientTag
+   * @param {number|string} params.amount
+   * @param {string} params.asset
+   * @param {string} params.memo
+   * @param {number} params.userId
+   * @returns {string} 64-char hex SHA-256 digest with 'gen:' prefix
    */
-  _generateIdempotencyKey({ senderTag, recipientTag, amount, userId }) {
-    return crypto
+  _generateIdempotencyKey({ senderTag, recipientTag, amount, asset = 'XLM', memo = '', userId }) {
+    const hash = crypto
       .createHash('sha256')
-      .update(`${userId}:${senderTag}:${recipientTag}:${amount}:${Date.now()}`)
-      .digest('hex')
-      .substring(0, 64);
+      .update(`${userId}:${senderTag.toLowerCase()}:${recipientTag.toLowerCase()}:${parseFloat(amount).toFixed(7)}:${asset.toUpperCase()}:${memo}`)
+      .digest('hex');
+
+    return `gen:${hash.substring(0, 60)}`;
   }
 
   /**
@@ -748,19 +757,6 @@ class PaymentService {
       asset.toUpperCase(),
     ];
     return crypto.createHash('sha256').update(parts.join(':')).digest('hex');
-  }
-
-  /**
-   * Return the most recent payment transaction that shares the same fingerprint
-   * and was created within the configured duplicate-detection window.
-   * Returns `undefined` when no duplicate is found.
-   *
-   * @private
-   * @param {string} fingerprint
-   * @returns {Promise<Object|undefined>}
-   */
-  async _checkDuplicate(fingerprint) {
-    return Transaction.findByFingerprint(fingerprint, PAYMENT_CONFIG.DUPLICATE_WINDOW_MS);
   }
 
   /**
@@ -813,7 +809,7 @@ class PaymentService {
     const errorMessage = error.message || '';
     const errorCode = error.code || '';
 
-    return networkErrorPatterns.some(pattern => 
+    return networkErrorPatterns.some(pattern =>
       errorMessage.toLowerCase().includes(pattern.toLowerCase()) ||
       errorCode.includes(pattern)
     );

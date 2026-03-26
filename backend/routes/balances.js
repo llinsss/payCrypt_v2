@@ -10,8 +10,9 @@ import {
   getBalanceByTag,
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
-import { validate } from "../middleware/validation.js";
-import { balanceCreateSchema } from "../schemas/balance.js";
+import { validate, validateParams } from "../middleware/validation.js";
+import { balanceCreateSchema, balanceUpdateSchema } from "../schemas/balance.js";
+import { numericIdParamSchema } from "../validators/customValidators.js";
 import { balanceQueryLimiter } from "../config/rateLimiting.js";
 
 const router = express.Router();
@@ -123,8 +124,11 @@ router.get("/sync", authenticate, updateUserBalance);
  *         description: Balance deleted
  */
 router.get("/:id", authenticate, balanceQueryLimiter, getBalanceById);
-router.put("/:id", authenticate, updateBalance);
+router.put("/:id", authenticate, validate(balanceUpdateSchema), updateBalance);
 router.delete("/:id", authenticate, deleteBalance);
+router.get("/:id", authenticate, balanceQueryLimiter, validateParams(numericIdParamSchema), getBalanceById);
+router.put("/:id", authenticate, validateParams(numericIdParamSchema), validate(balanceUpdateSchema), updateBalance);
+router.delete("/:id", authenticate, validateParams(numericIdParamSchema), deleteBalance);
 
 /**
  * @swagger
@@ -142,6 +146,6 @@ router.delete("/:id", authenticate, deleteBalance);
  *       200:
  *         description: Tag balance
  */
-router.get("/tag/:tag", balanceQueryLimiter, getBalanceByTag);
+router.get("/tag/:tag", authenticate, balanceQueryLimiter, getBalanceByTag);
 
 export default router;

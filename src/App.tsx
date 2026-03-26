@@ -38,6 +38,27 @@ const PrivateLayout: React.FC = () => {
   const { user, isLoading } = useAuth();
   const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const isAdmin = user?.role === "admin";
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const syncBalances = async () => {
+      try {
+        await apiClient.get("/balances/sync");
+        console.log("✅ Balance sync triggered");
+      } catch (err) {
+        console.error("❌ Balance sync failed:", err);
+      }
+    };
+
+    syncBalances();
+    const intervalId = setInterval(syncBalances, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [user]);
 
   if (isLoading) {
     return (
@@ -50,29 +71,6 @@ const PrivateLayout: React.FC = () => {
   if (!user) {
     return <Navigate to="/auth" replace />;
   }
-
-  const isAdmin = user.role === "admin";
-
-  useEffect(() => {
-    const syncBalances = async () => {
-      try {
-        await apiClient.get("/balances/sync");
-        console.log("✅ Balance sync triggered");
-      } catch (err) {
-        console.error("❌ Balance sync failed:", err);
-      }
-    };
-
-    // Run immediately once
-    syncBalances();
-
-    // Repeat every 10 seconds
-    const intervalId = setInterval(syncBalances, 30000);
-
-    // Cleanup when app unmounts
-    return () => clearInterval(intervalId);
-  }, []);
-
 
   return (
     <div className="min-h-screen bg-gray-50 flex">

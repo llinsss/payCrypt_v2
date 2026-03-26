@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { FieldError, UseFormRegister, useForm } from "react-hook-form";
 import {
   Upload,
   CheckCircle,
   AlertCircle,
   FileText,
-  Camera,
   Shield,
   User,
   Phone,
@@ -612,8 +611,21 @@ const KYCForm: React.FC = () => {
   );
 };
 
+interface FormFieldProps {
+  icon: React.ReactNode;
+  label: string;
+  name: keyof KYCFormData;
+  register: UseFormRegister<KYCFormData>;
+  error?: FieldError;
+  placeholder?: string;
+  type?: React.HTMLInputTypeAttribute | "select";
+  required?: boolean;
+  gradient: string;
+  children?: React.ReactNode;
+}
+
 // 🔹 Reusable Form Field Component
-const FormField: React.FC<any> = ({
+const FormField: React.FC<FormFieldProps> = ({
   icon,
   label,
   name,
@@ -624,7 +636,6 @@ const FormField: React.FC<any> = ({
   required = false,
   gradient,
   children,
-  ...props
 }) => (
   <div className="space-y-2">
     <label
@@ -645,7 +656,6 @@ const FormField: React.FC<any> = ({
       <select
         {...register(name, { required: required && `${label} is required` })}
         className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 bg-white"
-        {...props}
       >
         {children}
       </select>
@@ -655,7 +665,6 @@ const FormField: React.FC<any> = ({
         {...register(name, { required: required && `${label} is required` })}
         placeholder={placeholder}
         className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
-        {...props}
       />
     )}
 
@@ -668,8 +677,24 @@ const FormField: React.FC<any> = ({
   </div>
 );
 
+interface DocumentUploadProps {
+  label: string;
+  description: string;
+  fieldName: string;
+  isUploading?: boolean;
+  isUploaded: boolean;
+  fileName?: string;
+  onFileUpload: (
+    event: React.ChangeEvent<HTMLInputElement>,
+    fieldName: string
+  ) => void;
+  icon: React.ReactNode;
+  gradient: string;
+  error?: boolean;
+}
+
 // 🔹 Document Upload Component
-const DocumentUpload: React.FC<any> = ({
+const DocumentUpload: React.FC<DocumentUploadProps> = ({
   label,
   description,
   fieldName,

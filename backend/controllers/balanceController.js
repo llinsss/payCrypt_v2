@@ -5,6 +5,7 @@ import { User, Balance, Token } from "../models/index.js";
 import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
+import LockService from "../services/LockService.js";
 
 const chunk = (arr, size) =>
   arr.reduce(
@@ -84,8 +85,24 @@ export const updateBalance = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updatedBalance = await Balance.update(id, req.body);
-    res.json(updatedBalance);
+    // Only pass validated fields from req.body
+    // Validation middleware ensures only auto_convert_threshold is present
+    const updateData = {};
+    if (req.body.auto_convert_threshold !== undefined) {
+      updateData.auto_convert_threshold = req.body.auto_convert_threshold;
+    }
+
+    const lockIdentifier = await LockService.acquireUserLock(balance.user_id);
+    if (!lockIdentifier) {
+      return res.status(429).json({ error: "Another update is in progress for this user's balance." });
+    }
+
+    try {
+      const updatedBalance = await Balance.update(id, updateData);
+      res.json(updatedBalance);
+    } finally {
+      await LockService.releaseUserLock(balance.user_id, lockIdentifier);
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -162,6 +179,10 @@ export const updateUserBalance = async (req, res) => {
       balances.map(async (balance) => {
         if (!balance.token_price || !balance.token_symbol) return;
         const chain = contract.chains[balance.token_symbol];
+
+        const lockIdentifier = await LockService.acquireUserLock(user.id);
+        if (!lockIdentifier) return; // Skip if already locked by another process
+
         try {
           const onchainValue = await (chain == "starknet"
             ? starknet.getTagBalance(user.tag)
@@ -182,6 +203,8 @@ export const updateUserBalance = async (req, res) => {
             `❌ Poll error for ${user?.tag || "unknown"} (${balance.token_symbol || "?"
             }): ${err.message}`
           );
+        } finally {
+          await LockService.releaseUserLock(user.id, lockIdentifier);
         }
       })
     );
@@ -196,6 +219,11 @@ export const getBalanceByTag = async (req, res) => {
   try {
     const { tag } = req.params;
 
+    // 1️⃣ Enforce ownership: users can only view their own balances by tag
+    // (Unless we want to allow admins, but the request suggests enforcing ownership)
+    if (req.user.tag !== tag) {
+      return res.status(403).json({ error: "Forbidden: You can only view your own balances" });
+    }
 
     const cacheKey = `balances:tag:${tag}`;
     const cached = await redis.get(cacheKey);

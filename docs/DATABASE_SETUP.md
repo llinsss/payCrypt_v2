@@ -177,15 +177,43 @@ psql -U taggedpay_user -d taggedpay < backup.sql
 
 ### Automated Backups
 
-Set up a cron job for daily backups:
+The repository now includes a production-oriented backup script at
+[`scripts/backup.js`](./scripts/backup.js) that uses PostgreSQL's native
+`pg_dump` custom format and verifies the resulting archive with `pg_restore`.
+
+Configure the backup environment variables in `.env`:
+
+```env
+BACKUP_DIR=./backups
+BACKUP_FILE_PREFIX=taggedpay
+BACKUP_RETENTION_DAYS=7
+BACKUP_SCHEDULE_CRON=0 2 * * *
+PG_DUMP_PATH=pg_dump
+PG_RESTORE_PATH=pg_restore
+```
+
+Run a manual backup:
+
+```bash
+npm run backup:db
+```
+
+Set up a cron job for daily backups on the host:
 
 ```bash
 # Edit crontab
 crontab -e
 
 # Add daily backup at 2 AM
-0 2 * * * pg_dump -U taggedpay_user -d taggedpay > /backups/taggedpay_$(date +\%Y\%m\%d).sql
+0 2 * * * cd /path/to/payCrypt_v2/backend && npm run backup:db >> /var/log/taggedpay-backup.log 2>&1
 ```
+
+Behavior:
+
+- Backups are written as timestamped `.dump` files.
+- New backups are verified before older backups are pruned.
+- Only backups older than `BACKUP_RETENTION_DAYS` are deleted.
+- Backup files are written with restrictive permissions where the host allows it.
 
 ## Monitoring
 
