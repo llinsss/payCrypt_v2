@@ -68,8 +68,6 @@ export const getKycByUser = async (req, res) => {
   try {
     const { id } = req.user;
     const kycs = await Kyc.getByUser(id);
-
-    // ✅ Fixed + defensive check
     if (!kycs || kycs.length === 0) {
       return res.status(400).json({ error: "No Kyc yet" });
     }
