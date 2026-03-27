@@ -1,4 +1,5 @@
 import axios from 'axios';
+import CircuitBreakerService from './CircuitBreakerService.js';
 
 class MonnifyService {
   constructor() {
@@ -16,23 +17,25 @@ class MonnifyService {
    * @returns {Promise<string>}
    */
   async getAccessToken() {
-    try {
-      const auth = Buffer.from(`${this.apiKey}:${this.secretKey}`).toString('base64');
-      const response = await axios.post(`${this.baseUrl}/auth/login`, {}, {
-        headers: {
-          Authorization: `Basic ${auth}`,
-        },
-      });
+    return CircuitBreakerService.fire('monnify', async () => {
+      try {
+        const auth = Buffer.from(`${this.apiKey}:${this.secretKey}`).toString('base64');
+        const response = await axios.post(`${this.baseUrl}/auth/login`, {}, {
+          headers: {
+            Authorization: `Basic ${auth}`,
+          },
+        });
 
-      if (response.data.requestSuccessful) {
-        this.accessToken = response.data.responseBody.accessToken;
-        return this.accessToken;
+        if (response.data.requestSuccessful) {
+          this.accessToken = response.data.responseBody.accessToken;
+          return this.accessToken;
+        }
+        throw new Error('Failed to get Monnify access token');
+      } catch (error) {
+        console.error('Monnify getAccessToken error:', error.response?.data || error.message);
+        throw new Error(error.response?.data?.responseMessage || 'Monnify auth failed');
       }
-      throw new Error('Failed to get Monnify access token');
-    } catch (error) {
-      console.error('Monnify getAccessToken error:', error.response?.data || error.message);
-      throw new Error(error.response?.data?.responseMessage || 'Monnify auth failed');
-    }
+    });
   }
 
   /**
@@ -41,38 +44,40 @@ class MonnifyService {
    * @returns {Promise<Object>} disbursement details
    */
   async initiateDisbursement({ amount, reference, narration, destinationBankCode, destinationAccountNumber }) {
-    try {
-      if (!this.accessToken) await this.getAccessToken();
+    return CircuitBreakerService.fire('monnify', async () => {
+      try {
+        if (!this.accessToken) await this.getAccessToken();
 
-      const response = await axios.post(`${this.baseUrl}/disbursements/single`, {
-        amount,
-        reference,
-        narration,
-        destinationBankCode,
-        destinationAccountNumber,
-        currency: 'NGN',
-        sourceAccountNumber: process.env.MONNIFY_SOURCE_ACCOUNT,
-      }, {
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-        },
-      });
+        const response = await axios.post(`${this.baseUrl}/disbursements/single`, {
+          amount,
+          reference,
+          narration,
+          destinationBankCode,
+          destinationAccountNumber,
+          currency: 'NGN',
+          sourceAccountNumber: process.env.MONNIFY_SOURCE_ACCOUNT,
+        }, {
+          headers: {
+            Authorization: `Bearer ${this.accessToken}`,
+          },
+        });
 
-      if (response.data.requestSuccessful) {
-        return {
-          reference: response.data.responseBody.reference,
-          status: response.data.responseBody.status,
-        };
+        if (response.data.requestSuccessful) {
+          return {
+            reference: response.data.responseBody.reference,
+            status: response.data.responseBody.status,
+          };
+        }
+        throw new Error(response.data.responseMessage || 'Failed to initiate Monnify disbursement');
+      } catch (error) {
+        if (error.response?.status === 401) {
+          this.accessToken = null;
+          return this.initiateDisbursement({ amount, reference, narration, destinationBankCode, destinationAccountNumber });
+        }
+        console.error('Monnify initiateDisbursement error:', error.response?.data || error.message);
+        throw new Error(error.response?.data?.responseMessage || error.message);
       }
-      throw new Error(response.data.responseMessage || 'Failed to initiate Monnify disbursement');
-    } catch (error) {
-      if (error.response?.status === 401) {
-        this.accessToken = null;
-        return this.initiateDisbursement(arguments[0]);
-      }
-      console.error('Monnify initiateDisbursement error:', error.response?.data || error.message);
-      throw new Error(error.response?.data?.responseMessage || error.message);
-    }
+    });
   }
 
   /**
