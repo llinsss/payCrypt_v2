@@ -1,4 +1,6 @@
+
 import axios from 'axios';
+import CircuitBreakerService from './CircuitBreakerService.js';
 
 class PaystackService {
   constructor() {
@@ -19,23 +21,25 @@ class PaystackService {
    * @returns {Promise<string>} recipient_code
    */
   async createTransferRecipient({ name, account_number, bank_code }) {
-    try {
-      const response = await this.axios.post('/transferrecipient', {
-        type: 'nuban',
-        name,
-        account_number,
-        bank_code,
-        currency: 'NGN',
-      });
+    return CircuitBreakerService.fire('paystack', async () => {
+      try {
+        const response = await this.axios.post('/transferrecipient', {
+          type: 'nuban',
+          name,
+          account_number,
+          bank_code,
+          currency: 'NGN',
+        });
 
-      if (response.data.status) {
-        return response.data.data.recipient_code;
+        if (response.data.status) {
+          return response.data.data.recipient_code;
+        }
+        throw new Error(response.data.message || 'Failed to create transfer recipient');
+      } catch (error) {
+        console.error('Paystack createTransferRecipient error:', error.response?.data || error.message);
+        throw new Error(error.response?.data?.message || error.message);
       }
-      throw new Error(response.data.message || 'Failed to create transfer recipient');
-    } catch (error) {
-      console.error('Paystack createTransferRecipient error:', error.response?.data || error.message);
-      throw new Error(error.response?.data?.message || error.message);
-    }
+    });
   }
 
   /**
@@ -44,30 +48,32 @@ class PaystackService {
    * @returns {Promise<Object>} transfer details
    */
   async initiateTransfer({ amount, recipient, reference, reason }) {
-    try {
-      // Amount in kobo for Paystack
-      const amountInKobo = Math.round(amount * 100);
+    return CircuitBreakerService.fire('paystack', async () => {
+      try {
+        // Amount in kobo for Paystack
+        const amountInKobo = Math.round(amount * 100);
 
-      const response = await this.axios.post('/transfer', {
-        source: 'balance',
-        amount: amountInKobo,
-        recipient,
-        reference,
-        reason,
-      });
+        const response = await this.axios.post('/transfer', {
+          source: 'balance',
+          amount: amountInKobo,
+          recipient,
+          reference,
+          reason,
+        });
 
-      if (response.data.status) {
-        return {
-          transfer_code: response.data.data.transfer_code,
-          reference: response.data.data.reference,
-          status: response.data.data.status,
-        };
+        if (response.data.status) {
+          return {
+            transfer_code: response.data.data.transfer_code,
+            reference: response.data.data.reference,
+            status: response.data.data.status,
+          };
+        }
+        throw new Error(response.data.message || 'Failed to initiate transfer');
+      } catch (error) {
+        console.error('Paystack initiateTransfer error:', error.response?.data || error.message);
+        throw new Error(error.response?.data?.message || error.message);
       }
-      throw new Error(response.data.message || 'Failed to initiate transfer');
-    } catch (error) {
-      console.error('Paystack initiateTransfer error:', error.response?.data || error.message);
-      throw new Error(error.response?.data?.message || error.message);
-    }
+    });
   }
 
   /**

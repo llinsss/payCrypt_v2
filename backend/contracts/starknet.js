@@ -1,5 +1,6 @@
 import { Account, Contract, RpcProvider } from "starknet";
 import { mainABI } from "../abis/StarknetContractABI.js";
+import CircuitBreakerService from "../services/CircuitBreakerService.js";
 
 /**
  * Unified Starknet chain configuration.
@@ -36,53 +37,55 @@ export const getStarknetChain = () => {
   );
 
   const safeExecute = async (call, options) => {
-    const calls = Array.isArray(call) ? call : [call];
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const resourceBounds = {
-          l1_gas: {
-            max_amount: "0x100000",
-            max_price_per_unit: "0x174876e800",
-          },
-          l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
-          l1_data_gas: {
-            max_amount: "0x100000",
-            max_price_per_unit: "0x174876e800",
-          },
-        };
+    return CircuitBreakerService.fire('starknet', async () => {
+        const calls = Array.isArray(call) ? call : [call];
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const resourceBounds = {
+              l1_gas: {
+                max_amount: "0x100000",
+                max_price_per_unit: "0x174876e800",
+              },
+              l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
+              l1_data_gas: {
+                max_amount: "0x100000",
+                max_price_per_unit: "0x174876e800",
+              },
+            };
 
-        const feeEstimate = await account.estimateInvokeFee(calls, {
-          blockIdentifier: "latest",
-          version: "0x3",
-          resourceBounds,
-          skipValidate: true,
-        });
+            const feeEstimate = await account.estimateInvokeFee(calls, {
+              blockIdentifier: "latest",
+              version: "0x3",
+              resourceBounds,
+              skipValidate: true,
+            });
 
-        const rawFee = feeEstimate.overall_fee ?? feeEstimate.suggestedMaxFee;
-        if (!rawFee) {
-          throw new Error(
-            "Fee estimation failed: no overall_fee or suggestedMaxFee"
-          );
+            const rawFee = feeEstimate.overall_fee ?? feeEstimate.suggestedMaxFee;
+            if (!rawFee) {
+              throw new Error(
+                "Fee estimation failed: no overall_fee or suggestedMaxFee"
+              );
+            }
+
+            const suggestedMaxFee = BigInt(rawFee);
+            const maxFee = options?.maxFee || (suggestedMaxFee * 12n) / 10n;
+
+            console.log(`Fee: ${suggestedMaxFee} → maxFee: ${maxFee}`);
+
+            const tx = await account.execute(calls, undefined, {
+              maxFee,
+              version: "0x3",
+              resourceBounds,
+            });
+
+            return tx;
+          } catch (error) {
+            console.warn(`Attempt ${attempt} failed: ${error.message}`);
+            if (attempt === 3) throw error;
+            await new Promise((r) => setTimeout(r, 2000));
+          }
         }
-
-        const suggestedMaxFee = BigInt(rawFee);
-        const maxFee = options?.maxFee || (suggestedMaxFee * 12n) / 10n;
-
-        console.log(`Fee: ${suggestedMaxFee} → maxFee: ${maxFee}`);
-
-        const tx = await account.execute(calls, undefined, {
-          maxFee,
-          version: "0x3",
-          resourceBounds,
-        });
-
-        return tx;
-      } catch (error) {
-        console.warn(`Attempt ${attempt} failed: ${error.message}`);
-        if (attempt === 3) throw error;
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
+    });
   };
 
   return {
