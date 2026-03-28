@@ -1,4 +1,3 @@
-import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
@@ -6,6 +5,7 @@ import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import BankAccount from "../models/BankAccount.js";
 import { balanceQueue } from "../queues/balance.js";
+import { signToken } from "../config/jwt.js";
 
 const sanitizeAuthUser = (user) => {
   if (!user) return user;
@@ -49,9 +49,7 @@ export const register = async (req, res) => {
     });
 
     // --- Generate JWT ---
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
-      expiresIn: "24h",
-    });
+    const token = signToken({ userId: user.id });
     sanitizeAuthUser(user);
 
     // --- Create wallet + bank account immediately ---
@@ -92,9 +90,7 @@ export const login = async (req, res) => {
     }
 
     // Generate JWT token
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
-      expiresIn: "24h",
-    });
+    const token = signToken({ userId: user.id });
 
     const last_login = new Date();
     const update_user = await User.update(user.id, {

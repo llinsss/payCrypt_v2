@@ -84,7 +84,14 @@ export const updateBalance = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updatedBalance = await Balance.update(id, req.body);
+    // Only pass validated fields from req.body
+    // Validation middleware ensures only auto_convert_threshold is present
+    const updateData = {};
+    if (req.body.auto_convert_threshold !== undefined) {
+      updateData.auto_convert_threshold = req.body.auto_convert_threshold;
+    }
+
+    const updatedBalance = await Balance.update(id, updateData);
     res.json(updatedBalance);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -196,6 +203,11 @@ export const getBalanceByTag = async (req, res) => {
   try {
     const { tag } = req.params;
 
+    // 1️⃣ Enforce ownership: users can only view their own balances by tag
+    // (Unless we want to allow admins, but the request suggests enforcing ownership)
+    if (req.user.tag !== tag) {
+      return res.status(403).json({ error: "Forbidden: You can only view your own balances" });
+    }
 
     const cacheKey = `balances:tag:${tag}`;
     const cached = await redis.get(cacheKey);

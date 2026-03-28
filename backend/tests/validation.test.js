@@ -203,12 +203,28 @@ describe("POST /transactions/payment validation", () => {
         expect(fields).toContain("senderSecret");
     });
 
-    it.skip("returns 200 with a valid payment payload", async () => { // TODO: pre-existing failure, unrelated to 2FA PR
+    it("returns 400 when notes exceed 500 characters", async () => {
+        const res = await request(app).post("/payment").send({
+            senderTag: "alice",
+            recipientTag: "bob",
+            amount: 10,
+            senderSecret: "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            notes: "a".repeat(501),
+        });
+        expect(res.status).toBe(400);
+        const fields = res.body.errors.map((e) => e.field);
+        expect(fields).toContain("notes");
+    });
+
+    it.skip("returns 200 with a valid payment payload including notes", async () => { // TODO: pre-existing failure, unrelated to 2FA PR
         const res = await request(app).post("/payment").send({
             senderTag: "alice",
             recipientTag: "bob",
             amount: 10,
             senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            notes: "Test notes for this transaction",
+            idempotencyKey: "abc123yz",
+            senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         });
         expect(res.status).toBe(200);
     });

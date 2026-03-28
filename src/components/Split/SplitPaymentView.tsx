@@ -1,10 +1,8 @@
 import React, { useState } from "react";
 import {
-  Plus,
   Minus,
   Users,
   DollarSign,
-  Send,
   Share2,
   PieChart,
   Target,

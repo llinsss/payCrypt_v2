@@ -30,6 +30,14 @@ const WebhookEvent = {
     return this.findById(id);
   },
 
+  // Returns existing row if idempotency_key already exists, otherwise inserts.
+  async createIdempotent(eventData) {
+    const { webhook_id, idempotency_key } = eventData;
+    const existing = await db("webhook_events").where({ webhook_id, idempotency_key }).first();
+    if (existing) return existing;
+    return this.create(eventData);
+  },
+
   async update(id, eventData) {
     await db("webhook_events")
       .where({ id })
@@ -89,6 +97,25 @@ const WebhookEvent = {
     return await db("webhook_events")
       .where('created_at', '<', cutoffDate)
       .del();
+  },
+
+  async findDeadLetters(limit = 50, offset = 0) {
+    return await db("webhook_events")
+      .where({ status: 'dead_letter' })
+      .limit(limit)
+      .offset(offset)
+      .orderBy("updated_at", "desc");
+  },
+
+  async markDeadLetter(id, error_message) {
+    await db("webhook_events")
+      .where({ id })
+      .update({
+        status: 'dead_letter',
+        error_message,
+        updated_at: db.fn.now(),
+      });
+    return this.findById(id);
   },
 
   async getStats(webhook_id) {

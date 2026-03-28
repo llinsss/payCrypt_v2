@@ -1,6 +1,8 @@
 import { Server } from "socket.io";
 import { subClient } from "../config/redis.js";
+import { verifyTokenCallback } from "../config/jwt.js";
 import jwt from "jsonwebtoken";
+import { socketCorsOptions } from "../config/cors.js";
 
 class SocketService {
   constructor() {
@@ -9,11 +11,7 @@ class SocketService {
 
   init(server) {
     this.io = new Server(server, {
-      cors: {
-        origin: process.env.CORS_ORIGIN?.split(",") || ["*"],
-        methods: ["GET", "POST"],
-        credentials: true
-      }
+      cors: socketCorsOptions,
     });
 
     this.io.use((socket, next) => {
@@ -23,7 +21,7 @@ class SocketService {
         return next(new Error("Authentication error: No token provided"));
       }
 
-      jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, decoded) => {
+      verifyTokenCallback(token, (err, decoded) => {
         if (err) return next(new Error("Authentication error: Invalid token"));
         socket.user = decoded;
         next();

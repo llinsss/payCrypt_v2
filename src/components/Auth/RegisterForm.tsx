@@ -48,7 +48,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
         address: generatedAddress,
       });
       navigate("/");
-    } catch (err) {
+    } catch {
       setError("Registration failed. Please try again.");
     }
   };

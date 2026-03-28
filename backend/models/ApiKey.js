@@ -78,6 +78,7 @@ const ApiKey = {
       ip_whitelist: data.ipWhitelist,
       is_active: data.isActive,
       rotation_interval_days: data.rotationIntervalDays,
+      rate_limit: data.rateLimit !== undefined ? data.rateLimit : null,
       updated_at: new Date(),
     };
 
@@ -91,6 +92,18 @@ const ApiKey = {
 
     const apiKey = await this.findById(id);
     await this.addAuditLog(id, apiKey.user_id, "UPDATED", data);
+
+    return apiKey;
+  },
+
+  async updateRateLimit(id, rateLimit) {
+    await db("api_keys").where({ id }).update({
+      rate_limit: rateLimit,
+      updated_at: new Date(),
+    });
+
+    const apiKey = await this.findById(id);
+    await this.addAuditLog(id, apiKey.user_id, "RATE_LIMIT_UPDATED", { rate_limit: rateLimit });
 
     return apiKey;
   },

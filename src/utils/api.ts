@@ -2,11 +2,25 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 class ApiError extends Error {
-  constructor(public status: number, message: string, public data?: any) {
+  constructor(public status: number, message: string, public data?: unknown) {
     super(message);
     this.name = 'ApiError';
   }
 }
+
+const getErrorMessage = (data: unknown, status: number) => {
+  if (typeof data === 'object' && data !== null) {
+    const record = data as Record<string, unknown>;
+    if (typeof record.message === 'string') {
+      return record.message;
+    }
+    if (typeof record.error === 'string') {
+      return record.error;
+    }
+  }
+
+  return `HTTP ${status}`;
+};
 
 class ApiClient {
   private baseURL: string;
@@ -37,10 +51,10 @@ class ApiClient {
       const response = await fetch(url, config);
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        const errorData: unknown = await response.json().catch(() => ({}));
         throw new ApiError(
           response.status,
-          errorData.message || errorData.error || `HTTP ${response.status}`,
+          getErrorMessage(errorData, response.status),
           errorData
         );
       }
@@ -66,14 +80,14 @@ class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' });
   }
 
-  async post<T>(endpoint: string, data?: any): Promise<T> {
+  async post<T>(endpoint: string, data?: unknown): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
     });
   }
 
-  async put<T>(endpoint: string, data?: any): Promise<T> {
+  async put<T>(endpoint: string, data?: unknown): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
@@ -84,7 +98,7 @@ class ApiClient {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
 
-  async patch<T>(endpoint: string, data?: any): Promise<T> {
+  async patch<T>(endpoint: string, data?: unknown): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PATCH',
       body: data ? JSON.stringify(data) : undefined,

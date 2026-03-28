@@ -10,14 +10,6 @@ export const registerWebhook = async (req, res) => {
   try {
     const { url, events, secret } = req.body;
     const user_id = req.user.id;
-
-    if (!url || !events || !Array.isArray(events) || events.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "url and a non-empty events array are required",
-      });
-    }
-
     const webhook = await WebhookService.register({ user_id, url, events, secret });
 
     res.status(201).json({

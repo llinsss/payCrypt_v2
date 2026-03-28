@@ -17,7 +17,9 @@ import auditLogRoutes from "./auditLogs.js";
 import performanceRoutes from "./performance.js";
 import analyticsRoutes from "./analytics.js";
 import webhookRoutes from "./webhooks.js";
+import webhookAdminRoutes from "./webhookAdmin.js";
 import exportRoutes from "./exports.js";
+import ussdRoutes from "./ussd.js";
 import { deprecationWarning } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -41,7 +43,9 @@ const registerRoutes = (router) => {
   router.use("/audit-logs", auditLogRoutes);
   router.use("/analytics", analyticsRoutes);
   router.use("/webhooks", webhookRoutes);
+  router.use("/admin/webhooks", webhookAdminRoutes);
   router.use("/exports", exportRoutes);
+  router.use("/ussd", ussdRoutes);
 };
 
 // V1 routes (deprecated)

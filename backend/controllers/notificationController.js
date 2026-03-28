@@ -33,7 +33,12 @@ export const getNotificationById = async (req, res) => {
     const notification = await Notification.findById(id);
 
     if (!notification) {
-      return res.status(400).json({ error: "Notification not found" });
+      return res.status(404).json({ error: "Notification not found" });
+    }
+
+    // Ownership check — prevent IDOR access to other users' notifications
+    if (notification.user_id !== req.user.id) {
+      return res.status(403).json({ error: "Unauthorized" });
     }
 
     res.json(notification);

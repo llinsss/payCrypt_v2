@@ -2,6 +2,16 @@ import rateLimit from "express-rate-limit";
 import redis from "redis";
 import RedisStore from "rate-limit-redis";
 
+export const TIER_LIMITS = {
+  FREE: parseInt(process.env.RATE_LIMIT_FREE_TIER) || 100,
+  PREMIUM: parseInt(process.env.RATE_LIMIT_PREMIUM_TIER) || 1000,
+};
+
+export const RATE_LIMIT_TIERS = {
+  FREE: "FREE",
+  PREMIUM: "PREMIUM",
+};
+
 const redisClient = redis.createClient({
   host: process.env.REDIS_HOST || "localhost",
   port: process.env.REDIS_PORT || 6379,
@@ -105,14 +115,62 @@ export const strictLimiter = rateLimit({
 });
 
 /**
- * Per-user rate limiter using Redis sliding window algorithm
- * Keys by user ID when authenticated, otherwise by IP
- * @param {Object} options
- * @param {number} options.windowMs - Window size in milliseconds
- * @param {number} options.max - Max requests per window
- * @param {string} options.type - Rate limit type (for key namespacing)
- * @param {string} options.message - Error message when limit exceeded
- * @returns {Function} Express middleware
+ * In-memory sliding-window store used as a fallback when Redis is degraded.
+ * Tracks per-key timestamps in a Map; enforces the same windowMs/max policy
+ * as the Redis path so rate limiting is never silently disabled.
+ *
+ * Note: this store is local to the process — it does not survive restarts and
+ * is not shared across horizontally-scaled instances. It exists solely to
+ * prevent fail-open behaviour; the authoritative limiter is always Redis.
+ */
+class InMemoryStore {
+  constructor() {
+    this._buckets = new Map();
+  }
+
+  /**
+   * Record a hit and check whether the caller is within limits.
+   * @param {string} key       - Rate-limit key (user or IP scoped)
+   * @param {number} windowMs  - Sliding window duration in ms
+   * @param {number} max       - Maximum allowed hits per window
+   * @returns {{ allowed: boolean, remaining: number }}
+   */
+  check(key, windowMs, max) {
+    const now = Date.now();
+    const cutoff = now - windowMs;
+    const timestamps = (this._buckets.get(key) || []).filter((t) => t > cutoff);
+
+    if (timestamps.length >= max) {
+      this._buckets.set(key, timestamps);
+      return { allowed: false, remaining: 0 };
+    }
+
+    timestamps.push(now);
+    this._buckets.set(key, timestamps);
+    return { allowed: true, remaining: max - timestamps.length };
+  }
+}
+
+/** Module-level singleton — shared across all createUserRateLimiter instances */
+const inMemoryStore = new InMemoryStore();
+
+/**
+ * Per-user rate limiter using Redis sliding window algorithm.
+ * Keys by user ID when authenticated, otherwise by IP.
+ *
+ * Fail-safe behaviour when Redis is unavailable:
+ *   strict: false (default) — falls back to in-process InMemoryStore and logs
+ *                             an error. Rate limiting is still enforced locally.
+ *   strict: true            — returns 503 Service Unavailable immediately.
+ *                             Use for sensitive routes (export, auth) where a
+ *                             degraded limiter is unacceptable.
+ *
+ * @param {Object}  options
+ * @param {number}  options.windowMs - Window size in milliseconds
+ * @param {number}  options.max      - Max requests per window
+ * @param {string}  options.type     - Rate limit type (key namespacing)
+ * @param {string}  options.message  - Error message when limit exceeded
+ * @param {boolean} options.strict   - Fail closed (503) instead of using in-memory fallback
  */
 export const createUserRateLimiter = (options = {}) => {
   const {
@@ -120,7 +178,43 @@ export const createUserRateLimiter = (options = {}) => {
     max = 100,
     type = "general",
     message = "Too many requests, please try again later",
+    strict = false,
   } = options;
+
+  /**
+   * Invoked whenever Redis is unavailable (missing methods or runtime error).
+   * Strict mode → 503. Non-strict → enforce limit via InMemoryStore.
+   */
+  function applyFallback(req, res, next, reason) {
+    const key = req.user?.id
+      ? `ratelimit:user:${req.user.id}:${type}`
+      : `ratelimit:ip:${(req.ip || req.connection?.remoteAddress || "unknown").replace(/[^a-zA-Z0-9.]/g, "_")}:${type}`;
+
+    console.error(
+      `[rate-limit] Redis unavailable for limiter type="${type}" key="${key}" reason="${reason}".`,
+      strict ? "Strict mode: returning 503." : "Falling back to in-memory store."
+    );
+
+    if (strict) {
+      return res.status(503).json({ error: "Rate limiting unavailable. Please try again later." });
+    }
+
+    // Non-strict: enforce limit in-process so traffic is never unlimited
+    const { allowed, remaining } = inMemoryStore.check(key, windowMs, max);
+    const resetTime = Math.ceil(Date.now() / 1000) + Math.ceil(windowMs / 1000);
+
+    res.setHeader("X-RateLimit-Limit", String(max));
+    res.setHeader("X-RateLimit-Remaining", String(remaining));
+    res.setHeader("X-RateLimit-Reset", String(resetTime));
+    res.setHeader("X-RateLimit-Fallback", "in-memory");
+
+    if (!allowed) {
+      res.setHeader("Retry-After", String(Math.ceil(windowMs / 1000)));
+      return res.status(429).json({ error: message });
+    }
+
+    return next();
+  }
 
   return async (req, res, next) => {
     const redis = (await import("./redis.js")).default;
@@ -128,8 +222,9 @@ export const createUserRateLimiter = (options = {}) => {
       ? `ratelimit:user:${req.user.id}:${type}`
       : `ratelimit:ip:${(req.ip || req.connection?.remoteAddress || "unknown").replace(/[^a-zA-Z0-9.]/g, "_")}:${type}`;
 
+    // Redis client does not expose the required sorted-set commands
     if (typeof redis.zRemRangeByScore !== "function") {
-      return next();
+      return applyFallback(req, res, next, "missing sorted-set methods");
     }
 
     try {
@@ -166,30 +261,48 @@ export const createUserRateLimiter = (options = {}) => {
 
       next();
     } catch (err) {
-      console.warn("Rate limit check failed, allowing request:", err.message);
-      next();
+      // Redis runtime error — apply fallback instead of silently passing traffic
+      return applyFallback(req, res, next, err.message);
     }
   };
 };
 
 /**
- * Per-user rate limiter - 100 req/min (authenticated routes)
+ * Per-user rate limiter — 100 req/min (authenticated routes).
+ * strict: true → 503 on Redis degradation (never silently unlimited).
  */
 export const userRateLimiter = createUserRateLimiter({
   windowMs: 60 * 1000,
   max: 100,
   type: "user",
+  strict: true,
   message: "Too many requests from this user, please try again later",
 });
 
 /**
- * Export rate limiter - 5 per hour per user
+ * Export rate limiter — 5 per hour per user.
+ * strict: true → 503 on Redis degradation (bulk-data endpoint must never be unlimited).
  */
 export const exportLimiter = createUserRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 5,
   type: "export",
+  strict: true,
   message: "Export limit exceeded. You can export up to 5 times per hour.",
+});
+
+/**
+ * Download rate limiter — 10 requests per 15 minutes per IP
+ * Applied to GET /api/transactions/export/download which uses a signed
+ * query-param token (email link) and must not be brute-forceable.
+ */
+export const downloadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: "Too many download requests from this IP, please try again later",
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
 });
 
 export default {
@@ -202,4 +315,5 @@ export default {
   createUserRateLimiter,
   userRateLimiter,
   exportLimiter,
+  downloadLimiter,
 };
