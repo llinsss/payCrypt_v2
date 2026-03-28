@@ -1,5 +1,5 @@
-const db = require('../config/database');
-const PaymentService = require('./PaymentService');
+import db from "../config/database.js";
+import PaymentService from "./PaymentService.js";
 
 class UssdService {
   constructor() {
@@ -217,4 +217,4 @@ class UssdService {
   }
 }
 
-module.exports = new UssdService();
+export default new UssdService();
