@@ -382,7 +382,7 @@ export const getTransactionsByTag = async (req, res) => {
 /**
  * Process @tag-to-@tag payment with comprehensive validation
  * POST /api/transactions/payment
- * Body: { senderTag, recipientTag, amount, asset, assetIssuer, memo, senderSecret, additionalSecrets }
+ * Body: { senderTag, recipientTag, amount, asset, assetIssuer, memo }
  */
 export const processPayment = async (req, res) => {
   try {
@@ -410,14 +410,10 @@ export const processPayment = async (req, res) => {
       assetIssuer,
       memo,
       notes,
-      senderSecret,
-      additionalSecrets = [],
       idempotencyKey,
     } = value;
     const userId = req.user.id;
-
-    // Combine secrets
-    const secrets = [senderSecret, ...additionalSecrets];
+    const idempotencyKeyFromHeader = req.get("Idempotency-Key") || null;
 
     // Acquire lock to prevent race conditions (e.g., double spend)
     const lockIdentifier = await LockService.acquireUserLock(userId);
@@ -435,7 +431,6 @@ export const processPayment = async (req, res) => {
         assetIssuer,
         memo,
         notes,
-        secrets,
         userId,
         idempotencyKey: idempotencyKey || idempotencyKeyFromHeader || null
       });

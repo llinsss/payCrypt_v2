@@ -1,4 +1,4 @@
-const DEFAULT_REDACT_FIELDS = ['password', 'token', 'secret', 'authorization', 'cookie', 'x-api-key', 'apiKey', 'accessToken', 'refreshToken', 'cvv', 'ssn'];
+const DEFAULT_REDACT_FIELDS = ['password', 'token', 'secret', 'sendersecret', 'additionalsecrets', 'additionalsigningkeys', 'authorization', 'cookie', 'x-api-key', 'apiKey', 'accessToken', 'refreshToken', 'cvv', 'ssn'];
 
 function getRedactFields() {
   const envFields = process.env.LOG_REDACT_FIELDS;

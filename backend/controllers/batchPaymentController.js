@@ -9,8 +9,6 @@ export const createBatchPayment = async (req, res) => {
             asset = "XLM",
             assetIssuer = null,
             memo = null,
-            senderSecret,
-            additionalSecrets = [],
         } = req.body;
 
         // Validate maximum 100 payments
@@ -36,8 +34,6 @@ export const createBatchPayment = async (req, res) => {
             asset,
             assetIssuer,
             memo,
-            senderSecret,
-            additionalSecrets,
         });
 
         return res.status(result.httpStatus).json({

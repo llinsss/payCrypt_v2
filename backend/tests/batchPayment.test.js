@@ -26,7 +26,6 @@ describe("POST /transactions/batches validation", () => {
 
   const validPayload = {
     senderTag: "alice_123",
-    senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     payments: [
       {
         recipientTag: "bob_123",
@@ -44,7 +43,6 @@ describe("POST /transactions/batches validation", () => {
   it("returns 400 when payments is missing", async () => {
     const res = await request(app).post("/transactions/batches").send({
       senderTag: "alice_123",
-      senderSecret: validPayload.senderSecret,
     });
 
     expect(res.status).toBe(400);
@@ -106,10 +104,10 @@ describe("POST /transactions/batches validation", () => {
     expect(fields).toContain("assetIssuer");
   });
 
-  it("returns 400 when senderSecret format is invalid", async () => {
+  it("returns 400 when senderSecret is included", async () => {
     const res = await request(app).post("/transactions/batches").send({
       ...validPayload,
-      senderSecret: "INVALID",
+      senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     });
 
     expect(res.status).toBe(400);
@@ -123,7 +121,7 @@ describe("POST /transactions/batches validation", () => {
     expect(res.body.ok).toBe(true);
   });
 
-  it("returns 200 with a valid non-atomic batch payload", async () => {
+  it("returns 400 when additionalSecrets is included", async () => {
     const res = await request(app).post("/transactions/batches").send({
       ...validPayload,
       atomic: false,
@@ -131,6 +129,18 @@ describe("POST /transactions/batches validation", () => {
       additionalSecrets: [
         "SBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
       ],
+    });
+
+    expect(res.status).toBe(400);
+    const fields = res.body.errors.map((error) => error.field);
+    expect(fields).toContain("additionalSecrets");
+  });
+
+  it("returns 200 with a valid non-atomic batch payload", async () => {
+    const res = await request(app).post("/transactions/batches").send({
+      ...validPayload,
+      atomic: false,
+      memo: "team payout",
       payments: [
         {
           recipientTag: "bob_123",
