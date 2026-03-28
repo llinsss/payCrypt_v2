@@ -4,6 +4,7 @@ import axios from "axios";
 import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
+import { validateWebhookUrl } from "../utils/validateWebhookUrl.js";
 
 // ========== Queue ==========
 
@@ -32,24 +33,27 @@ export const webhookWorker = redisConnection
       "webhook-delivery",
       async (job) => {
         const { webhookId, eventId, url, secret, payload } = job.data;
-        
+
         // Lazy import to prevent circular issues with dependencies
         const { default: WebhookDeliveryService } = await import("../services/WebhookDeliveryService.js");
 
+        // Re-validate URL at delivery time to catch DNS rebinding attacks
+        await validateWebhookUrl(url);
+
         console.log(`⚙️ Delivering webhook ${webhookId} — event: ${payload.event}`);
 
-        // Offload execution to centralized tracking logic. 
-        // We set attempt to 0 since this is the primary delivery queue
-        await WebhookDeliveryService.executeDelivery({
+        const success = await WebhookDeliveryService.executeDelivery({
           eventId,
           webhookId,
           payload,
           url,
           secret,
-          currentAttempt: 0
+          currentAttempt: 0,
         });
 
-        return { success: true };
+        return { success };
+      },
+
       },
       {
         connection: redisConnection,
