@@ -1,12 +1,13 @@
-const express = require('express');
+import express from "express";
+import { getUssdStats, handleUssd } from "../controllers/ussdController.js";
+import { authenticate } from "../middleware/auth.js";
+
 const router = express.Router();
-const ussdController = require('../controllers/ussdController');
-const { authenticate } = require('../middleware/auth');
 
 // Public endpoint for USSD gateway
-router.post('/callback', ussdController.handleUssd);
+router.post("/callback", handleUssd);
 
 // Admin endpoint for stats
-router.get('/stats', authenticate, ussdController.getUssdStats);
+router.get("/stats", authenticate, getUssdStats);
 
-module.exports = router;
+export default router;
