@@ -1,5 +1,6 @@
 import axios from "axios";
 import redis from "../config/redis.js";
+import CircuitBreakerService from "./CircuitBreakerService.js";
 
 const EXCHANGE_RATE_API_KEY = process.env.EXCHANGE_RATE_API_KEY;
 const CACHE_KEY = "exchange_rates:fiat";
@@ -22,46 +23,48 @@ class ExchangeRateService {
    * @returns {Promise<Object>} Exchange rates relative to USD
    */
   async getRates() {
-    try {
-      // Try cache first
-      const cached = await redis.get(CACHE_KEY);
-      if (cached) {
-        return JSON.parse(cached);
+    return CircuitBreakerService.fire('exchangeRate', async () => {
+      try {
+        // Try cache first
+        const cached = await redis.get(CACHE_KEY);
+        if (cached) {
+          return JSON.parse(cached);
+        }
+
+        // Fetch from API
+        console.log("🔄 Fetching fresh exchange rates...");
+        // Using USD as base for simplicity in internal calculations
+        const { data } = await api.get("/latest/USD");
+
+        if (data && data.result === "success" && data.conversion_rates) {
+          const rates = data.conversion_rates;
+
+          // Filter for supported currencies
+          const filteredRates = {};
+          this.supportedCurrencies.forEach((curr) => {
+            if (rates[curr]) {
+              filteredRates[curr] = rates[curr];
+            }
+          });
+
+          // Cache the result
+          await redis.set(CACHE_KEY, JSON.stringify(filteredRates), "EX", CACHE_TTL);
+
+          return filteredRates;
+        }
+
+        throw new Error("API response unsuccessful");
+      } catch (error) {
+        console.error("❌ Failed to fetch exchange rates:", error.message);
+        // Fallback rates if API/Cache fails
+        return {
+          USD: 1,
+          EUR: 0.93,
+          GBP: 0.79,
+          NGN: 1600,
+        };
       }
-
-      // Fetch from API
-      console.log("🔄 Fetching fresh exchange rates...");
-      // Using USD as base for simplicity in internal calculations
-      const { data } = await api.get("/latest/USD");
-
-      if (data && data.result === "success" && data.conversion_rates) {
-        const rates = data.conversion_rates;
-
-        // Filter for supported currencies
-        const filteredRates = {};
-        this.supportedCurrencies.forEach((curr) => {
-          if (rates[curr]) {
-            filteredRates[curr] = rates[curr];
-          }
-        });
-
-        // Cache the result
-        await redis.set(CACHE_KEY, JSON.stringify(filteredRates), "EX", CACHE_TTL);
-
-        return filteredRates;
-      }
-
-      throw new Error("API response unsuccessful");
-    } catch (error) {
-      console.error("❌ Failed to fetch exchange rates:", error.message);
-      // Fallback rates if API/Cache fails
-      return {
-        USD: 1,
-        EUR: 0.93,
-        GBP: 0.79,
-        NGN: 1600,
-      };
-    }
+    });
   }
 
   /**

@@ -26,19 +26,15 @@ import { corsOptions } from "./config/cors.js";
 
 import { performanceMonitor } from "./middleware/performance.js";
 import { versionDetection } from "./middleware/apiVersion.js";
+import { correlationId } from "./middleware/correlationId.js";
+import { requestLogger } from "./middleware/requestLogger.js";
 import logger, { stream } from "./utils/logger.js";
 import {
   sanitizeRequest,
   detectSqlInjection,
 } from "./middleware/validation.js";
 
-import {
-  globalLimiter,
-  accountCreationLimiter,
-  paymentLimiter,
-  balanceQueryLimiter,
-  loginLimiter,
-} from "./config/rateLimiting.js";
+import { rateLimit } from "./middleware/rateLimiter.js";
 
 dotenv.config();
 
@@ -91,7 +87,7 @@ app.use(
 app.use(cors(corsOptions));
 
 // Global rate limiting (applies to all routes)
-app.use(globalLimiter);
+app.use(rateLimit({ endpointName: "api", windowMs: 60 * 60 * 1000, max: 1000 }));
 
 // Prevent XSS attacks
 app.use(xss());
@@ -144,6 +140,10 @@ if (process.env.NODE_ENV === "development") {
 // Performance Monitoring
 app.use(performanceMonitor);
 
+// Request/Response Logging with Correlation IDs
+app.use(correlationId);
+app.use(requestLogger);
+
 // API Version Detection
 app.use("/api", versionDetection);
 
@@ -176,6 +176,8 @@ import rateLimitRoutes from "./routes/rateLimit.js";
 app.use("/", generalRoutes);
 app.use("/api", indexRoutes);
 app.use("/api/tags", tagRoutes);
+import withdrawalRoutes from "./routes/withdrawals.js";
+app.use("/api/withdrawals", withdrawalRoutes);
 
 // Rate limit admin routes
 app.use("/admin/rate-limits", rateLimitRoutes);

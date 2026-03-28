@@ -16,6 +16,7 @@ import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
 import { transactionConfirmationQueue } from "../queues/transactionConfirmation.js";
+import LockService from "../services/LockService.js";
 
 export const getWalletByUserId = async (req, res) => {
   try {
@@ -124,70 +125,80 @@ export const send_to_tag = async (req, res) => {
     const chain = contract.chains[token.symbol];
     const sender_tag = user.tag;
 
-    const txHash = await contract.send_via_tag({
-      chain,
-      sender_tag,
-      receiver_tag,
-      amount,
-    });
-
-    if (!txHash) {
-      return res.status(422).json({ error: "Failed to transfer" });
+    // Acquire lock for sender
+    const lockIdentifier = await LockService.acquireUserLock(user.id);
+    if (!lockIdentifier) {
+      return res.status(429).json({ error: "Another transaction is in progress. Please try again." });
     }
 
-    await Promise.all([
-      Transaction.create({
-        user_id: user.id,
-        status: "pending",
-        token_id: balance.token_id,
-        chain_id: token.chain_id,
-        reference,
-        type: "debit",
-        tx_hash: txHash,
-        usd_value: usdValue,
+    try {
+      const txHash = await contract.send_via_tag({
+        chain,
+        sender_tag,
+        receiver_tag,
         amount,
-        timestamp,
-        from_address: sender_tag,
-        to_address: receiver_tag,
-        description: "Fund transfer",
-      }),
-      Notification.create({
-        user_id: user.id,
-        title: "Fund transfer initiated",
-        body: `Transfer of ${amount} ${token.symbol} to ${receiver_tag} is being processed`,
-      }),
-      Transaction.create({
-        user_id: recipient.id,
-        status: "pending",
-        token_id: balance.token_id,
-        chain_id: token.chain_id,
-        reference, // FIX
-        type: "credit",
-        tx_hash: txHash,
-        usd_value: usdValue,
-        amount,
-        timestamp,
-        from_address: sender_tag,
-        to_address: receiver_tag,
-        description: "Fund received",
-      }),
-    ]);
+      });
 
-    // Enqueue transaction confirmation job
-    if (transactionConfirmationQueue) {
-      await transactionConfirmationQueue.add(
-        "confirm-transaction",
-        {
-          txHash,
-          chain: token.chain_id || chain,
-        },
-        {
-          delay: 10000, // Start checking after 10 seconds
-        }
-      );
+      if (!txHash) {
+        return res.status(422).json({ error: "Failed to transfer" });
+      }
+
+      await Promise.all([
+        Transaction.create({
+          user_id: user.id,
+          status: "pending",
+          token_id: balance.token_id,
+          chain_id: token.chain_id,
+          reference,
+          type: "debit",
+          tx_hash: txHash,
+          usd_value: usdValue,
+          amount,
+          timestamp,
+          from_address: sender_tag,
+          to_address: receiver_tag,
+          description: "Fund transfer",
+        }),
+        Notification.create({
+          user_id: user.id,
+          title: "Fund transfer initiated",
+          body: `Transfer of ${amount} ${token.symbol} to ${receiver_tag} is being processed`,
+        }),
+        Transaction.create({
+          user_id: recipient.id,
+          status: "pending",
+          token_id: balance.token_id,
+          chain_id: token.chain_id,
+          reference, // FIX
+          type: "credit",
+          tx_hash: txHash,
+          usd_value: usdValue,
+          amount,
+          timestamp,
+          from_address: sender_tag,
+          to_address: receiver_tag,
+          description: "Fund received",
+        }),
+      ]);
+
+      // Enqueue transaction confirmation job
+      if (transactionConfirmationQueue) {
+        await transactionConfirmationQueue.add(
+          "confirm-transaction",
+          {
+            txHash,
+            chain: token.chain_id || chain,
+          },
+          {
+            delay: 10000, // Start checking after 10 seconds
+          }
+        );
+      }
+
+      return res.json({ data: "success", txHash });
+    } finally {
+      await LockService.releaseUserLock(user.id, lockIdentifier);
     }
-
-    return res.json({ data: "success", txHash });
   } catch (error) {
     console.error("Transfer Error:", error);
     return res.status(500).json({ error: error.message });
@@ -231,75 +242,85 @@ export const send_to_wallet = async (req, res) => {
     const sender_address = balance.address;
     const sender_tag = user.tag;
 
-    const txHash = await contract.send_via_wallet({
-      chain,
-      sender_tag,
-      receiver_address,
-      amount,
-    });
-
-    if (!txHash) {
-      return res.status(422).json({ error: "Failed to transfer" });
+    // Acquire lock for sender
+    const lockIdentifier = await LockService.acquireUserLock(user.id);
+    if (!lockIdentifier) {
+      return res.status(429).json({ error: "Another transaction is in progress. Please try again." });
     }
 
-    await Promise.all([
-      Transaction.create({
-        user_id: user.id,
-        status: "pending",
-        token_id: balance.token_id,
-        chain_id: token.chain_id,
-        reference,
-        type: "debit",
-        tx_hash: txHash,
-        usd_value: usdValue,
+    try {
+      const txHash = await contract.send_via_wallet({
+        chain,
+        sender_tag,
+        receiver_address,
         amount,
-        timestamp,
-        from_address: sender_address,
-        to_address: receiver_address,
-        description: "Fund transfer",
-      }),
-      Notification.create({
-        user_id: user.id,
-        title: "Fund transfer initiated",
-        body: `Transfer of ${amount} ${token.symbol} to ${receiver_address} is being processed`,
-      }),
-    ]);
+      });
 
-    if (recipient) {
+      if (!txHash) {
+        return res.status(422).json({ error: "Failed to transfer" });
+      }
+
       await Promise.all([
         Transaction.create({
-          user_id: recipient.id,
+          user_id: user.id,
           status: "pending",
           token_id: balance.token_id,
           chain_id: token.chain_id,
-          reference, // FIX
-          type: "credit",
+          reference,
+          type: "debit",
           tx_hash: txHash,
           usd_value: usdValue,
           amount,
           timestamp,
           from_address: sender_address,
           to_address: receiver_address,
-          description: "Fund received",
+          description: "Fund transfer",
+        }),
+        Notification.create({
+          user_id: user.id,
+          title: "Fund transfer initiated",
+          body: `Transfer of ${amount} ${token.symbol} to ${receiver_address} is being processed`,
         }),
       ]);
-    }
 
-    // Enqueue transaction confirmation job
-    if (transactionConfirmationQueue) {
-      await transactionConfirmationQueue.add(
-        "confirm-transaction",
-        {
-          txHash,
-          chain: token.chain_id || chain,
-        },
-        {
-          delay: 10000, // Start checking after 10 seconds
-        }
-      );
-    }
+      if (recipient) {
+        await Promise.all([
+          Transaction.create({
+            user_id: recipient.id,
+            status: "pending",
+            token_id: balance.token_id,
+            chain_id: token.chain_id,
+            reference, // FIX
+            type: "credit",
+            tx_hash: txHash,
+            usd_value: usdValue,
+            amount,
+            timestamp,
+            from_address: sender_address,
+            to_address: receiver_address,
+            description: "Fund received",
+          }),
+        ]);
+      }
 
-    return res.json({ data: "success", txHash });
+      // Enqueue transaction confirmation job
+      if (transactionConfirmationQueue) {
+        await transactionConfirmationQueue.add(
+          "confirm-transaction",
+          {
+            txHash,
+            chain: token.chain_id || chain,
+          },
+          {
+            delay: 10000, // Start checking after 10 seconds
+          }
+        );
+      }
+
+      return res.json({ data: "success", txHash });
+    } finally {
+      await LockService.releaseUserLock(user.id, lockIdentifier);
+    }
   } catch (error) {
     console.error("Transfer Error:", error);
     return res.status(500).json({ error: error.message });

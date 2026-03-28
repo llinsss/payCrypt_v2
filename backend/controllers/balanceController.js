@@ -5,6 +5,7 @@ import { User, Balance, Token } from "../models/index.js";
 import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
+import LockService from "../services/LockService.js";
 
 const chunk = (arr, size) =>
   arr.reduce(
@@ -91,8 +92,17 @@ export const updateBalance = async (req, res) => {
       updateData.auto_convert_threshold = req.body.auto_convert_threshold;
     }
 
-    const updatedBalance = await Balance.update(id, updateData);
-    res.json(updatedBalance);
+    const lockIdentifier = await LockService.acquireUserLock(balance.user_id);
+    if (!lockIdentifier) {
+      return res.status(429).json({ error: "Another update is in progress for this user's balance." });
+    }
+
+    try {
+      const updatedBalance = await Balance.update(id, updateData);
+      res.json(updatedBalance);
+    } finally {
+      await LockService.releaseUserLock(balance.user_id, lockIdentifier);
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -169,6 +179,10 @@ export const updateUserBalance = async (req, res) => {
       balances.map(async (balance) => {
         if (!balance.token_price || !balance.token_symbol) return;
         const chain = contract.chains[balance.token_symbol];
+
+        const lockIdentifier = await LockService.acquireUserLock(user.id);
+        if (!lockIdentifier) return; // Skip if already locked by another process
+
         try {
           const onchainValue = await (chain == "starknet"
             ? starknet.getTagBalance(user.tag)
@@ -189,6 +203,8 @@ export const updateUserBalance = async (req, res) => {
             `❌ Poll error for ${user?.tag || "unknown"} (${balance.token_symbol || "?"
             }): ${err.message}`
           );
+        } finally {
+          await LockService.releaseUserLock(user.id, lockIdentifier);
         }
       })
     );

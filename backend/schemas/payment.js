@@ -125,12 +125,12 @@ export const batchPaymentSchema = Joi.object({
   payments: Joi.array()
     .items(batchPaymentItemSchema)
     .min(1)
-    .max(25)
+    .max(100)
     .required()
     .messages({
       'array.base': 'Payments must be an array',
       'array.min': 'At least one payment is required',
-      'array.max': 'A batch cannot contain more than 25 payments',
+      'array.max': 'A batch cannot contain more than 100 payments',
       'any.required': 'Payments are required'
     }),
 

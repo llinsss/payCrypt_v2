@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { mainABI } from "../abis/SolidityContractABI.js";
+import CircuitBreakerService from "../services/CircuitBreakerService.js";
 
 /**
  * Unified EVM chain configuration.
@@ -29,10 +30,20 @@ export const getEvmChain = (chain) => {
     wallet
   );
 
+  /**
+   * Execute an operation on the EVM contract with circuit breaker protection
+   */
+  const fire = async (operation, ...args) => {
+      return CircuitBreakerService.fire('evm', async () => {
+          return operation(...args);
+      });
+  };
+
   return {
     provider,
     wallet,
     contract,
     config,
+    fire
   };
 };

@@ -2,6 +2,7 @@ import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import PaymentService from "../services/PaymentService.js";
 import ReceiptService from "../services/ReceiptService.js";
+import LockService from "../services/LockService.js";
 import { processPaymentSchema, transactionHistoryQuerySchema } from "../schemas/payment.js";
 
 export const createTransaction = async (req, res) => {
@@ -164,7 +165,7 @@ export const getTransactionById = async (req, res) => {
     if (!transaction) {
       return res.status(400).json({ error: "Transaction not found" });
     }
-    // Only allow ttransaction owner to view
+    // Only allow transaction owner to view
     if (transaction.user_id !== req.user.id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
@@ -221,7 +222,8 @@ export const updateTransaction = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updatedTransaction = await Transaction.update(id, req.body);
+    const { notes } = req.body;
+    const updatedTransaction = await Transaction.update(id, { notes });
     res.json(updatedTransaction);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -275,7 +277,7 @@ export const deleteTransaction = async (req, res) => {
 export const restoreTransaction = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const transaction = await Transaction.findByIdWithDeleted(id);
 
     if (!transaction) {
@@ -410,37 +412,45 @@ export const processPayment = async (req, res) => {
       notes,
       senderSecret,
       additionalSecrets = [],
-      idempotencyKey
       idempotencyKey,
     } = value;
     const userId = req.user.id;
-    const idempotencyKeyFromHeader = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
 
     // Combine secrets
     const secrets = [senderSecret, ...additionalSecrets];
 
-    // Process the payment
-    const result = await PaymentService.processPayment({
-      senderTag,
-      recipientTag,
-      amount,
-      asset,
-      assetIssuer,
-      memo,
-      notes,
-      secrets,
-      userId,
-      idempotencyKey: idempotencyKey || idempotencyKeyFromHeader || null
-    });
+    // Acquire lock to prevent race conditions (e.g., double spend)
+    const lockIdentifier = await LockService.acquireUserLock(userId);
+    if (!lockIdentifier) {
+      return res.status(429).json({ error: "Another transaction is in progress for this user. Please try again." });
+    }
 
-    res.status(201).json({
-      success: true,
-      message: 'Payment processed successfully',
-      data: result
-    });
+    try {
+      // Process the payment
+      const result = await PaymentService.processPayment({
+        senderTag,
+        recipientTag,
+        amount,
+        asset,
+        assetIssuer,
+        memo,
+        notes,
+        secrets,
+        userId,
+        idempotencyKey: idempotencyKey || idempotencyKeyFromHeader || null
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Payment processed successfully',
+        data: result
+      });
+    } finally {
+      await LockService.releaseUserLock(userId, lockIdentifier);
+    }
   } catch (error) {
     console.error('Payment processing error:', error);
-    
+
     // Determine appropriate HTTP status code
     let statusCode = 400;
     if (error.message.includes('not found')) {
