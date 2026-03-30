@@ -51,32 +51,11 @@ export const processPaymentSchema = Joi.object({
       'string.max': 'Memo must be 28 characters or less'
     }),
 
-  senderSecret: Joi.string()
-    .pattern(/^S[A-Z0-9]{55}$/)
-    .required()
-    .messages({
-      'string.pattern.base': 'Invalid Stellar secret key format',
-      'any.required': 'Sender secret key is required'
-    }),
-
   notes: Joi.string()
     .max(500)
     .allow(null, '')
     .messages({
       'string.max': 'Notes must be 500 characters or less'
-    }),
-
-  additionalSecrets: Joi.array()
-    .items(
-      Joi.string()
-        .pattern(/^S[A-Z0-9]{55}$/)
-        .messages({
-          'string.pattern.base': 'Invalid Stellar secret key format in additional secrets'
-        })
-    )
-    .default([])
-    .messages({
-      'array.base': 'Additional secrets must be an array'
     }),
 
   idempotencyKey: Joi.string()
@@ -166,26 +145,6 @@ export const batchPaymentSchema = Joi.object({
       'string.max': 'Memo must be 28 characters or less'
     }),
 
-  senderSecret: Joi.string()
-    .pattern(/^S[A-Z0-9]{55}$/)
-    .required()
-    .messages({
-      'string.pattern.base': 'Invalid Stellar secret key format',
-      'any.required': 'Sender secret key is required'
-    }),
-
-  additionalSecrets: Joi.array()
-    .items(
-      Joi.string()
-        .pattern(/^S[A-Z0-9]{55}$/)
-        .messages({
-          'string.pattern.base': 'Invalid Stellar secret key format in additional secrets'
-        })
-    )
-    .default([])
-    .messages({
-      'array.base': 'Additional secrets must be an array'
-    })
 }).unknown(false);
 
 export const paymentLimitsSchema = Joi.object({

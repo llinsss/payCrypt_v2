@@ -5,7 +5,7 @@ import BatchPaymentService from "../services/BatchPaymentService.js";
 const batchPaymentWorker = new Worker(
     "batch-payments",
     async (job) => {
-        const { userId, senderTag, payments, atomic, asset, assetIssuer, memo, senderSecret, additionalSecrets, batchId } = job.data;
+        const { userId, senderTag, payments, atomic, asset, assetIssuer, memo, batchId } = job.data;
 
         console.log(`Processing background batch payment ${batchId} (Job ${job.id})`);
 
@@ -20,8 +20,6 @@ const batchPaymentWorker = new Worker(
                 asset,
                 assetIssuer,
                 memo,
-                senderSecret,
-                additionalSecrets
             });
         } catch (error) {
             console.error(`Error in batch payment worker for batch ${batchId}:`, error);

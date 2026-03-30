@@ -15,7 +15,7 @@ import { describe, it, expect } from "@jest/globals";
 
 import { validate, validateQuery } from "../middleware/validation.js";
 import { authSchemas } from "../schemas/auth.js";
-import { processPaymentSchema } from "../schemas/payment.js";
+import { batchPaymentSchema, processPaymentSchema } from "../schemas/payment.js";
 import { kycCreateSchema } from "../schemas/kyc.js";
 import { sendToTagSchema, sendToWalletSchema } from "../schemas/wallet.js";
 import { transactionQuerySchema } from "../schemas/transaction.js";
@@ -172,7 +172,6 @@ describe("POST /transactions/payment validation", () => {
         const res = await request(app).post("/payment").send({
             recipientTag: "bob",
             amount: 10,
-            senderSecret: "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
         });
         expect(res.status).toBe(400);
         const fields = res.body.errors.map((e) => e.field);
@@ -184,23 +183,34 @@ describe("POST /transactions/payment validation", () => {
             senderTag: "alice",
             recipientTag: "bob",
             amount: -5,
-            senderSecret: "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
         });
         expect(res.status).toBe(400);
         const fields = res.body.errors.map((e) => e.field);
         expect(fields).toContain("amount");
     });
 
-    it("returns 400 when senderSecret format is invalid", async () => {
+    it("returns 400 when senderSecret is included", async () => {
         const res = await request(app).post("/payment").send({
             senderTag: "alice",
             recipientTag: "bob",
             amount: 10,
-            senderSecret: "INVALID",
+            senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         });
         expect(res.status).toBe(400);
         const fields = res.body.errors.map((e) => e.field);
         expect(fields).toContain("senderSecret");
+    });
+
+    it("returns 400 when additionalSecrets is included", async () => {
+        const res = await request(app).post("/payment").send({
+            senderTag: "alice",
+            recipientTag: "bob",
+            amount: 10,
+            additionalSecrets: ["SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"],
+        });
+        expect(res.status).toBe(400);
+        const fields = res.body.errors.map((e) => e.field);
+        expect(fields).toContain("additionalSecrets");
     });
 
     it("returns 400 when notes exceed 500 characters", async () => {
@@ -208,7 +218,6 @@ describe("POST /transactions/payment validation", () => {
             senderTag: "alice",
             recipientTag: "bob",
             amount: 10,
-            senderSecret: "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
             notes: "a".repeat(501),
         });
         expect(res.status).toBe(400);
@@ -216,17 +225,52 @@ describe("POST /transactions/payment validation", () => {
         expect(fields).toContain("notes");
     });
 
-    it.skip("returns 200 with a valid payment payload including notes", async () => { // TODO: pre-existing failure, unrelated to 2FA PR
+    it("returns 200 with a valid payment payload including notes", async () => {
         const res = await request(app).post("/payment").send({
             senderTag: "alice",
             recipientTag: "bob",
             amount: 10,
-            senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             notes: "Test notes for this transaction",
             idempotencyKey: "abc123yz",
-            senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         });
         expect(res.status).toBe(200);
+    });
+});
+
+describe("POST /batches validation", () => {
+    const app = buildApp("post", "/batches", validate(batchPaymentSchema));
+
+    it("returns 200 with a valid batch payload", async () => {
+        const res = await request(app).post("/batches").send({
+            senderTag: "alice",
+            payments: [{ recipientTag: "bob", amount: 10 }],
+        });
+
+        expect(res.status).toBe(200);
+    });
+
+    it("returns 400 when senderSecret is included", async () => {
+        const res = await request(app).post("/batches").send({
+            senderTag: "alice",
+            payments: [{ recipientTag: "bob", amount: 10 }],
+            senderSecret: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        });
+
+        expect(res.status).toBe(400);
+        const fields = res.body.errors.map((e) => e.field);
+        expect(fields).toContain("senderSecret");
+    });
+
+    it("returns 400 when additionalSecrets is included", async () => {
+        const res = await request(app).post("/batches").send({
+            senderTag: "alice",
+            payments: [{ recipientTag: "bob", amount: 10 }],
+            additionalSecrets: ["SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"],
+        });
+
+        expect(res.status).toBe(400);
+        const fields = res.body.errors.map((e) => e.field);
+        expect(fields).toContain("additionalSecrets");
     });
 });
 

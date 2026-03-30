@@ -8,6 +8,7 @@ const SENSITIVE_FIELDS = [
   "secret",
   "senderSecret",
   "additionalSecrets",
+  "additionalSigningKeys",
   "token",
   "key",
   "authorization",

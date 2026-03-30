@@ -9,6 +9,7 @@ import Token from '../models/Token.js';
 import AuditLog from '../models/AuditLog.js';
 import db from '../config/database.js';
 import { publish } from '../config/redis.js';
+import KeyVaultService from './KeyVaultService.js';
 
 // Payment limits and configuration
 const PAYMENT_CONFIG = {
@@ -233,84 +234,86 @@ class PaymentService {
    * @param {string} params.asset - Asset code ('XLM' for native)
    * @param {string} params.assetIssuer - Issuer for custom assets
    * @param {string} params.memo - Optional memo text
-   * @param {Array<string>} params.secrets - Array of secret keys for signing
+   * @param {number} params.userId - User ID used to fetch server-side signing keys
    * @returns {Promise<string>} signed transaction XDR
    * @throws {Error} if transaction creation fails
    */
-  async createTransaction({ senderAddress, recipientAddress, amount, asset = 'XLM', assetIssuer, memo, secrets }) {
-    try {
-      if (!secrets || secrets.length === 0) {
-        throw new Error('At least one secret key is required for signing');
-      }
-
-      // Check multi-sig requirement
-      const multiSigInfo = await this.checkMultiSigRequirement(senderAddress);
-
-      if (multiSigInfo.required && secrets.length < 2) {
-        throw new Error(`Multi-signature account requires at least 2 signatures, but only ${secrets.length} provided`);
-      }
-
-      // Load sender account for sequence number
-      const senderAccount = await this.server.loadAccount(senderAddress);
-
-      // Build transaction
-      const transactionBuilder = new TransactionBuilder(senderAccount, {
-        fee: '100', // Base fee in stroops (0.00001 XLM)
-        networkPassphrase: this.networkPassphrase,
-      });
-
-      // Add memo if provided
-      if (memo) {
-        if (memo.length > 28) {
-          throw new Error('Memo exceeds maximum length of 28 characters');
+  async createTransaction({ senderAddress, recipientAddress, amount, asset = 'XLM', assetIssuer, memo, userId }) {
+    return KeyVaultService.withUserSecrets(userId, async (secrets) => {
+      try {
+        if (!secrets || secrets.length === 0) {
+          throw new Error('At least one secret key is required for signing');
         }
-        transactionBuilder.addMemo(Memo.text(memo));
-      }
 
-      // Create payment operation
-      let paymentOp;
-      if (asset === 'XLM') {
-        paymentOp = Operation.payment({
-          destination: recipientAddress,
-          asset: Asset.native(),
-          amount: amount.toString(),
+        // Check multi-sig requirement
+        const multiSigInfo = await this.checkMultiSigRequirement(senderAddress);
+
+        if (multiSigInfo.required && secrets.length < 2) {
+          throw new Error(`Multi-signature account requires at least 2 signatures, but only ${secrets.length} provided`);
+        }
+
+        // Load sender account for sequence number
+        const senderAccount = await this.server.loadAccount(senderAddress);
+
+        // Build transaction
+        const transactionBuilder = new TransactionBuilder(senderAccount, {
+          fee: '100', // Base fee in stroops (0.00001 XLM)
+          networkPassphrase: this.networkPassphrase,
         });
-      } else {
-        if (!assetIssuer) {
-          throw new Error('Asset issuer required for custom assets');
+
+        // Add memo if provided
+        if (memo) {
+          if (memo.length > 28) {
+            throw new Error('Memo exceeds maximum length of 28 characters');
+          }
+          transactionBuilder.addMemo(Memo.text(memo));
         }
-        paymentOp = Operation.payment({
-          destination: recipientAddress,
-          asset: new Asset(asset, assetIssuer),
-          amount: amount.toString(),
+
+        // Create payment operation
+        let paymentOp;
+        if (asset === 'XLM') {
+          paymentOp = Operation.payment({
+            destination: recipientAddress,
+            asset: Asset.native(),
+            amount: amount.toString(),
+          });
+        } else {
+          if (!assetIssuer) {
+            throw new Error('Asset issuer required for custom assets');
+          }
+          paymentOp = Operation.payment({
+            destination: recipientAddress,
+            asset: new Asset(asset, assetIssuer),
+            amount: amount.toString(),
+          });
+        }
+
+        transactionBuilder.addOperation(paymentOp);
+
+        // Set timeout and build
+        const transaction = transactionBuilder.setTimeout(PAYMENT_CONFIG.NETWORK_TIMEOUT).build();
+
+        // Sign with all configured secrets
+        const signedSecrets = new Set();
+        secrets.forEach(secret => {
+          try {
+            const keypair = Keypair.fromSecret(secret);
+            transaction.sign(keypair);
+            signedSecrets.add(keypair.publicKey());
+          } catch (error) {
+            throw new Error(`Invalid secret key: ${error.message}`);
+          }
         });
-      }
 
-      transactionBuilder.addOperation(paymentOp);
-
-      // Set timeout and build
-      const transaction = transactionBuilder.setTimeout(PAYMENT_CONFIG.NETWORK_TIMEOUT).build();
-
-      // Sign with all provided secrets
-      const signedSecrets = new Set();
-      secrets.forEach(secret => {
-        try {
-          const keypair = Keypair.fromSecret(secret);
-          transaction.sign(keypair);
-          signedSecrets.add(keypair.publicKey());
-        } catch (error) {
-          throw new Error(`Invalid secret key: ${error.message}`);
+        if (signedSecrets.size !== secrets.length) {
+          throw new Error('Duplicate secret keys provided');
         }
-      });
 
-      if (signedSecrets.size !== secrets.length) {
-        throw new Error('Duplicate secret keys provided');
+        return transaction.toEnvelope().toXDR('base64');
+      } catch (error) {
+        throw new Error(`Failed to create transaction: ${error.message}`);
       }
-
-      return transaction.toEnvelope().toXDR('base64');
-    } catch (error) {
-      throw new Error(`Failed to create transaction: ${error.message}`);
-    }
+    });
   }
 
   /**
@@ -371,13 +374,12 @@ class PaymentService {
    * @param {string} paymentData.asset - Asset code (default: 'XLM')
    * @param {string} paymentData.assetIssuer - Issuer for custom assets
    * @param {string} paymentData.memo - Optional payment memo
-   * @param {Array<string>} paymentData.secrets - Secret keys for signing
    * @param {number} paymentData.userId - User ID for transaction record
    * @param {string} paymentData.idempotencyKey - Optional idempotency key to prevent duplicate processing
    * @returns {Object} payment result with transaction ID and hash
    * @throws {Error} if payment processing fails
    */
-  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, notes, secrets, userId, idempotencyKey }) {
+  async processPayment({ senderTag, recipientTag, amount, asset = 'XLM', assetIssuer, memo, notes, userId, idempotencyKey }) {
     const fingerprint = this._fingerprintTransaction({ userId, senderTag, recipientTag, amount, asset });
     const effectiveIdempotencyKey = idempotencyKey || this._generateIdempotencyKey({ senderTag, recipientTag, amount, asset, memo, userId });
     const trx = await db.transaction();
@@ -520,7 +522,7 @@ class PaymentService {
         asset,
         assetIssuer: validatedAssetIssuer,
         memo,
-        secrets
+        userId
       });
       this.logger.log(`Transaction signed successfully`);
 

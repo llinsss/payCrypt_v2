@@ -75,10 +75,20 @@ describe("BatchPaymentService", () => {
 
             BatchPayment.create.mockResolvedValue({ id: 123, reference: "REF-123", status: "pending", total_items: 1 });
             Token.findBySymbol.mockResolvedValue({ id: 1, symbol: "XLM", price: 1 });
-            PaymentService.resolveTag.mockResolvedValue("G123...");
+            PaymentService.resolveTag.mockImplementation(async (tag) =>
+                tag === "user1"
+                    ? "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                    : "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+            );
             PaymentService.server.loadAccount.mockResolvedValue({});
             PaymentService.calculateFee.mockReturnValue({ fee: 0.1 });
             PaymentService.getBalance.mockResolvedValue(100);
+            PaymentService.processPayment.mockResolvedValue({ transactionId: 1, fee: 0.1, txHash: "HASH" });
+            BatchPayment.getDetailedByIdForUser.mockResolvedValue({
+                id: 123,
+                reference: "REF-123",
+                status: "completed",
+            });
 
             // We'll mock processAtomicBatch via spy if it was a real class instance, 
             // but since it's an object we can just mock its internal call or let it run.
@@ -88,7 +98,6 @@ describe("BatchPaymentService", () => {
                 senderTag,
                 payments,
                 atomic: false,
-                senderSecret: "S123...",
             });
 
             expect(BatchPayment.create).toHaveBeenCalled();
@@ -108,7 +117,6 @@ describe("BatchPaymentService", () => {
                 senderTag,
                 payments,
                 atomic: false,
-                senderSecret: "S123...",
             });
 
             expect(batchPaymentQueue.add).toHaveBeenCalledWith("process-batch", expect.any(Object));
@@ -139,7 +147,6 @@ describe("BatchPaymentService", () => {
                 userId: 1,
                 senderTag: "user1",
                 asset: "XLM",
-                senderSecret: "S-SENDER",
             });
 
             expect(PaymentService.processPayment).toHaveBeenCalledTimes(2);

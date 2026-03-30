@@ -29,6 +29,7 @@ import { versionDetection } from "./middleware/apiVersion.js";
 import { correlationId } from "./middleware/correlationId.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import logger, { stream } from "./utils/logger.js";
+import { sanitizeBody as sanitizeSensitiveBody } from "./utils/redactor.js";
 import {
   sanitizeRequest,
   detectSqlInjection,
@@ -53,8 +54,8 @@ Sentry.init({
 app.use((req, res, next) => {
   // Try to use Sentry's newer IsolationScope if available, otherwise just use setContext safely.
   // Actually, Express requests run in their own async context in Node, so we can do this:
-  Sentry.setContext("request_body", req.body || {});
-  Sentry.setContext("request_query", req.query || {});
+  Sentry.setContext("request_body", sanitizeSensitiveBody(req.body || {}));
+  Sentry.setContext("request_query", sanitizeSensitiveBody(req.query || {}));
   next();
 });
 

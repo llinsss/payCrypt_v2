@@ -6,6 +6,7 @@ import Token from "../models/Token.js";
 import Transaction from "../models/Transaction.js";
 import pLimit from "p-limit";
 import batchPaymentQueue from "../queues/batchPaymentQueue.js";
+import KeyVaultService from "./KeyVaultService.js";
 
 const { TransactionBuilder, Operation, Asset, Keypair, Memo } = StellarSdk;
 
@@ -39,8 +40,6 @@ class BatchPaymentService {
     asset = "XLM",
     assetIssuer = null,
     memo = null,
-    senderSecret,
-    additionalSecrets = [],
   }) {
     const normalizedAsset = asset || "XLM";
     const normalizedAssetIssuer = normalizedAsset === "XLM" ? null : assetIssuer;
@@ -73,8 +72,6 @@ class BatchPaymentService {
         asset: normalizedAsset,
         assetIssuer: normalizedAssetIssuer,
         memo,
-        senderSecret,
-        additionalSecrets,
         batchId: batch.id,
       });
 
@@ -131,7 +128,6 @@ class BatchPaymentService {
           asset: normalizedAsset,
           assetIssuer: normalizedAssetIssuer,
           memo,
-          secrets: [senderSecret, ...additionalSecrets],
         });
       }
 
@@ -143,8 +139,6 @@ class BatchPaymentService {
         asset: normalizedAsset,
         assetIssuer: normalizedAssetIssuer,
         memo,
-        senderSecret,
-        additionalSecrets,
       });
     } catch (error) {
       const failedBatch = await this.failBatch(
@@ -232,7 +226,6 @@ class BatchPaymentService {
     asset,
     assetIssuer,
     memo,
-    secrets,
   }) {
     const { senderAddress, validItems, failures, token, totalAmount, totalFees, totalCost } = preparedBatch;
 
@@ -307,7 +300,7 @@ class BatchPaymentService {
         asset,
         assetIssuer,
         memo,
-        secrets,
+        userId,
       });
 
       const submitResult = await PaymentService.submitTransaction(signedXdr);
@@ -382,8 +375,6 @@ class BatchPaymentService {
     asset,
     assetIssuer,
     memo,
-    senderSecret,
-    additionalSecrets
   }) {
     const batch = await BatchPayment.findById(batchId);
     if (!batch) throw new Error(`Batch ${batchId} not found`);
@@ -407,7 +398,6 @@ class BatchPaymentService {
           asset,
           assetIssuer,
           memo,
-          secrets: [senderSecret, ...additionalSecrets],
         });
       }
 
@@ -419,8 +409,6 @@ class BatchPaymentService {
         asset,
         assetIssuer,
         memo,
-        senderSecret,
-        additionalSecrets,
       });
     } catch (error) {
       await this.failBatch(
@@ -442,8 +430,6 @@ class BatchPaymentService {
     asset,
     assetIssuer,
     memo,
-    senderSecret,
-    additionalSecrets,
   }) {
     const { senderAddress, validItems, failures } = preparedBatch;
     const results = Array(batch.total_items).fill(null);
@@ -500,7 +486,6 @@ class BatchPaymentService {
             asset,
             assetIssuer,
             memo,
-            secrets: [senderSecret, ...additionalSecrets],
             userId,
           });
 
@@ -578,55 +563,57 @@ class BatchPaymentService {
     };
   }
 
-  async createAtomicBatchTransaction({ senderAddress, validItems, asset, assetIssuer, memo, secrets }) {
-    if (!secrets || secrets.length === 0) {
-      throw new Error("At least one secret key is required for signing");
-    }
-
-    const multiSigInfo = await PaymentService.checkMultiSigRequirement(senderAddress);
-    if (multiSigInfo.required && secrets.length < 2) {
-      throw new Error(`Multi-signature account requires at least 2 signatures, but only ${secrets.length} provided`);
-    }
-
-    const senderAccount = await PaymentService.server.loadAccount(senderAddress);
-    const transactionBuilder = new TransactionBuilder(senderAccount, {
-      fee: String(STELLAR_BASE_FEE * validItems.length),
-      networkPassphrase: PaymentService.networkPassphrase,
-    });
-
-    if (memo) {
-      transactionBuilder.addMemo(Memo.text(memo));
-    }
-
-    const operationAsset = asset === "XLM" ? Asset.native() : new Asset(asset, assetIssuer);
-    for (const item of validItems) {
-      transactionBuilder.addOperation(
-        Operation.payment({
-          destination: item.recipientAddress,
-          asset: operationAsset,
-          amount: item.amount.toString(),
-        })
-      );
-    }
-
-    const transaction = transactionBuilder.setTimeout(30).build();
-    const signedSecrets = new Set();
-
-    for (const secret of secrets) {
-      try {
-        const keypair = Keypair.fromSecret(secret);
-        transaction.sign(keypair);
-        signedSecrets.add(keypair.publicKey());
-      } catch (error) {
-        throw new Error(`Invalid secret key: ${error.message}`);
+  async createAtomicBatchTransaction({ senderAddress, validItems, asset, assetIssuer, memo, userId }) {
+    return KeyVaultService.withUserSecrets(userId, async (secrets) => {
+      if (!secrets || secrets.length === 0) {
+        throw new Error("At least one secret key is required for signing");
       }
-    }
 
-    if (signedSecrets.size !== secrets.length) {
-      throw new Error("Duplicate secret keys provided");
-    }
+      const multiSigInfo = await PaymentService.checkMultiSigRequirement(senderAddress);
+      if (multiSigInfo.required && secrets.length < 2) {
+        throw new Error(`Multi-signature account requires at least 2 signatures, but only ${secrets.length} provided`);
+      }
 
-    return transaction.toEnvelope().toXDR("base64");
+      const senderAccount = await PaymentService.server.loadAccount(senderAddress);
+      const transactionBuilder = new TransactionBuilder(senderAccount, {
+        fee: String(STELLAR_BASE_FEE * validItems.length),
+        networkPassphrase: PaymentService.networkPassphrase,
+      });
+
+      if (memo) {
+        transactionBuilder.addMemo(Memo.text(memo));
+      }
+
+      const operationAsset = asset === "XLM" ? Asset.native() : new Asset(asset, assetIssuer);
+      for (const item of validItems) {
+        transactionBuilder.addOperation(
+          Operation.payment({
+            destination: item.recipientAddress,
+            asset: operationAsset,
+            amount: item.amount.toString(),
+          })
+        );
+      }
+
+      const transaction = transactionBuilder.setTimeout(30).build();
+      const signedSecrets = new Set();
+
+      for (const secret of secrets) {
+        try {
+          const keypair = Keypair.fromSecret(secret);
+          transaction.sign(keypair);
+          signedSecrets.add(keypair.publicKey());
+        } catch (error) {
+          throw new Error(`Invalid secret key: ${error.message}`);
+        }
+      }
+
+      if (signedSecrets.size !== secrets.length) {
+        throw new Error("Duplicate secret keys provided");
+      }
+
+      return transaction.toEnvelope().toXDR("base64");
+    });
   }
 
   async failBatch(batchId, message, results) {
