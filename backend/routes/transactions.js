@@ -32,7 +32,7 @@ router.get("/search", authenticate, rateLimit({ endpointName: "api" }), searchTr
 router.get("/", authenticate, rateLimit({ endpointName: "api" }), getTransactionByUser);
 router.get("/export/download", rateLimit({ endpointName: "download", windowMs: 15 * 60 * 1000, max: 10 }), downloadExport);
 router.get("/export", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "export", windowMs: 60 * 60 * 1000, max: 5 }), exportTransactions);
-router.get("/tag/:tag", validateParams(transactionTagParamSchema), validateQuery(transactionQuerySchema), getTransactionsByTag);
+router.get("/tag/:tag", authenticate, userRateLimiter, validateParams(transactionTagParamSchema), validateQuery(transactionQuerySchema), getTransactionsByTag);
 router.get("/:id", authenticate, rateLimit({ endpointName: "api" }), validateParams(transactionIdParamSchema), getTransactionById);
 router.put("/:id", authenticate, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "transactions" }), validateParams(transactionIdParamSchema), validate(transactionSchema), auditLog("transactions"), updateTransaction);
 router.delete("/:id", authenticate, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "transactions" }), validateParams(transactionIdParamSchema), auditLog("transactions"), deleteTransaction);
@@ -41,6 +41,6 @@ router.delete("/:id", authenticate, rateLimit({ endpointName: "api" }), rateLimi
 router.post("/payment", authenticate, rateLimit({ endpointName: "transactions" }), validate(processPaymentSchema), auditLog("transactions"), processPayment);
 router.post("/batches", authenticate, rateLimit({ endpointName: "transactions" }), validate(batchPaymentSchema), auditLog("transactions"), createBatchPayment);
 router.get("/payment/limits", getPaymentLimits);
-router.get("/tag/:tag/history", getPaymentHistory);
+router.get("/tag/:tag/history", authenticate, userRateLimiter, getPaymentHistory);
 
 export default router;

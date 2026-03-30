@@ -322,6 +322,10 @@ export const getTransactionsByTag = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    if (String(user.id) !== String(req.user.id)) {
+      return res.status(403).json({ error: "Access denied." });
+    }
+
     // Validate amount range parameters
     let minAmount = null;
     let maxAmount = null;
@@ -496,6 +500,18 @@ export const getPaymentHistory = async (req, res) => {
         error: 'Invalid query parameters',
         details: error.message
       });
+    }
+
+    const user = await User.findByTag(tag);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found"
+      });
+    }
+
+    if (String(user.id) !== String(req.user.id)) {
+      return res.status(403).json({ error: "Access denied." });
     }
 
     const transactions = await PaymentService.getTransactionHistory(tag, value);
