@@ -1,9 +1,13 @@
+import 'dart:typed_data';
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/models/transaction_model.dart';
 import 'package:Tagg/services/api_service.dart';
 
 class TransactionService {
-  final _apiService = locator<ApiService>();
+  TransactionService({ApiService? apiService})
+      : _apiService = apiService ?? locator<ApiService>();
+
+  final ApiService _apiService;
 
   /// Get user transactions with optional filters
   Future<List<Transaction>> getUserTransactions({
@@ -54,6 +58,10 @@ class TransactionService {
   /// Get recent transactions (last 10)
   Future<List<Transaction>> getRecentTransactions() async {
     return getUserTransactions(limit: 5);
+  }
+
+  Future<Uint8List> getTransactionReceipt(int id) async {
+    return _apiService.getBytes('/transactions/$id/receipt');
   }
 
   String _buildQueryString(Map<String, String> params) {
