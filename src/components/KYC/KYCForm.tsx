@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { FieldError, UseFormRegister, useForm } from "react-hook-form";
 import {
   Upload,
@@ -27,8 +27,10 @@ import toast from "react-hot-toast";
 const CLOUDINARY_UPLOAD_PRESET = "default";
 const CLOUDINARY_CLOUD_NAME = "dfvxv2mpj";
 
-interface KYCFormData
-  extends Omit<KYCData, "id_document_url" | "proof_of_address_url"> {
+interface KYCFormData extends Omit<
+  KYCData,
+  "id_document_url" | "proof_of_address_url"
+> {
   id_document_url?: string;
   proof_of_address_url?: string;
 }
@@ -37,13 +39,21 @@ const KYCForm: React.FC = () => {
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<{ [key: string]: File }>(
-    {}
+    {},
   );
   const [uploadingFiles, setUploadingFiles] = useState<{
     [key: string]: boolean;
   }>({});
   const [showModal, setShowModal] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
+  const [kycStatus, setKycStatus] = useState<{
+    status: string;
+    kyc_status: string;
+    rejectionReason: string | null;
+    updatedAt: string | null;
+  } | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [activeField, setActiveField] = useState<string | null>(null);
 
   const {
     register,
@@ -73,7 +83,7 @@ const KYCForm: React.FC = () => {
       {
         method: "POST",
         body: formData,
-      }
+      },
     );
 
     if (!response.ok) {
@@ -90,9 +100,33 @@ const KYCForm: React.FC = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    const fetchKycStatus = async () => {
+      try {
+        if (!user?.id) return;
+        const response = await apiClient.get<{
+          status: string;
+          kyc_status: string;
+          rejectionReason: string | null;
+          updatedAt: string | null;
+        }>("/kycs/status");
+        setKycStatus(response);
+        if (response.kyc_status === "rejected") {
+          setCurrentStep(1);
+        }
+      } catch (error) {
+        console.error("Failed to load KYC status", error);
+      } finally {
+        setIsLoadingStatus(false);
+      }
+    };
+
+    void fetchKycStatus();
+  }, [user?.id]);
+
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
-    fieldName: string
+    fieldName: string,
   ) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -113,6 +147,7 @@ const KYCForm: React.FC = () => {
       return;
     }
 
+    setActiveField(fieldName);
     setUploadedFiles((prev) => ({ ...prev, [fieldName]: file }));
     setUploadingFiles((prev) => ({ ...prev, [fieldName]: true }));
 
@@ -134,6 +169,7 @@ const KYCForm: React.FC = () => {
       });
     } finally {
       setUploadingFiles((prev) => ({ ...prev, [fieldName]: false }));
+      setActiveField(null);
     }
   };
 
@@ -155,7 +191,7 @@ const KYCForm: React.FC = () => {
         proof_of_address: data.proof_of_address_url,
       });
       toast.success(
-        "KYC information submitted successfully! We will review your documents within 24-48 hours."
+        "KYC information submitted successfully! We will review your documents within 24-48 hours.",
       );
       window.location.reload();
     } catch (error) {
@@ -163,7 +199,7 @@ const KYCForm: React.FC = () => {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to submit KYC information. Please try again."
+          : "Failed to submit KYC information. Please try again.",
       );
     } finally {
       setIsSubmitting(false);
@@ -191,6 +227,37 @@ const KYCForm: React.FC = () => {
   const prevStep = () => {
     setCurrentStep(currentStep - 1);
   };
+
+  const progressSummary = useMemo(() => {
+    const steps = [
+      {
+        key: "personal",
+        label: "Personal Info",
+        complete: Boolean(fullName && phoneNumber && bankName && accountNumber),
+      },
+      {
+        key: "documents",
+        label: "ID & Address",
+        complete: Boolean(idDocumentUrl && proofOfAddressUrl),
+      },
+      {
+        key: "review",
+        label: "Review",
+        complete: Boolean(
+          idDocumentUrl && proofOfAddressUrl && fullName && phoneNumber,
+        ),
+      },
+    ];
+
+    return steps;
+  }, [
+    accountNumber,
+    bankName,
+    fullName,
+    idDocumentUrl,
+    phoneNumber,
+    proofOfAddressUrl,
+  ]);
 
   // 🔹 Enhanced Modal Component
   const Modal = () => (
@@ -267,8 +334,8 @@ const KYCForm: React.FC = () => {
                 step === currentStep
                   ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg"
                   : step < currentStep
-                  ? "bg-green-500 text-white"
-                  : "bg-gray-200 text-gray-500"
+                    ? "bg-green-500 text-white"
+                    : "bg-gray-200 text-gray-500"
               }`}
             >
               {step < currentStep ? (
@@ -285,8 +352,8 @@ const KYCForm: React.FC = () => {
               {step === 1
                 ? "Personal Info"
                 : step === 2
-                ? "Documents"
-                : "Review"}
+                  ? "Documents"
+                  : "Review"}
             </span>
           </div>
           {step < 3 && (
@@ -322,7 +389,7 @@ const KYCForm: React.FC = () => {
 
   if (user?.kyc_status === "pending") {
     return (
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-2xl mx-auto space-y-4">
         <div className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-3xl p-8 text-white text-center shadow-2xl">
           <div className="flex justify-center mb-4">
             <div className="p-4 bg-white/20 rounded-2xl backdrop-blur-sm">
@@ -333,6 +400,62 @@ const KYCForm: React.FC = () => {
           <p className="text-amber-100 opacity-90">
             We're reviewing your documents. This usually takes 24-48 hours.
           </p>
+        </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <div className="flex items-center gap-2 font-semibold">
+            <Shield className="w-4 h-4" />
+            Step-by-step progress
+          </div>
+          <ol className="mt-3 space-y-2 list-decimal list-inside">
+            <li>Personal info submitted</li>
+            <li>Identity and address documents uploaded</li>
+            <li>Review team is verifying your details</li>
+          </ol>
+        </div>
+      </div>
+    );
+  }
+
+  if (user?.kyc_status === "rejected") {
+    return (
+      <div className="max-w-3xl mx-auto space-y-4">
+        <div className="rounded-3xl border border-red-200 bg-red-50 p-8 shadow-sm">
+          <div className="flex items-center gap-3 text-red-700">
+            <AlertCircle className="w-6 h-6" />
+            <h3 className="text-2xl font-bold">
+              Action required: your KYC was rejected
+            </h3>
+          </div>
+          <p className="mt-3 text-red-700">
+            {kycStatus?.rejectionReason ||
+              "Please review the note below and resubmit your documents with the corrected information."}
+          </p>
+          <div className="mt-4 rounded-2xl bg-white p-4 text-sm text-gray-700 shadow-sm">
+            <div className="flex items-center gap-2 font-semibold text-gray-900">
+              <FileCheck className="w-4 h-4" />
+              Suggested next steps
+            </div>
+            <ul className="mt-3 list-disc list-inside space-y-1">
+              <li>Confirm your full legal name matches your ID document</li>
+              <li>Upload a clear, readable proof of address</li>
+              <li>
+                Make sure your phone number and bank account details are
+                accurate
+              </li>
+            </ul>
+          </div>
+          <div className="mt-6">
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentStep(1);
+                setShowModal(false);
+              }}
+              className="rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 px-6 py-3 font-semibold text-white"
+            >
+              Resubmit verification
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -357,11 +480,36 @@ const KYCForm: React.FC = () => {
           </p>
         </div>
 
+        {isLoadingStatus ? (
+          <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700">
+            Loading your verification status...
+          </div>
+        ) : null}
+
         {/* Main Form Container */}
         <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl border border-gray-200/50 shadow-xl overflow-hidden">
           {/* Progress Bar */}
           <div className="bg-white border-b border-gray-200 p-6">
             <StepProgress />
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {progressSummary.map((step, index) => (
+                <div
+                  key={step.key}
+                  className={`rounded-2xl border p-3 ${step.complete ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-gray-50"}`}
+                >
+                  <div className="flex items-center justify-between text-sm font-semibold text-gray-700">
+                    <span>
+                      {index + 1}. {step.label}
+                    </span>
+                    {step.complete ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-gray-400" />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="p-8">
@@ -455,6 +603,7 @@ const KYCForm: React.FC = () => {
                       icon={<FileText className="w-6 h-6" />}
                       gradient="from-blue-500 to-purple-500"
                       error={!idDocumentUrl}
+                      previewUrl={idDocumentUrl}
                     />
 
                     <DocumentUpload
@@ -468,6 +617,7 @@ const KYCForm: React.FC = () => {
                       icon={<Home className="w-6 h-6" />}
                       gradient="from-green-500 to-emerald-500"
                       error={!proofOfAddressUrl}
+                      previewUrl={proofOfAddressUrl}
                     />
                   </div>
 
@@ -684,9 +834,10 @@ interface DocumentUploadProps {
   isUploading?: boolean;
   isUploaded: boolean;
   fileName?: string;
+  previewUrl?: string;
   onFileUpload: (
     event: React.ChangeEvent<HTMLInputElement>,
-    fieldName: string
+    fieldName: string,
   ) => void;
   icon: React.ReactNode;
   gradient: string;
@@ -701,6 +852,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({
   isUploading,
   isUploaded,
   fileName,
+  previewUrl,
   onFileUpload,
   icon,
   gradient,
@@ -747,6 +899,22 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({
               {fileName || "Document Uploaded"}
             </p>
             <p className="text-green-500 text-sm mt-1">Click to change</p>
+            {previewUrl && (
+              <div className="mt-3 w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50 p-2">
+                {previewUrl.toLowerCase().endsWith(".pdf") ? (
+                  <div className="flex items-center justify-center gap-2 rounded-lg bg-white p-3 text-sm font-medium text-gray-700">
+                    <FileText className="w-4 h-4" />
+                    PDF ready for review
+                  </div>
+                ) : (
+                  <img
+                    src={previewUrl}
+                    alt={label}
+                    className="mx-auto h-32 w-full rounded-lg object-cover"
+                  />
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex flex-col items-center">
