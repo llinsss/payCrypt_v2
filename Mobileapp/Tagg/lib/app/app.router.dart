@@ -23,6 +23,7 @@ import 'package:Tagg/ui/views/kyc_verification/kyc_verification_view.dart'
     as _i16;
 import 'package:Tagg/ui/views/multi_currency/multi_currency_view.dart' as _i14;
 import 'package:Tagg/ui/views/notifications/notifications_view.dart' as _i19;
+import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart' as _i22;
 import 'package:Tagg/ui/views/profile_details/profile_details_view.dart'
     as _i15;
 import 'package:Tagg/ui/views/settings/settings_view.dart' as _i11;
@@ -69,6 +70,8 @@ class Routes {
 
   static const notificationsView = '/notifications-view';
 
+  static const batchPaymentView = '/batch-payment-view';
+
   static const all = <String>{
     homeView,
     startupView,
@@ -88,6 +91,7 @@ class Routes {
     changePasswordView,
     contactSupportView,
     notificationsView,
+    batchPaymentView,
   };
 }
 
@@ -172,6 +176,10 @@ class StackedRouter extends _i1.RouterBase {
     _i1.RouteDef(
       Routes.notificationsView,
       page: _i19.NotificationsView,
+    ),
+    _i1.RouteDef(
+      Routes.batchPaymentView,
+      page: _i22.BatchPaymentView,
     ),
   ];
 
@@ -281,6 +289,12 @@ class StackedRouter extends _i1.RouterBase {
     _i19.NotificationsView: (data) {
       return _i20.MaterialPageRoute<dynamic>(
         builder: (context) => const _i19.NotificationsView(),
+        settings: data,
+      );
+    },
+    _i22.BatchPaymentView: (data) {
+      return _i20.MaterialPageRoute<dynamic>(
+        builder: (context) => const _i22.BatchPaymentView(),
         settings: data,
       );
     },
@@ -792,6 +806,34 @@ extension NavigatorStateExtension on _i21.NavigationService {
         transition,
   ]) async {
     return replaceWith<dynamic>(Routes.notificationsView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        transition: transition);
+  }
+
+  Future<dynamic> navigateToBatchPaymentView([
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  ]) async {
+    return navigateTo<dynamic>(Routes.batchPaymentView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        transition: transition);
+  }
+
+  Future<dynamic> replaceWithBatchPaymentView([
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  ]) async {
+    return replaceWith<dynamic>(Routes.batchPaymentView,
         id: routerId,
         preventDuplicates: preventDuplicates,
         parameters: parameters,

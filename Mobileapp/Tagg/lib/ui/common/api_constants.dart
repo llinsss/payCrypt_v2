@@ -42,4 +42,8 @@ class ApiConstants {
 
   // Health check
   static const String health = '/health';
+
+  // Batch payment endpoints
+  static const String batchPayments = '/transactions/batch';
+  static String batchPaymentById(int id) => '/transactions/batch/$id';
 }
