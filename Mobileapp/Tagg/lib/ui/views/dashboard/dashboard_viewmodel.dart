@@ -85,9 +85,17 @@ class DashboardViewModel extends BaseViewModel {
       _tokenBalances = await _userService.getUserTokenBalances();
       print('✅ Token balances loaded: ${_tokenBalances.length} tokens');
 
-      print('📜 Loading transactions...');
-      _transactions = await _transactionService.getRecentTransactions();
+      print('📜 Loading transactions (page 1)...');
+      final offset = _currentPage * _pageSize;
+      _transactions = await _transactionService.getUserTransactions(
+        limit: _pageSize,
+        offset: offset,
+      );
       print('✅ Transactions loaded: ${_transactions.length} transactions');
+
+      // Check if there are more transactions to load
+      _hasMore = _transactions.length >= _pageSize;
+      _currentPage = 1;
 
       // Calculate balances
       _calculateBalances();
@@ -307,7 +315,14 @@ class DashboardViewModel extends BaseViewModel {
   }
 
   List<Transaction> _transactions = [];
+  int _currentPage = 0;
+  static const int _pageSize = 20;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+
   List<Transaction> get transactions => _transactions;
+  bool get hasMore => _hasMore;
+  bool get isLoadingMore => _isLoadingMore;
 
   List<Transaction> get filteredTransactions {
     switch (selectedFilterIndex) {
@@ -349,5 +364,49 @@ To: ${transaction.toAddress}
       _dialogService.showDialog(
           title: 'Error', description: 'Could not open URL');
     }
+  }
+
+  /// Load more transactions for infinite scroll
+  Future<void> loadMoreTransactions() async {
+    if (_isLoadingMore || !_hasMore) return;
+
+    _isLoadingMore = true;
+    notifyListeners();
+
+    try {
+      final offset = _currentPage * _pageSize;
+      final nextTransactions = await _transactionService.getUserTransactions(
+        limit: _pageSize,
+        offset: offset,
+      );
+
+      if (nextTransactions.isEmpty) {
+        _hasMore = false;
+      } else {
+        _transactions.addAll(nextTransactions);
+        _currentPage++;
+
+        // Check if there are more transactions
+        if (nextTransactions.length < _pageSize) {
+          _hasMore = false;
+        }
+      }
+
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error loading more transactions: $e');
+      _isLoadingMore = false;
+      notifyListeners();
+    }
+
+    _isLoadingMore = false;
+  }
+
+  /// Reset transaction pagination
+  void resetTransactionPagination() {
+    _transactions = [];
+    _currentPage = 0;
+    _hasMore = true;
+    _isLoadingMore = false;
   }
 }
