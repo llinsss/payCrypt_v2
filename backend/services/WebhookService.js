@@ -17,6 +17,8 @@ export const WEBHOOK_EVENTS = {
   KYC_APPROVED: "kyc.approved",
   KYC_REJECTED: "kyc.rejected",
   TRANSACTION_STATUS_CHANGED: "transaction.status_changed",
+  SWAP_COMPLETED: "swap.completed",
+  SWAP_FAILED: "swap.failed",
 };
 
 const WebhookService = {
