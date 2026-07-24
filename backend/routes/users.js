@@ -56,6 +56,44 @@ const router = express.Router();
  *         description: Unauthorized
  */
 router.get("/profile", authenticate, profile);
+/**
+ * @swagger
+ * /api/users/profile:
+ *   post:
+ *     summary: Post Users /profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               exampleField:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.post("/profile", authenticate, validate(editProfileSchema), auditLog("users"), edit_profile);
 
 /**

@@ -34,6 +34,35 @@ const searchLimiter = createUserRateLimiter({
  *   limit      - Page size (default: 20, max: 100)
  *   cursor     - Opaque cursor for next page
  */
+/**
+ * @swagger
+ * /api/transactionSearch:
+ *   get:
+ *     summary: Get Transactionsearch /
+ *     tags: [Transactionsearch]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.get("/", authenticate, searchLimiter, searchTransactions);
 
 /**
@@ -42,6 +71,35 @@ router.get("/", authenticate, searchLimiter, searchTransactions);
  * Same filter params as search, no pagination params.
  * Returns a CSV file of all matching results.
  */
+/**
+ * @swagger
+ * /api/transactionSearch/export:
+ *   get:
+ *     summary: Get Transactionsearch /export
+ *     tags: [Transactionsearch]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.get("/export", authenticate, searchLimiter, exportSearchResults);
 
 export default router;

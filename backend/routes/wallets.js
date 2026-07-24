@@ -123,9 +123,161 @@ router.get("/", authenticate, getWalletByUserId);
  *         description: Insufficient balance or transfer failed
  */
 router.post("/send-to-tag", authenticate, idempotency, validate(sendToTagSchema), auditLog("wallets"), send_to_tag);
+/**
+ * @swagger
+ * /api/wallets/send-to-wallet:
+ *   post:
+ *     summary: Post Wallets /send-to-wallet
+ *     tags: [Wallets]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               exampleField:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.post("/send-to-wallet", authenticate, require2FA, idempotency, validate(sendToWalletSchema), auditLog("wallets"), send_to_wallet);
+/**
+ * @swagger
+ * /api/wallets/{id}:
+ *   get:
+ *     summary: Get Wallets /:id
+ *     tags: [Wallets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.get("/:id", authenticate, validateParams(numericIdParamSchema), getWalletById);
+/**
+ * @swagger
+ * /api/wallets/{id}:
+ *   put:
+ *     summary: Put Wallets /:id
+ *     tags: [Wallets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               exampleField:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.put("/:id", authenticate, validateParams(numericIdParamSchema), validate(walletUpdateSchema), auditLog("wallets"), updateWallet);
+/**
+ * @swagger
+ * /api/wallets/{id}:
+ *   delete:
+ *     summary: Delete Wallets /:id
+ *     tags: [Wallets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.delete("/:id", authenticate, validateParams(numericIdParamSchema), auditLog("wallets"), deleteWallet);
 
 export default router;

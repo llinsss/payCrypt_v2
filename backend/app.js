@@ -233,6 +233,26 @@ const swaggerOptions = {
           bearerFormat: "JWT",
         },
       },
+      schemas: {
+        WebhookEvent: {
+          type: "object",
+          properties: {
+            id: { type: "string", example: "evt_1234567890" },
+            type: { type: "string", example: "payment.received" },
+            created: { type: "string", format: "date-time", example: "2026-07-24T12:00:00Z" },
+            data: {
+              type: "object",
+              properties: {
+                transactionId: { type: "string", example: "tx_0987654321" },
+                amount: { type: "number", example: 50 },
+                currency: { type: "string", example: "USDC" },
+                recipient: { type: "string", example: "@sarah_lagos" },
+                status: { type: "string", example: "completed" }
+              }
+            }
+          }
+        }
+      }
     },
   },
   apis: ["./routes/*.js"], // Path to the API docs
@@ -240,7 +260,13 @@ const swaggerOptions = {
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 
+app.get("/api/docs-json", rateLimit({ endpointName: "docs-json", windowMs: 15 * 60 * 1000, max: 100 }), (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerDocs);
+});
+
 if (!process.env.SWAGGER_ADMIN_USER || !process.env.SWAGGER_ADMIN_PASS) {
+
   throw new Error(
     "SWAGGER_ADMIN_USER and SWAGGER_ADMIN_PASS env vars must be set",
   );

@@ -14,7 +14,12 @@ Here's what makes Tagged revolutionary for Africa:
 
 Tagged makes crypto as simple as mobile money, but with global reach and lower fees. We're not just building a payment app - we're building the financial infrastructure that will connect Africa to the global digital economy. The future of money is here. It just needed to speak our language.
 
- Tech Stack 
+ ## API Documentation
+
+- **[Static API Docs](docs/api/index.html)**: Comprehensive REST API documentation including authentication, Webhook event schemas, and endpoint definitions.
+- **[Postman Collection](docs/Tagged_API.postman_collection.json)**: Ready-to-import Postman collection with examples for all key endpoints.
+
+Tech Stack 
  Frontend: Next.js / React 
  Backend: Node.js / Express 
  Blockchain: Starknet,Solidity 

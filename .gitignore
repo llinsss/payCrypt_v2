@@ -55,3 +55,6 @@ coverage
 # Misc
 .cache
 .parcel-cache
+
+# Generated API artifacts (build these with `npm run docs:postman`)
+docs/api/*.postman_collection.json
