@@ -49,5 +49,18 @@
 	<string>Tagg uses Face ID to unlock your wallet securely</string>
 	<key>NSTouchIDUsageDescription</key>
 	<string>Tagg uses Touch ID to unlock your wallet securely</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.tagged.pay</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tagg</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

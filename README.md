@@ -118,6 +118,70 @@ If the API key lacks required scope, you'll receive:
 }
 ```
 
+Deep Linking for Payment Requests (Mobile App)
+
+The mobile app supports deep linking for payment requests, allowing users to open the app directly with payment details pre-filled.
+
+**Supported Deep Link Formats:**
+
+1. **Web URL (Android App Links + iOS Universal Links):**
+   ```
+   https://taggedpay.xyz/pay/@recipient_tag
+   https://taggedpay.xyz/pay/@recipient_tag?amount=50&token=USDC&memo=rent
+   ```
+
+2. **Custom Scheme (iOS):**
+   ```
+   tagg://pay/@recipient_tag?amount=50&token=USDC
+   ```
+
+**Query Parameters:**
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `amount` | Payment amount (optional) | `?amount=50` |
+| `token` | Token/currency (optional) | `?token=USDC` |
+| `memo` | Transaction memo (optional) | `?memo=rent` |
+
+**Examples:**
+
+- Basic payment request: `https://taggedpay.xyz/pay/@alice`
+- With amount: `https://taggedpay.xyz/pay/@alice?amount=100`
+- Full details: `https://taggedpay.xyz/pay/@alice?amount=50&token=USDC&memo=Monthly+rent`
+
+**How it works:**
+
+1. User taps a payment link (web, chat, email, etc.)
+2. If Tagg is not installed, browser redirects to app store (fallback)
+3. If Tagg is installed:
+   - App opens to sign-in if user is not authenticated
+   - App opens to send flow with recipient pre-filled if user is logged in
+   - Optional amount and token fields are pre-filled if provided
+
+**Generating Shareable Payment Links:**
+
+Users can generate shareable payment request links from the Deposit screen:
+```
+https://taggedpay.xyz/pay/@your_tag
+```
+
+These links can be shared via:
+- QR code (built into Deposit screen)
+- Direct URL sharing
+- Chat/messaging apps
+- Email
+
+**Android Configuration:**
+
+Deep linking is configured via intent-filters in `AndroidManifest.xml`. The app declares support for:
+- `https://taggedpay.xyz/pay/*`
+
+**iOS Configuration:**
+
+Deep linking is configured via URL schemes in `Info.plist`:
+- URL scheme: `tagg://pay/@tag`
+- Universal Links: `https://taggedpay.xyz/pay/*` (requires `apple-app-site-association`)
+
  Demo Flow
 
  Access Points

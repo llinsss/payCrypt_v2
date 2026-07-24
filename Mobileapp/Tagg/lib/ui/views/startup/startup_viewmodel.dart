@@ -4,6 +4,7 @@ import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/services/api_service.dart';
 import 'package:Tagg/services/biometric_service.dart';
 import 'package:Tagg/services/auth_service.dart';
+import 'package:Tagg/services/deep_link_service.dart';
 import 'package:stacked_services/stacked_services.dart';
 
 class StartupViewModel extends BaseViewModel {
@@ -11,10 +12,14 @@ class StartupViewModel extends BaseViewModel {
   final _apiService = locator<ApiService>();
   final _biometricService = locator<BiometricService>();
   final _authService = locator<AuthService>();
+  final _deepLinkService = locator<DeepLinkService>();
 
   Future runStartupLogic() async {
     // Initialize the API service token from storage
     await _apiService.initializeToken();
+
+    // Start listening for deep links
+    _setupDeepLinkListener();
 
     // Check if user has an active session
     final hasActiveSession = _authService.isAuthenticated();
@@ -47,5 +52,21 @@ class StartupViewModel extends BaseViewModel {
 
     await Future.delayed(const Duration(seconds: 3));
     _navigationService.replaceWithSigninView();
+  }
+
+  void _setupDeepLinkListener() {
+    _deepLinkService.initDeepLinks((deepLink) {
+      if (_authService.isAuthenticated() && deepLink.tag != null) {
+        // Navigate to deposit view with recipient pre-filled
+        // The app will display recipient and amount fields for sending
+        _navigationService.navigateToDepositView();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _deepLinkService.dispose();
+    super.dispose();
   }
 }
