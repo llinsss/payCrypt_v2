@@ -6,6 +6,7 @@ import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
 import LockService from "../services/LockService.js";
+import ExchangeRateService from "../services/exchange-rate-api.js";
 
 const chunk = (arr, size) =>
   arr.reduce(
@@ -258,6 +259,117 @@ export const getBalanceByTag = async (req, res) => {
 
 
     await redis.set(cacheKey, JSON.stringify(response), "EX", 60);
+
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getBalanceSummary = async (req, res) => {
+  try {
+    const { id: userId } = req.user;
+    const cacheKey = `balances:summary:${userId}`;
+
+    // Check cache first
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+
+    // Fetch all user balances with token/chain info
+    const balances = await db("balances")
+      .select(
+        "balances.id",
+        "balances.user_id",
+        "balances.token_id",
+        "balances.amount",
+        "balances.usd_value",
+        "balances.address",
+        "balances.created_at",
+        "tokens.name as token_name",
+        "tokens.symbol as token_symbol",
+        "tokens.chain as token_chain"
+      )
+      .leftJoin("tokens", "balances.token_id", "tokens.id")
+      .where("balances.user_id", userId);
+
+    if (!balances || balances.length === 0) {
+      const response = {
+        totalUsd: 0,
+        totalNgn: 0,
+        byChain: [],
+        byToken: []
+      };
+      await redis.set(cacheKey, JSON.stringify(response), "EX", 30);
+      return res.json(response);
+    }
+
+    // Calculate totals
+    const totalUsd = balances.reduce((sum, b) => sum + Number(b.usd_value || 0), 0);
+
+    // Get NGN rate and convert
+    const rates = await ExchangeRateService.getRates();
+    const ngnRate = rates.NGN || 1600;
+    const totalNgn = totalUsd * ngnRate;
+
+    // Group by chain
+    const byChainMap = {};
+    balances.forEach((b) => {
+      const chain = b.token_chain || 'unknown';
+      if (!byChainMap[chain]) {
+        byChainMap[chain] = {
+          chain,
+          usdValue: 0,
+          ngnValue: 0,
+          tokens: []
+        };
+      }
+      byChainMap[chain].usdValue += Number(b.usd_value || 0);
+      byChainMap[chain].tokens.push({
+        symbol: b.token_symbol,
+        amount: Number(b.amount).toFixed(7),
+        usdValue: Number(b.usd_value || 0)
+      });
+    });
+
+    const byChain = Object.values(byChainMap).map(chain => ({
+      ...chain,
+      ngnValue: chain.usdValue * ngnRate
+    }));
+
+    // Group by token
+    const byTokenMap = {};
+    balances.forEach((b) => {
+      const symbol = b.token_symbol || 'unknown';
+      if (!byTokenMap[symbol]) {
+        byTokenMap[symbol] = {
+          symbol,
+          usdValue: 0,
+          ngnValue: 0,
+          amount: 0
+        };
+      }
+      byTokenMap[symbol].usdValue += Number(b.usd_value || 0);
+      byTokenMap[symbol].amount += Number(b.amount || 0);
+    });
+
+    const byToken = Object.values(byTokenMap).map(token => ({
+      ...token,
+      ngnValue: token.usdValue * ngnRate,
+      amount: Number(token.amount).toFixed(7)
+    }));
+
+    const response = {
+      totalUsd: Number(totalUsd.toFixed(2)),
+      totalNgn: Number(totalNgn.toFixed(2)),
+      exchangeRate: ngnRate,
+      byChain,
+      byToken
+    };
+
+    // Cache for 30 seconds
+    await redis.set(cacheKey, JSON.stringify(response), "EX", 30);
 
     res.json(response);
   } catch (error) {
