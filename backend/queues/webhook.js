@@ -53,8 +53,6 @@ export const webhookWorker = redisConnection
 
         return { success };
       },
-
-      },
       {
         connection: redisConnection,
         concurrency: 10,

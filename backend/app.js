@@ -1,3 +1,4 @@
+import "./utils/queueCorrelation.js";
 import express from "express";
 import * as Sentry from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
@@ -143,6 +144,11 @@ app.use(performanceMonitor);
 
 // Request/Response Logging with Correlation IDs
 app.use(correlationId);
+app.use((req, res, next) => {
+  Sentry.setTag("correlationId", req.correlationId);
+  Sentry.setTag("requestId", req.requestId);
+  next();
+});
 app.use(requestLogger);
 
 // API Version Detection

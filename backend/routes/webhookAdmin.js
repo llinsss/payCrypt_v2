@@ -1,6 +1,5 @@
 import express from "express";
-import { authenticate } from "../middleware/auth.js";
-import { requireAdmin } from "../middleware/rbac.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { getDeadLetters, retryDeadLetter } from "../controllers/webhookAdminController.js";
 
 const router = express.Router();

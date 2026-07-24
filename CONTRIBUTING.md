@@ -54,6 +54,30 @@ Thank you for your interest in contributing to Tagged! This document provides gu
    npm run dev
    ```
 
+### Quick Start with Docker
+
+Prefer not to install PostgreSQL/Redis locally? The full backend stack —
+Postgres, Redis, and the backend API with hot reload — runs with a single
+command:
+
+```bash
+cp backend/.env.example backend/.env
+docker-compose up
+```
+
+This will:
+- Start PostgreSQL 14 and Redis 7 with health checks
+- Build and start the backend with `nodemon`, bind-mounted so file changes
+  reload automatically — no rebuild needed
+- Run pending database migrations automatically on backend startup
+- Expose the API at `http://localhost:3000`
+- Expose Bull Board (queue admin UI) at
+  `http://localhost:3001/admin/running-queues` (basic auth: `BULL_ADMIN_USER`
+  / `BULL_ADMIN_PASS` from `backend/.env`)
+
+To stop everything: `docker-compose down` (add `-v` to also drop the
+Postgres/Redis volumes and start from a clean database).
+
 ## Code Standards
 
 ### JavaScript/TypeScript

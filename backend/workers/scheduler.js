@@ -5,6 +5,7 @@ import Notification from "../models/Notification.js";
 import PaymentService from "../services/PaymentService.js";
 import { apiKeyRotationQueue } from "./apiKeyRotationWorker.js";
 import { reconciliationQueue, registerReconciliationJob } from "./reconciliation.js";
+import { registerBackupJob } from "./backup.js";
 
 // ========== Queues ==========
 
@@ -208,6 +209,7 @@ async function registerRepeatableJobs() {
     }
 
     await registerReconciliationJob();
+    await registerBackupJob();
 }
 
 // Register jobs on startup
