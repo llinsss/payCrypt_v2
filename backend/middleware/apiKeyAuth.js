@@ -99,19 +99,22 @@ export const optionalApiKeyAuth = async (req, res, next) => {
 
 /**
  * Verify API key has specific scope/permission
+ * If JWT token is used instead of API key, scope check is skipped
  */
 export const requireApiKeyScope = (requiredScopes) => {
   return async (req, res, next) => {
+    // Skip scope check for JWT authentication
     if (!req.apiKey) {
-      return res.status(401).json({ error: "API key authentication required" });
+      return next();
     }
 
-    const scopes = req.apiKey.scopes?.split(",") || [];
+    const scopes = req.apiKey.scopes?.split(",").map(s => s.trim()) || [];
     const hasRequiredScope = requiredScopes.some((scope) => scopes.includes(scope));
 
     if (!hasRequiredScope) {
       return res.status(403).json({
         error: `API key does not have required scope(s): ${requiredScopes.join(", ")}`,
+        required_scopes: requiredScopes,
       });
     }
 

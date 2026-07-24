@@ -79,6 +79,45 @@ cd backend && npm run dev
 npm run dev
 
 
+API Key Scopes
+
+API keys enforce scope-based authorization. When creating an API key via POST /api-keys, specify required scopes as a comma-separated string.
+
+**Available Scopes:**
+
+| Scope | Description | Routes |
+|-------|-------------|--------|
+| `transactions:read` | Read transaction history and details | GET /transactions, GET /transactions/:id, GET /transactions/tag/:tag |
+| `transactions:write` | Create, update, delete transactions | PUT /transactions/:id, DELETE /transactions/:id, POST /transactions/payment |
+| `payments:send` | Send payments and batch payments | POST /transactions/payment, POST /transactions/batches |
+| `webhooks:read` | List and retrieve webhook configurations | GET /webhooks, GET /webhooks/:id, GET /webhooks/:id/deliveries |
+| `webhooks:write` | Create, update, delete webhooks | POST /webhooks, PUT /webhooks/:id, DELETE /webhooks/:id, POST /webhooks/:id/rotate-secret |
+
+**Example: Create API Key with Read-Only Access**
+```bash
+curl -X POST http://localhost:3000/api-keys \
+  -H "Authorization: Bearer <JWT_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Read-only API Key",
+    "scopes": "transactions:read,webhooks:read"
+  }'
+```
+
+**Using API Key with Scopes**
+```bash
+curl -X GET http://localhost:3000/transactions \
+  -H "x-api-key: <API_KEY>"
+```
+
+If the API key lacks required scope, you'll receive:
+```json
+{
+  "error": "API key does not have required scope(s): transactions:write",
+  "required_scopes": ["transactions:write"]
+}
+```
+
  Demo Flow
 
  Access Points
