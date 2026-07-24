@@ -1,5 +1,6 @@
 
 import axios from 'axios';
+import crypto from 'crypto';
 import CircuitBreakerService from './CircuitBreakerService.js';
 
 class PaystackService {
@@ -77,18 +78,41 @@ class PaystackService {
   }
 
   /**
-   * Verify Paystack webhook signature
-   * @param {string} signature
-   * @param {Object} body
-   * @returns {boolean}
+   * Verify a Paystack webhook signature.
+   *
+   * Paystack signs the exact raw request body with HMAC-SHA512 using the
+   * secret key, so verification MUST run against the raw bytes received, not a
+   * re-serialized JSON object (key ordering/whitespace would change the hash).
+   *
+   * @param {string} signature - value of the `x-paystack-signature` header
+   * @param {Buffer|string} rawBody - the raw request body
+   * @returns {boolean} true only when the computed HMAC matches the signature
    */
-  verifyWebhookSignature(signature, body) {
-    const crypto = require('crypto');
-    const hash = crypto
+  verifyWebhookSignature(signature, rawBody) {
+    if (!signature || !this.secretKey || rawBody == null) {
+      return false;
+    }
+
+    const payload = Buffer.isBuffer(rawBody)
+      ? rawBody
+      : Buffer.from(
+          typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody),
+        );
+
+    const expected = crypto
       .createHmac('sha512', this.secretKey)
-      .update(JSON.stringify(body))
+      .update(payload)
       .digest('hex');
-    return hash === signature;
+
+    const expectedBuf = Buffer.from(expected, 'utf8');
+    const signatureBuf = Buffer.from(String(signature), 'utf8');
+
+    // Length check guards timingSafeEqual, which throws on unequal-length input.
+    if (expectedBuf.length !== signatureBuf.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(expectedBuf, signatureBuf);
   }
 }
 

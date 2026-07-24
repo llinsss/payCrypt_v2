@@ -120,8 +120,17 @@ app.use(
   }),
 );
 
-// Request body parsing with size limits
-app.use(express.json({ limit: "10mb" }));
+// Request body parsing with size limits.
+// Capture the raw request buffer so webhook handlers (e.g. Paystack) can verify
+// HMAC signatures against the exact bytes received, not the re-serialized JSON.
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Detect SQL Injection attempts
