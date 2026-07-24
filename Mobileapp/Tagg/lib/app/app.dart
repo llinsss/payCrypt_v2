@@ -28,6 +28,7 @@ import 'package:Tagg/ui/views/contact_support/contact_support_view.dart';
 import 'package:Tagg/ui/views/notifications/notifications_view.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
+import 'package:Tagg/services/exchange_rate_service.dart';
 // @stacked-import
 
 @StackedApp(
@@ -65,6 +66,7 @@ import 'package:Tagg/services/chains_service.dart';
     LazySingleton(classType: WalletService),
     LazySingleton(classType: TransactionService),
     LazySingleton(classType: ChainsService),
+    LazySingleton(classType: ExchangeRateService),
 // @stacked-service
   ],
   bottomsheets: [
