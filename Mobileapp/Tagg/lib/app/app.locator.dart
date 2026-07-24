@@ -16,6 +16,7 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/chains_service.dart';
 import '../services/transaction_service.dart';
+import '../services/connectivity_service.dart';
 import '../services/user_service.dart';
 import '../services/wallet_service.dart';
 
@@ -40,4 +41,5 @@ Future<void> setupLocator({
   locator.registerLazySingleton(() => WalletService());
   locator.registerLazySingleton(() => TransactionService());
   locator.registerLazySingleton(() => ChainsService());
+  locator.registerLazySingleton(() => ConnectivityService());
 }
