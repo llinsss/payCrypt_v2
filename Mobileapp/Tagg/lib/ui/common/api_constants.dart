@@ -40,6 +40,12 @@ class ApiConstants {
   static const String transactions = '/transactions';
   static String transactionById(int id) => '/transactions/$id';
 
+  // Notification endpoints
+  static const String notifications = '/notifications';
+  static const String notificationPreferences = '/notifications/preferences';
+  static const String deviceToken = '/notifications/device-token';
+  static const String unreadNotifications = '/notifications/unread';
+
   // Health check
   static const String health = '/health';
 }

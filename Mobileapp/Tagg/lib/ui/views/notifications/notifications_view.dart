@@ -10,6 +10,11 @@ class NotificationsView extends StackedView<NotificationsViewModel> {
   const NotificationsView({Key? key}) : super(key: key);
 
   @override
+  void onViewModelReady(NotificationsViewModel viewModel) {
+    viewModel.initialize();
+  }
+
+  @override
   Widget builder(
     BuildContext context,
     NotificationsViewModel viewModel,

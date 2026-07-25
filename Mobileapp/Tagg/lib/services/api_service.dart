@@ -95,6 +95,21 @@ class ApiService {
     }
   }
 
+  // Generic DELETE request with body
+  Future<dynamic> deleteWithBody(
+      String endpoint, Map<String, dynamic> body) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('${ApiConstants.apiUrl}$endpoint'),
+        headers: _headers,
+        body: json.encode(body),
+      );
+      return _handleResponse(response);
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
   // Handle response
   dynamic _handleResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
