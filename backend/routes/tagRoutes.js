@@ -1,7 +1,7 @@
 import express from 'express';
 import TagController from '../controllers/TagController.js';
 import rateLimit from 'express-rate-limit';
-// Add middleware if needed for protected routes, e.g. authenticateToken
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -17,9 +17,10 @@ const checkLimiter = rateLimit({
 // I'll make resolve public, create/transfer potentially protected, but for "Core Resolution System" I will leave them open or add TODOs for auth if not explicitly asked to integrate with existing auth.
 // "Prevent duplicate tag registration" implies anyone can register if unique.
 
+router.get('/search', checkLimiter, TagController.search);
 router.post('/', TagController.create);
 router.get('/check/:tag', checkLimiter, TagController.check);
 router.get('/:tag', TagController.resolve);
-router.put('/:tag/transfer', TagController.transfer);
+router.put('/:tag/transfer', authenticate, TagController.transfer);
 
 export default router;

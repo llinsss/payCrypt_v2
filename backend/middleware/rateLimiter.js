@@ -1,6 +1,7 @@
 import RateLimitService from "../services/RateLimitService.js";
 import AuditLog from "../models/AuditLog.js";
 import User from "../models/User.js";
+import logger from "../utils/logger.js";
 
 /**
  * IP Whitelist from environment
@@ -55,17 +56,20 @@ export const rateLimit = (options = {}) => {
       refillRatePerMs
     );
 
+    // Redis is unreachable — fail open so an outage doesn't take down the API.
+    // Rely on the warning log (and any downstream Sentry alerting) to surface it.
+    if (error) {
+      logger.warn(`[RateLimiter] Redis unavailable, allowing request for ${redisKey}`, { endpointName, error });
+      return next();
+    }
+
     // 5. Set Headers
     res.setHeader("X-RateLimit-Limit", Math.floor(capacity));
     res.setHeader("X-RateLimit-Remaining", remaining);
-    
+
     // Calculate reset time (when bucket will be full)
     const resetTime = Math.ceil(Date.now() / 1000 + (capacity - remaining) / (refillRatePerMs * 1000));
     res.setHeader("X-RateLimit-Reset", resetTime);
-
-    if (error && !allowed) {
-      return res.status(503).json({ error: "Rate limiting service temporarily unavailable" });
-    }
 
     if (!allowed) {
       // 6. Log Violation

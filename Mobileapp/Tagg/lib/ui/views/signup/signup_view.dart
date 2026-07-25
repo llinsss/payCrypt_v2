@@ -69,6 +69,12 @@ class SignupView extends StackedView<SignupViewModel> {
                       isPassword: true,
                     ),
                     const SizedBox(height: 24),
+                    _buildInputField(
+                      'Enter your address (optional)',
+                      viewModel.addressController,
+                      viewModel.addressFocusNode,
+                    ),
+                    const SizedBox(height: 24),
 
                     // OR Divider
                     Text(

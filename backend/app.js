@@ -1,6 +1,6 @@
+import "./utils/queueCorrelation.js";
 import express from "express";
 import * as Sentry from "@sentry/node";
-import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
@@ -36,19 +36,13 @@ import {
 } from "./middleware/validation.js";
 
 import { rateLimit } from "./middleware/rateLimiter.js";
+import { initSentry } from "./observability/sentry.js";
 
 dotenv.config();
 
 const app = express();
 
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  environment: process.env.NODE_ENV || "development",
-  integrations: [nodeProfilingIntegration()],
-  // Performance Monitoring
-  tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
-  profilesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
-});
+initSentry();
 
 // Custom Sentry Middleware to attach context
 app.use((req, res, next) => {
@@ -120,8 +114,17 @@ app.use(
   }),
 );
 
-// Request body parsing with size limits
-app.use(express.json({ limit: "10mb" }));
+// Request body parsing with size limits.
+// Capture the raw request buffer so webhook handlers (e.g. Paystack) can verify
+// HMAC signatures against the exact bytes received, not the re-serialized JSON.
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Detect SQL Injection attempts
@@ -143,6 +146,11 @@ app.use(performanceMonitor);
 
 // Request/Response Logging with Correlation IDs
 app.use(correlationId);
+app.use((req, res, next) => {
+  Sentry.setTag("correlationId", req.correlationId);
+  Sentry.setTag("requestId", req.requestId);
+  next();
+});
 app.use(requestLogger);
 
 // API Version Detection

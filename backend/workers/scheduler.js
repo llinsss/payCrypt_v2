@@ -2,19 +2,24 @@ import { Worker, Queue } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import ScheduledPayment from "../models/ScheduledPayment.js";
 import Notification from "../models/Notification.js";
+import AuditLog from "../models/AuditLog.js";
 import PaymentService from "../services/PaymentService.js";
+import KeyVaultService from "../services/KeyVaultService.js";
 import { apiKeyRotationQueue } from "./apiKeyRotationWorker.js";
 import { reconciliationQueue, registerReconciliationJob } from "./reconciliation.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 // ========== Queues ==========
 
 const schedulerQueue = redisConnection
     ? new Queue("scheduled-payment-executor", { connection: redisConnection })
     : null;
+attachRedisErrorAlert(schedulerQueue, "scheduled-payment-executor-queue");
 
 const notifierQueue = redisConnection
     ? new Queue("scheduled-payment-notifier", { connection: redisConnection })
     : null;
+attachRedisErrorAlert(notifierQueue, "scheduled-payment-notifier-queue");
 
 // ========== Execution Worker ==========
 // Runs every 60 seconds — picks up due payments, executes them via PaymentService
@@ -40,23 +45,47 @@ export const executionWorker = redisConnection
             let failed = 0;
 
             for (const payment of duePayments) {
+                let auditLogId = null;
                 try {
                     // Mark as processing
                     await ScheduledPayment.update(payment.id, {
                         status: "processing",
                     });
 
-                    // NOTE: In a production environment, the sender secret would be
-                    // securely stored and retrieved. For scheduled payments the system
-                    // would either use a custodial approach or a pre-signed transaction
-                    // envelope. Here we record the intent and mark for manual processing
-                    // or use a system-level signing authority.
+                    // Retrieve sender's signing key from vault (encrypted, in-memory only)
+                    await KeyVaultService.withUserSecrets(payment.user_id, async (secrets) => {
+                        // Log key access for audit trail
+                        const auditLog = await AuditLog.create({
+                            userId: payment.user_id,
+                            action: "key_accessed",
+                            resource: "scheduled_payment",
+                            resourceId: payment.id,
+                            details: { payment_id: payment.id, amount: payment.amount },
+                            method: "SCHEDULER",
+                            endpoint: "/scheduler/execute-payment",
+                        });
+                        auditLogId = auditLog.id;
+                        console.log(`🔐 Vault: key accessed for payment #${payment.id} (audit log: ${auditLogId})`);
 
-                    // Attempt to execute the payment
-                    // For non-custodial wallets we mark as failed with instructions
-                    // For custodial/system wallets, PaymentService.processPayment() would be called
+                        // Use the first secret (primary signing key)
+                        const signingKey = secrets[0];
 
-                    // Mark as completed (system-level execution)
+                        // Execute payment with decrypted key
+                        // For non-custodial wallets, use the signing key to sign the transaction
+                        // For custodial wallets, use system signing authority
+                        await PaymentService.processPayment({
+                            paymentId: payment.id,
+                            userId: payment.user_id,
+                            amount: payment.amount,
+                            asset: payment.asset,
+                            recipientTag: payment.recipient_tag,
+                            signingKey: signingKey,
+                        });
+
+                        // Secrets are automatically cleared after callback execution
+                    });
+
+                    // Mark as completed
                     await ScheduledPayment.update(payment.id, {
                         status: "completed",
                         executed_at: new Date(),
@@ -69,6 +98,12 @@ export const executionWorker = redisConnection
                         body: `Your scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} has been executed successfully.`,
                     });
 
+                    NotificationService.sendToUser(payment.user_id,
+                        "Scheduled Payment Executed",
+                        `Your scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} has been executed successfully.`,
+                        { type: "payment_notifications", scheduled_payment_id: String(payment.id) }
+                    ).catch(err => console.error('FCM push error (scheduled payment):', err.message));
+
                     processed++;
                     console.log(`✅ Scheduler: executed payment #${payment.id}`);
                 } catch (error) {
@@ -76,6 +111,20 @@ export const executionWorker = redisConnection
                         `❌ Scheduler: failed to execute payment #${payment.id}:`,
                         error.message
                     );
+
+                    // Log failed key access attempt
+                    if (error.message.includes("No signing keys")) {
+                        await AuditLog.create({
+                            userId: payment.user_id,
+                            action: "key_access_failed",
+                            resource: "scheduled_payment",
+                            resourceId: payment.id,
+                            details: { reason: "no_signing_keys_found", payment_id: payment.id },
+                            method: "SCHEDULER",
+                            endpoint: "/scheduler/execute-payment",
+                            statusCode: 422,
+                        });
+                    }
 
                     await ScheduledPayment.update(payment.id, {
                         status: "failed",
@@ -101,6 +150,7 @@ export const executionWorker = redisConnection
         }
     )
     : null;
+attachRedisErrorAlert(executionWorker, "scheduled-payment-executor-worker");
 
 // ========== Notification Worker ==========
 // Runs every 5 minutes — sends reminders for payments due within 30 minutes
@@ -161,6 +211,7 @@ export const notificationWorker = redisConnection
         }
     )
     : null;
+attachRedisErrorAlert(notificationWorker, "scheduled-payment-notifier-worker");
 
 // ========== Register Repeatable Jobs ==========
 
@@ -208,6 +259,7 @@ async function registerRepeatableJobs() {
     }
 
     await registerReconciliationJob();
+    await registerBackupJob();
 }
 
 // Register jobs on startup

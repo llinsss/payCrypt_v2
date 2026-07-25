@@ -63,8 +63,8 @@ const RateLimitService = {
       };
     } catch (error) {
       console.error(`[RateLimitService] Error consuming token for ${key}:`, error);
-      // Default to allowed in case of Redis failure to prevent DoS on ourselves, 
-      // or false if we want strict security. We'll use false for safety in prod.
+      // Signal the failure via `error` and let the caller (rateLimiter middleware)
+      // decide how to degrade — it fails open so a Redis outage doesn't block all traffic.
       return { allowed: false, remaining: 0, error: "Redis utility failure" };
     }
   },

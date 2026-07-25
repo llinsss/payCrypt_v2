@@ -8,12 +8,14 @@ import {
   getBalanceByUser,
   updateUserBalance,
   getBalanceByTag,
+  getBalanceSummary,
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateParams } from "../middleware/validation.js";
 import { balanceCreateSchema, balanceUpdateSchema } from "../schemas/balance.js";
 import { numericIdParamSchema } from "../validators/customValidators.js";
 import { balanceQueryLimiter } from "../config/rateLimiting.js";
+import { privateNoStore } from "../middleware/cacheControl.js";
 
 const router = express.Router();
 
@@ -47,7 +49,7 @@ const router = express.Router();
  *         description: List of balances
  */
 router.post("/", authenticate, validate(balanceCreateSchema), createBalance);
-router.get("/", authenticate, balanceQueryLimiter, getBalanceByUser);
+router.get("/", authenticate, balanceQueryLimiter, privateNoStore, getBalanceByUser);
 
 /**
  * @swagger
@@ -76,6 +78,20 @@ router.get("/all", authenticate, balanceQueryLimiter, getBalances);
  *         description: Balance synced
  */
 router.get("/sync", authenticate, updateUserBalance);
+
+/**
+ * @swagger
+ * /api/balances/summary:
+ *   get:
+ *     summary: Get cross-chain balance summary
+ *     tags: [Balances]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Portfolio summary with aggregated USD and NGN values
+ */
+router.get("/summary", authenticate, balanceQueryLimiter, getBalanceSummary);
 
 /**
  * @swagger

@@ -1,22 +1,30 @@
 name: Tagg
 description: A new Flutter project.
-publish_to: 'none'
+publish_to: "none"
 version: 0.1.0
 
 environment:
-  sdk: '>=3.0.3 <4.0.0'
+  sdk: ">=3.0.3 <4.0.0"
 
 dependencies:
+  app_links: ^3.4.5
   dotted_line: ^3.2.3
   file_picker: ^10.3.3
+  firebase_core: ^3.12.1
+  firebase_messaging: ^15.2.4
   flutter:
     sdk: flutter
+  flutter_local_notifications: ^18.0.1
   flutter_svg: ^2.2.1
   google_fonts: ^6.3.1
+  google_sign_in: ^6.2.0
   http: ^1.5.0
   intl: ^0.20.2
+  local_auth: ^2.1.8
   qr_flutter: ^4.1.0
+  share_plus: ^7.0.0
   shared_preferences: ^2.5.3
+  connectivity_plus: ^6.0.0
   stacked: ^3.4.0
   stacked_services: ^1.1.0
   url_launcher: ^6.3.0
@@ -44,4 +52,3 @@ flutter_launcher_icons:
   image_path: "lib/assets/svgs/images/logo.png"
   adaptive_icon_background: "#090715"
   adaptive_icon_foreground: "lib/assets/svgs/images/logo.png"
-
