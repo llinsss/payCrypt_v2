@@ -18,12 +18,14 @@ class SignupViewModel extends BaseViewModel {
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmPasswordController =
       TextEditingController();
+  final TextEditingController addressController = TextEditingController();
 
   // Focus Nodes
   final FocusNode tagFocusNode = FocusNode();
   final FocusNode emailFocusNode = FocusNode();
   final FocusNode passwordFocusNode = FocusNode();
   final FocusNode confirmPasswordFocusNode = FocusNode();
+  final FocusNode addressFocusNode = FocusNode();
 
   // State
   bool _agreeToTerms = false;
@@ -47,7 +49,7 @@ class SignupViewModel extends BaseViewModel {
       final registerRequest = RegisterRequest(
         email: emailController.text.trim(),
         tag: tagController.text.trim(),
-        address: '', // TODO: Add address field to signup form if needed
+        address: addressController.text.trim(),
         password: passwordController.text,
         role: 'user',
       );
@@ -160,11 +162,13 @@ class SignupViewModel extends BaseViewModel {
     emailController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
+    addressController.dispose();
 
     tagFocusNode.dispose();
     emailFocusNode.dispose();
     passwordFocusNode.dispose();
     confirmPasswordFocusNode.dispose();
+    addressFocusNode.dispose();
 
     super.dispose();
   }
