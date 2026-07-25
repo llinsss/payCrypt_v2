@@ -21,7 +21,7 @@ import '../services/transaction_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/user_service.dart';
 import '../services/wallet_service.dart';
-import '../services/batch_payment_service.dart';
+import '../services/theme_service.dart';
 
 final locator = StackedLocator.instance;
 
@@ -44,5 +44,5 @@ Future<void> setupLocator({
   locator.registerLazySingleton(() => WalletService());
   locator.registerLazySingleton(() => TransactionService());
   locator.registerLazySingleton(() => ChainsService());
-  locator.registerLazySingleton(() => ConnectivityService());
+  locator.registerLazySingleton(() => ThemeService());
 }

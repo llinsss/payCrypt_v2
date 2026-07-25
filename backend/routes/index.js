@@ -22,7 +22,7 @@ import exportRoutes from "./exports.js";
 import ussdRoutes from "./ussd.js";
 import batchPaymentRoutes from "./batchPayments.js";
 import keyRoutes from "./keys.js";
-import feesRoutes from "./fees.js";
+import billRoutes from "./bills.js";
 import { deprecationWarning } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -51,7 +51,7 @@ const registerRoutes = (router) => {
   router.use("/ussd", ussdRoutes);
   router.use("/batches", batchPaymentRoutes);
   router.use("/keys", keyRoutes);
-  router.use("/fees", feesRoutes);
+  router.use("/bills", billRoutes);
 };
 
 // V1 routes (deprecated)
