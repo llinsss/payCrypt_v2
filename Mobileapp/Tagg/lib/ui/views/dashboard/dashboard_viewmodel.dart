@@ -9,6 +9,7 @@ import 'package:Tagg/models/chains_models.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
+import 'package:Tagg/services/connectivity_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
@@ -26,6 +27,8 @@ class DashboardViewModel extends BaseViewModel {
   final _walletService = locator<WalletService>();
   final _transactionService = locator<TransactionService>();
   final _chainsService = locator<ChainsService>();
+  final _connectivityService = locator<ConnectivityService>();
+  bool _isOffline = false;
 
   // Dashboard Data - matching web version structure
   DashboardSummary? _dashboardSummary;
@@ -61,9 +64,18 @@ class DashboardViewModel extends BaseViewModel {
 
   int get selectedTabIndex => _selectedTabIndex;
 
+  bool get isOffline => _isOffline;
   bool get hasData => _dashboardSummary != null;
 
   void initialize() {
+    _connectivityService.connectivityStream.listen((result) {
+      _isOffline = result == ConnectivityResult.none;
+      if (!_isOffline) {
+        // Retry when connectivity restores
+        _loadDashboardData();
+      }
+      notifyListeners();
+    });
     _loadDashboardData();
   }
 
@@ -225,6 +237,10 @@ class DashboardViewModel extends BaseViewModel {
 
   // Action Methods
   Future<void> withdraw() async {
+    if (_isOffline) {
+      _showError('You are offline. Please connect to the internet.');
+      return;
+    }
     setBusy(true);
 
     try {
