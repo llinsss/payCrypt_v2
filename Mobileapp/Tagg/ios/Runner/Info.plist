@@ -45,12 +45,22 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>UIBackgroundModes</key>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Tagg uses Face ID to unlock your wallet securely</string>
+	<key>NSTouchIDUsageDescription</key>
+	<string>Tagg uses Touch ID to unlock your wallet securely</string>
+	<key>CFBundleURLTypes</key>
 	<array>
-		<string>remote-notification</string>
-		<string>fetch</string>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.tagged.pay</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tagg</string>
+			</array>
+		</dict>
 	</array>
-	<key>FirebaseMessagingAutoInitEnabled</key>
-	<false/>
 </dict>
 </plist>

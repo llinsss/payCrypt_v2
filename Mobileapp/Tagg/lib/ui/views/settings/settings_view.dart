@@ -220,6 +220,60 @@ class SettingsView extends StackedView<SettingsViewModel> {
     );
   }
 
+  Widget _buildBiometricToggle({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF181027), Color(0xFF110F20)],
+        ),
+        border: Border.all(color: const Color(0xFF262140)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w400,
+                    fontSize: 14,
+                    color: Color(0xFF867EA5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: const Color(0xFF9D55FF),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSettingsList(SettingsViewModel viewModel) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,6 +304,13 @@ class SettingsView extends StackedView<SettingsViewModel> {
           title: 'Change Password',
           subtitle: 'Update your login password',
           onTap: () => viewModel.onchangePasswordTap(),
+        ),
+        const SizedBox(height: 12),
+        _buildBiometricToggle(
+          title: 'Biometric Unlock',
+          subtitle: 'Use Face ID or fingerprint to unlock',
+          value: viewModel.isBiometricEnabled,
+          onChanged: (value) => viewModel.toggleBiometricUnlock(value),
         ),
         const SizedBox(height: 12),
         _buildSettingItem(
