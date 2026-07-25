@@ -54,20 +54,29 @@ Thank you for your interest in contributing to Tagged! This document provides gu
    npm run dev
    ```
 
-## Local development data
+### Quick Start with Docker
 
-The development seed creates five users, each with the password `DemoPass123!`:
+Prefer not to install PostgreSQL/Redis locally? The full backend stack —
+Postgres, Redis, and the backend API with hot reload — runs with a single
+command:
 
-| User | Email | KYC state |
-| --- | --- | --- |
-| `@demo_alice` | `alice@demo.tagged.local` | verified |
-| `@demo_bola` | `bola@demo.tagged.local` | pending |
-| `@demo_chidi` | `chidi@demo.tagged.local` | none |
-| `@demo_dayo` | `dayo@demo.tagged.local` | verified |
-| `@demo_eni` | `eni@demo.tagged.local` | rejected |
+```bash
+cp backend/.env.example backend/.env
+docker-compose up
+```
 
-These credentials and records are for local development and staging only. Do
-not use them in production or reuse the password for real accounts.
+This will:
+- Start PostgreSQL 14 and Redis 7 with health checks
+- Build and start the backend with `nodemon`, bind-mounted so file changes
+  reload automatically — no rebuild needed
+- Run pending database migrations automatically on backend startup
+- Expose the API at `http://localhost:3000`
+- Expose Bull Board (queue admin UI) at
+  `http://localhost:3001/admin/running-queues` (basic auth: `BULL_ADMIN_USER`
+  / `BULL_ADMIN_PASS` from `backend/.env`)
+
+To stop everything: `docker-compose down` (add `-v` to also drop the
+Postgres/Redis volumes and start from a clean database).
 
 ## Code Standards
 

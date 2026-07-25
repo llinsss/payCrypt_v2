@@ -1,3 +1,7 @@
+[![Backend CI](https://github.com/llinsss/payCrypt_v2/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/llinsss/payCrypt_v2/actions/workflows/backend-ci.yml)
+[![Flutter CI](https://github.com/llinsss/payCrypt_v2/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/llinsss/payCrypt_v2/actions/workflows/flutter-ci.yml)
+[![Docker Build](https://github.com/llinsss/payCrypt_v2/actions/workflows/docker-build.yml/badge.svg)](https://github.com/llinsss/payCrypt_v2/actions/workflows/docker-build.yml)
+
 Welcome to Tagged. A Seamless Crypto Payments solution for Africa.
 Imagine sending money to your friend in Lagos as easily as sending a WhatsApp message. Right now, if you want to send crypto to someone, you need to copy and paste a 42-character wallet address that looks like this: 0x028add5d29f4aa3e4144ba1a85d509de6719e58cabe42cc72f58f46c6a84a785. One wrong character? Your money disappears forever. Tagged changes everything. Instead of that nightmare, you simply send to @john or @sarah_lagos. That's it. No more copying addresses, no more fear of losing funds, no more barriers to digital payments
 
