@@ -1,6 +1,14 @@
 import Kyc from "../models/Kyc.js";
 import User from "../models/User.js";
-import NotificationService from "../services/NotificationService.js";
+import Notification from "../models/Notification.js";
+
+const buildKycStatusPayload = (kycRecord) => ({
+  id: kycRecord?.id ?? null,
+  status: kycRecord?.status ?? "none",
+  kyc_status: kycRecord?.status ?? "none",
+  rejectionReason: kycRecord?.rejection_reason || null,
+  updatedAt: kycRecord?.updated_at || kycRecord?.created_at || null,
+});
 
 export const createKyc = async (req, res) => {
   try {
@@ -24,15 +32,15 @@ export const approveKyc = async (req, res) => {
     const kyc = await Kyc.findById(id);
     if (!kyc) return res.status(404).json({ error: "KYC not found" });
 
-    await Kyc.update(id, { status: "approved" });
+    await Kyc.update(id, { status: "approved", rejection_reason: null });
     await User.update(kyc.user_id, { is_verified: 1, kyc_status: "verified" });
-
-    NotificationService.sendToUser(kyc.user_id,
-      "KYC Approved",
-      "Your identity verification has been approved. You now have full access to all features.",
-      { type: "security_notifications" }
-    ).catch(err => console.error('FCM push error (kyc):', err.message));
-
+    await Notification.create({
+      user_id: kyc.user_id,
+      title: "KYC approved",
+      body: "Your identity verification has been approved. You can now continue using Tagged.",
+      type: "security",
+      channel: "push",
+    });
     res.json({ message: "KYC approved" });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -51,13 +59,15 @@ export const rejectKyc = async (req, res) => {
       rejection_reason: reason || null,
     });
     await User.update(kyc.user_id, { is_verified: 0, kyc_status: "rejected" });
-
-    NotificationService.sendToUser(kyc.user_id,
-      "KYC Rejected",
-      `Your identity verification was rejected. Reason: ${reason || "Please try again with valid documents."}`,
-      { type: "security_notifications" }
-    ).catch(err => console.error('FCM push error (kyc):', err.message));
-
+    await Notification.create({
+      user_id: kyc.user_id,
+      title: "KYC rejected",
+      body: reason
+        ? `Your identity verification was rejected: ${reason}`
+        : "Your identity verification was rejected. Please review the requirements and resubmit your documents.",
+      type: "security",
+      channel: "push",
+    });
     res.json({ message: "KYC rejected" });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -88,6 +98,27 @@ export const getKycByUser = async (req, res) => {
     }
 
     res.json(kycs);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getKycStatus = async (req, res) => {
+  try {
+    const { id } = req.user;
+    const kycs = await Kyc.getByUser(id);
+    const latestKyc = kycs?.[0] || null;
+
+    if (!latestKyc) {
+      return res.status(200).json({
+        status: "none",
+        kyc_status: "none",
+        rejectionReason: null,
+        updatedAt: null,
+      });
+    }
+
+    res.json(buildKycStatusPayload(latestKyc));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
