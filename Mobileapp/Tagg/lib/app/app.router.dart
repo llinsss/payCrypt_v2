@@ -25,6 +25,7 @@ import 'package:Tagg/ui/views/multi_currency/multi_currency_view.dart' as _i14;
 import 'package:Tagg/ui/views/notifications/notifications_view.dart' as _i19;
 import 'package:Tagg/ui/views/profile_details/profile_details_view.dart'
     as _i15;
+import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart' as _i21;
 import 'package:Tagg/ui/views/settings/settings_view.dart' as _i11;
 import 'package:Tagg/ui/views/signin/signin_view.dart' as _i4;
 import 'package:Tagg/ui/views/signup/signup_view.dart' as _i5;
@@ -69,6 +70,8 @@ class Routes {
 
   static const notificationsView = '/notifications-view';
 
+  static const transactionDetailView = '/transaction-detail-view';
+
   static const all = <String>{
     homeView,
     startupView,
@@ -88,6 +91,7 @@ class Routes {
     changePasswordView,
     contactSupportView,
     notificationsView,
+    transactionDetailView,
   };
 }
 
@@ -172,6 +176,10 @@ class StackedRouter extends _i1.RouterBase {
     _i1.RouteDef(
       Routes.notificationsView,
       page: _i19.NotificationsView,
+    ),
+    _i1.RouteDef(
+      Routes.transactionDetailView,
+      page: _i21.TransactionDetailView,
     ),
   ];
 
@@ -281,6 +289,15 @@ class StackedRouter extends _i1.RouterBase {
     _i19.NotificationsView: (data) {
       return _i20.MaterialPageRoute<dynamic>(
         builder: (context) => const _i19.NotificationsView(),
+        settings: data,
+      );
+    },
+    _i21.TransactionDetailView: (data) {
+      final args = data.arguments as Map<String, dynamic>?;
+      return _i20.MaterialPageRoute<dynamic>(
+        builder: (context) => _i21.TransactionDetailView(
+          transactionId: args?['transactionId'] as int? ?? 0,
+        ),
         settings: data,
       );
     },
@@ -546,6 +563,22 @@ extension NavigatorStateExtension on _i21.NavigationService {
         transition: transition);
   }
 
+  Future<dynamic> navigateToTransactionDetailView({
+    required int transactionId,
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  }) async {
+    return navigateTo<dynamic>(Routes.transactionDetailView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        arguments: {'transactionId': transactionId},
+        transition: transition);
+  }
+
   Future<dynamic> replaceWithHomeView([
     int? routerId,
     bool preventDuplicates = true,
@@ -795,6 +828,22 @@ extension NavigatorStateExtension on _i21.NavigationService {
         id: routerId,
         preventDuplicates: preventDuplicates,
         parameters: parameters,
+        transition: transition);
+  }
+
+  Future<dynamic> replaceWithTransactionDetailView({
+    required int transactionId,
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  }) async {
+    return replaceWith<dynamic>(Routes.transactionDetailView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        arguments: {'transactionId': transactionId},
         transition: transition);
   }
 }

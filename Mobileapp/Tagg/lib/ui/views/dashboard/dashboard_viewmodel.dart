@@ -12,8 +12,10 @@ import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/widgets.dart';
 
 class DashboardViewModel extends BaseViewModel {
+  final ScrollController transactionScrollController = ScrollController();
   final _dialogService = locator<DialogService>();
   final _snackbarService = locator<SnackbarService>();
   final _userService = locator<UserService>();
@@ -320,25 +322,15 @@ class DashboardViewModel extends BaseViewModel {
     }
   }
 
-  /// Open transaction details in explorer
+  /// Open transaction details screen
   void openTransactionDetails(Transaction transaction) {
-    if (transaction.txHash != null && transaction.txHash!.isNotEmpty) {
-      final url =
-          'https://sepolia.voyager.online/tx/${transaction.txHash}'; // Example for Starknet, adjust based on chain
-      _launchURL(url);
-    } else {
-      _dialogService.showDialog(
-        title: 'Transaction Details',
-        description: '''
-Type: ${transaction.displayType}
-Amount: ${transaction.formattedAmount}
-Status: ${transaction.status}
-Reference: ${transaction.reference}
-From: ${transaction.fromAddress}
-To: ${transaction.toAddress}
-        ''',
-      );
-    }
+    _navigationService.navigateToTransactionDetailView(transactionId: transaction.id);
+  }
+
+  @override
+  void dispose() {
+    transactionScrollController.dispose();
+    super.dispose();
   }
 
   void _launchURL(String url) async {
