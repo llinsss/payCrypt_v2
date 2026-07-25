@@ -31,6 +31,8 @@ const batchPaymentWorker = new Worker(
 );
 attachRedisErrorAlert(batchPaymentWorker, "batch-payments-worker");
 
+instrumentBullWorker(batchPaymentWorker, "batch-payments");
+
 batchPaymentWorker.on("completed", (job) => {
     console.log(`Batch payment job ${job.id} completed`);
 });

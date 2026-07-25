@@ -1,4 +1,5 @@
 import 'package:Tagg/ui/common/app_assets.dart';
+import 'package:Tagg/services/theme_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -220,6 +221,60 @@ class SettingsView extends StackedView<SettingsViewModel> {
     );
   }
 
+  Widget _buildBiometricToggle({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF181027), Color(0xFF110F20)],
+        ),
+        border: Border.all(color: const Color(0xFF262140)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w400,
+                    fontSize: 14,
+                    color: Color(0xFF867EA5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: const Color(0xFF9D55FF),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSettingsList(SettingsViewModel viewModel) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -252,12 +307,21 @@ class SettingsView extends StackedView<SettingsViewModel> {
           onTap: () => viewModel.onchangePasswordTap(),
         ),
         const SizedBox(height: 12),
+        _buildBiometricToggle(
+          title: 'Biometric Unlock',
+          subtitle: 'Use Face ID or fingerprint to unlock',
+          value: viewModel.isBiometricEnabled,
+          onChanged: (value) => viewModel.toggleBiometricUnlock(value),
+        ),
+        const SizedBox(height: 12),
         _buildSettingItem(
           icon: Icons.headset_mic_outlined,
           title: 'Contact Support',
           subtitle: 'Reach us via email',
           onTap: () {},
         ),
+        const SizedBox(height: 12),
+        _buildAppearanceSelector(viewModel),
         const SizedBox(height: 12),
         _buildSettingItem(
           icon: Icons.notifications_outlined,
@@ -266,6 +330,116 @@ class SettingsView extends StackedView<SettingsViewModel> {
           onTap: () => viewModel.onNotificationTap(),
         ),
       ],
+    );
+  }
+
+  Widget _buildAppearanceSelector(SettingsViewModel viewModel) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF181027), Color(0xFF110F20)],
+        ),
+        border: Border.all(color: const Color(0xFF262140)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF120D1E),
+                  border: Border.all(color: const Color(0xFF262140)),
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: const Icon(
+                  Icons.brightness_4_outlined,
+                  size: 18,
+                  color: Color(0xFFE2E2E2),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Appearance',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Light / Dark / System',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w400,
+                      fontSize: 14,
+                      color: Color(0xFF867EA5),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildThemeModeButton(
+                label: 'Light',
+                isSelected: viewModel.currentTheme == ThemeMode.light,
+                onTap: () => viewModel.setThemeMode(ThemeMode.light),
+              ),
+              _buildThemeModeButton(
+                label: 'Dark',
+                isSelected: viewModel.currentTheme == ThemeMode.dark,
+                onTap: () => viewModel.setThemeMode(ThemeMode.dark),
+              ),
+              _buildThemeModeButton(
+                label: 'System',
+                isSelected: viewModel.currentTheme == ThemeMode.system,
+                onTap: () => viewModel.setThemeMode(ThemeMode.system),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThemeModeButton({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF674AA6) : const Color(0xFF120D1E),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF674AA6) : const Color(0xFF262140),
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: isSelected ? Colors.white : const Color(0xFF867EA5),
+          ),
+        ),
+      ),
     );
   }
 

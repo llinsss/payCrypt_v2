@@ -18,10 +18,12 @@ import performanceRoutes from "./performance.js";
 import analyticsRoutes from "./analytics.js";
 import webhookRoutes from "./webhooks.js";
 import webhookAdminRoutes from "./webhookAdmin.js";
+import backupAdminRoutes from "./backupAdmin.js";
 import exportRoutes from "./exports.js";
 import ussdRoutes from "./ussd.js";
 import batchPaymentRoutes from "./batchPayments.js";
 import keyRoutes from "./keys.js";
+import billRoutes from "./bills.js";
 import { deprecationWarning } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -46,10 +48,12 @@ const registerRoutes = (router) => {
   router.use("/analytics", analyticsRoutes);
   router.use("/webhooks", webhookRoutes);
   router.use("/admin/webhooks", webhookAdminRoutes);
+  router.use("/admin/backups", backupAdminRoutes);
   router.use("/exports", exportRoutes);
   router.use("/ussd", ussdRoutes);
   router.use("/batches", batchPaymentRoutes);
   router.use("/keys", keyRoutes);
+  router.use("/bills", billRoutes);
 };
 
 // V1 routes (deprecated)

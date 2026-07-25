@@ -59,6 +59,8 @@ export const webhookRetryWorker = redisConnection
   : null;
 attachRedisErrorAlert(webhookRetryWorker, "webhook-retry-worker");
 
+if (webhookRetryWorker) instrumentBullWorker(webhookRetryWorker, "webhook-retry");
+
 if (webhookRetryWorker) {
   webhookRetryWorker.on("completed", (job) =>
     console.log(`✅ Webhook retry worker completed job ${job.id}`),

@@ -30,6 +30,8 @@ export const exportWorker =
   );
 attachRedisErrorAlert(exportWorker, "transaction-export-worker");
 
+if (exportWorker) instrumentBullWorker(exportWorker, "transaction-export");
+
 if (exportWorker) {
   exportWorker.on("completed", (job) =>
     console.log(`✅ Export worker completed job ${job.id}`)

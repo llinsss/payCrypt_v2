@@ -47,11 +47,11 @@ export const transactionQuerySchema = Joi.object({
   }),
 
   type: Joi.string()
-    .valid("payment", "account_merge", "credit", "debit", "transfer", "deposit", "withdrawal")
+    .valid("payment", "account_merge", "credit", "debit", "transfer", "deposit", "withdrawal", "bill_payment")
     .allow(null, "")
     .optional()
     .messages({
-      "any.only": "Type must be one of: payment, account_merge, credit, debit, transfer, deposit, withdrawal",
+      "any.only": "Type must be one of: payment, account_merge, credit, debit, transfer, deposit, withdrawal, bill_payment",
     }),
 
   sortBy: Joi.string()
@@ -99,11 +99,11 @@ export const transactionSearchQuerySchema = Joi.object({
   to: isoDateField(),
 
   type: Joi.string()
-    .valid("payment", "account_merge", "credit", "debit", "transfer", "deposit", "withdrawal")
+    .valid("payment", "account_merge", "credit", "debit", "transfer", "deposit", "withdrawal", "bill_payment")
     .allow(null, "")
     .optional()
     .messages({
-      "any.only": "Type must be one of: payment, account_merge, credit, debit, transfer, deposit, withdrawal",
+      "any.only": "Type must be one of: payment, account_merge, credit, debit, transfer, deposit, withdrawal, bill_payment",
     }),
 
   status: Joi.string()

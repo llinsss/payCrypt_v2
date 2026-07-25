@@ -63,6 +63,8 @@ export const webhookWorker = redisConnection
   : null;
 attachRedisErrorAlert(webhookWorker, "webhook-delivery-worker");
 
+if (webhookWorker) instrumentBullWorker(webhookWorker, "webhook-delivery");
+
 if (webhookWorker) {
   webhookWorker.on("completed", (job) =>
     console.log(`✅ Webhook worker completed primary job ${job.id}`),

@@ -1,3 +1,7 @@
+[![Backend CI](https://github.com/llinsss/payCrypt_v2/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/llinsss/payCrypt_v2/actions/workflows/backend-ci.yml)
+[![Flutter CI](https://github.com/llinsss/payCrypt_v2/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/llinsss/payCrypt_v2/actions/workflows/flutter-ci.yml)
+[![Docker Build](https://github.com/llinsss/payCrypt_v2/actions/workflows/docker-build.yml/badge.svg)](https://github.com/llinsss/payCrypt_v2/actions/workflows/docker-build.yml)
+
 Welcome to Tagged. A Seamless Crypto Payments solution for Africa.
 Imagine sending money to your friend in Lagos as easily as sending a WhatsApp message. Right now, if you want to send crypto to someone, you need to copy and paste a 42-character wallet address that looks like this: 0x028add5d29f4aa3e4144ba1a85d509de6719e58cabe42cc72f58f46c6a84a785. One wrong character? Your money disappears forever. Tagged changes everything. Instead of that nightmare, you simply send to @john or @sarah_lagos. That's it. No more copying addresses, no more fear of losing funds, no more barriers to digital payments
 
@@ -78,6 +82,109 @@ cd backend && npm run dev
   Terminal 2: Frontend  
 npm run dev
 
+
+API Key Scopes
+
+API keys enforce scope-based authorization. When creating an API key via POST /api-keys, specify required scopes as a comma-separated string.
+
+**Available Scopes:**
+
+| Scope | Description | Routes |
+|-------|-------------|--------|
+| `transactions:read` | Read transaction history and details | GET /transactions, GET /transactions/:id, GET /transactions/tag/:tag |
+| `transactions:write` | Create, update, delete transactions | PUT /transactions/:id, DELETE /transactions/:id, POST /transactions/payment |
+| `payments:send` | Send payments and batch payments | POST /transactions/payment, POST /transactions/batches |
+| `webhooks:read` | List and retrieve webhook configurations | GET /webhooks, GET /webhooks/:id, GET /webhooks/:id/deliveries |
+| `webhooks:write` | Create, update, delete webhooks | POST /webhooks, PUT /webhooks/:id, DELETE /webhooks/:id, POST /webhooks/:id/rotate-secret |
+
+**Example: Create API Key with Read-Only Access**
+```bash
+curl -X POST http://localhost:3000/api-keys \
+  -H "Authorization: Bearer <JWT_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Read-only API Key",
+    "scopes": "transactions:read,webhooks:read"
+  }'
+```
+
+**Using API Key with Scopes**
+```bash
+curl -X GET http://localhost:3000/transactions \
+  -H "x-api-key: <API_KEY>"
+```
+
+If the API key lacks required scope, you'll receive:
+```json
+{
+  "error": "API key does not have required scope(s): transactions:write",
+  "required_scopes": ["transactions:write"]
+}
+```
+
+Deep Linking for Payment Requests (Mobile App)
+
+The mobile app supports deep linking for payment requests, allowing users to open the app directly with payment details pre-filled.
+
+**Supported Deep Link Formats:**
+
+1. **Web URL (Android App Links + iOS Universal Links):**
+   ```
+   https://taggedpay.xyz/pay/@recipient_tag
+   https://taggedpay.xyz/pay/@recipient_tag?amount=50&token=USDC&memo=rent
+   ```
+
+2. **Custom Scheme (iOS):**
+   ```
+   tagg://pay/@recipient_tag?amount=50&token=USDC
+   ```
+
+**Query Parameters:**
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `amount` | Payment amount (optional) | `?amount=50` |
+| `token` | Token/currency (optional) | `?token=USDC` |
+| `memo` | Transaction memo (optional) | `?memo=rent` |
+
+**Examples:**
+
+- Basic payment request: `https://taggedpay.xyz/pay/@alice`
+- With amount: `https://taggedpay.xyz/pay/@alice?amount=100`
+- Full details: `https://taggedpay.xyz/pay/@alice?amount=50&token=USDC&memo=Monthly+rent`
+
+**How it works:**
+
+1. User taps a payment link (web, chat, email, etc.)
+2. If Tagg is not installed, browser redirects to app store (fallback)
+3. If Tagg is installed:
+   - App opens to sign-in if user is not authenticated
+   - App opens to send flow with recipient pre-filled if user is logged in
+   - Optional amount and token fields are pre-filled if provided
+
+**Generating Shareable Payment Links:**
+
+Users can generate shareable payment request links from the Deposit screen:
+```
+https://taggedpay.xyz/pay/@your_tag
+```
+
+These links can be shared via:
+- QR code (built into Deposit screen)
+- Direct URL sharing
+- Chat/messaging apps
+- Email
+
+**Android Configuration:**
+
+Deep linking is configured via intent-filters in `AndroidManifest.xml`. The app declares support for:
+- `https://taggedpay.xyz/pay/*`
+
+**iOS Configuration:**
+
+Deep linking is configured via URL schemes in `Info.plist`:
+- URL scheme: `tagg://pay/@tag`
+- Universal Links: `https://taggedpay.xyz/pay/*` (requires `apple-app-site-association`)
 
  Demo Flow
 

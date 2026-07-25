@@ -140,6 +140,8 @@ export const transactionConfirmationWorker = redisConnection
     )
   : null;
 
+if (transactionConfirmationWorker) instrumentBullWorker(transactionConfirmationWorker, "transaction-confirmation");
+
 /**
  * Check if a transaction is confirmed on-chain
  * @param {string} txHash - Transaction hash

@@ -31,8 +31,9 @@ const WebhookDeliveryService = {
     try {
       const response = await axios.post(url, payload, {
         timeout: TIMEOUT_MS,
-      maxRedirects: 0,
-      validateStatus: (status) => status >= 200 && status < 400,
+        maxRedirects: 0,
+        validateStatus: (status) => status >= 200 && status < 400,
+        headers: {
           "X-Webhook-Signature": signature,
           "X-Webhook-Event": payload.event,
           "X-Webhook-Delivery": eventId,

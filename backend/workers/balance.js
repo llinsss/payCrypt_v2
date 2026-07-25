@@ -18,6 +18,8 @@ export const balanceWorker = redisConnection ? new Worker(
 ) : null;
 attachRedisErrorAlert(balanceWorker, "balance-setup-worker");
 
+if (balanceWorker) instrumentBullWorker(balanceWorker, "balance-setup");
+
 if (balanceWorker) {
   balanceWorker.on("completed", (job) => {
     console.log(`✅ Balance worker completed job ${job.id}`);
