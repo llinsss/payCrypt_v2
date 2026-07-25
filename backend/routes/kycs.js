@@ -5,6 +5,7 @@ import {
   updateKyc,
   deleteKyc,
   getKycByUser,
+  getKycStatus,
   approveKyc,
   rejectKyc,
 } from "../controllers/kycController.js";
@@ -43,6 +44,7 @@ const router = express.Router();
  */
 router.post("/", authenticate, validate(kycCreateSchema), createKyc);
 router.get("/", authenticate, getKycByUser);
+router.get("/status", authenticate, getKycStatus);
 
 /**
  * @swagger

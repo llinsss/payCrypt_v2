@@ -1,7 +1,7 @@
 import express from 'express';
 import TagController from '../controllers/TagController.js';
 import rateLimit from 'express-rate-limit';
-// Add middleware if needed for protected routes, e.g. authenticateToken
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -21,6 +21,6 @@ router.get('/search', checkLimiter, TagController.search);
 router.post('/', TagController.create);
 router.get('/check/:tag', checkLimiter, TagController.check);
 router.get('/:tag', TagController.resolve);
-router.put('/:tag/transfer', TagController.transfer);
+router.put('/:tag/transfer', authenticate, TagController.transfer);
 
 export default router;

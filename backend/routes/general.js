@@ -4,6 +4,7 @@ import * as freecryptoapi from "../services/free-crypto-api.js";
 import * as exchangerateapi from "../services/exchange-rate-api.js";
 import { NGN_KEY } from "../config/initials.js";
 import * as controller from "../controllers/generalController.js";
+import { publicCache } from "../middleware/cacheControl.js";
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ router.get("/bill/airtime-services", controller.bill_airtime_services);
 router.get("/bill/data-services", controller.bill_data_services);
 router.post("/bill/requery", controller.bill_requery);
 router.post("/bill/verify-customer", controller.bill_verify_customer);
-router.get("/exchange-rates", controller.get_exchange_rates);
+router.get("/exchange-rates", publicCache(900), controller.get_exchange_rates);
 router.get("/convert", controller.convert_currency);
 // Health check endpoint
 router.get("/health", (req, res) => {

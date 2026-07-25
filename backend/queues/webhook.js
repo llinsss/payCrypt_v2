@@ -5,6 +5,7 @@ import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import { validateWebhookUrl } from "../utils/validateWebhookUrl.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 // ========== Queue ==========
 
@@ -53,14 +54,14 @@ export const webhookWorker = redisConnection
 
         return { success };
       },
-
-      },
       {
         connection: redisConnection,
         concurrency: 10,
       },
     )
   : null;
+
+if (webhookWorker) instrumentBullWorker(webhookWorker, "webhook-delivery");
 
 if (webhookWorker) {
   webhookWorker.on("completed", (job) =>

@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:Tagg/app/app.bottomsheets.dart';
 import 'package:Tagg/app/app.dialogs.dart';
@@ -9,11 +10,20 @@ import 'package:stacked_services/stacked_services.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   await setupLocator();
   final themeService = locator<ThemeService>();
   await themeService.initialize();
   setupDialogUi();
   setupBottomSheetUi();
+
+  final pushService = locator<PushNotificationService>();
+  final apiService = locator<ApiService>();
+  await apiService.initializeToken();
+  if (apiService.isAuthenticated) {
+    await pushService.initialize(apiService: apiService);
+  }
+
   runApp(const MainApp());
 }
 
