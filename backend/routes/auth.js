@@ -1,5 +1,5 @@
 import express from "express";
-import { register, login, setup2FA, enable2FA, verify2FA } from "../controllers/authController.js";
+import { register, login, setup2FA, enable2FA, verify2FA, googleLogin } from "../controllers/authController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
@@ -97,6 +97,7 @@ router.post("/register", rateLimit({ endpointName: "register", windowMs: 60 * 60
  *         description: Unauthorized
  */
 router.post("/login", rateLimit({ endpointName: "login", windowMs: 15 * 60 * 1000, max: 5 }), validate(authSchemas.login), auditLog("auth"), login);
+router.post("/google", rateLimit({ endpointName: "google-login", windowMs: 15 * 60 * 1000, max: 10 }), auditLog("auth"), googleLogin);
 router.post("/2fa/setup", authenticate, auditLog("auth"), setup2FA);
 router.post("/2fa/enable", authenticate, validate(authSchemas.twoFactorToken), auditLog("auth"), enable2FA);
 router.post("/2fa/verify", authenticate, validate(authSchemas.twoFactorToken), auditLog("auth"), verify2FA);
