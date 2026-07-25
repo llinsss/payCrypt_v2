@@ -179,14 +179,10 @@ app.get("/test-error", (req, res) => {
   throw new Error("Sentry Test Error manually triggered");
 });
 
-import tagRoutes from "./routes/tagRoutes.js";
 import rateLimitRoutes from "./routes/rateLimit.js";
 
 app.use("/", generalRoutes);
 app.use("/api", indexRoutes);
-app.use("/api/tags", tagRoutes);
-import withdrawalRoutes from "./routes/withdrawals.js";
-app.use("/api/withdrawals", withdrawalRoutes);
 
 // Rate limit admin routes
 app.use("/admin/rate-limits", rateLimitRoutes);
@@ -211,12 +207,22 @@ const swaggerOptions = {
     info: {
       title: "Tagg@d API",
       version: "1.0.0",
-      description: "API documentation for the Tagg@d backend",
+      description:
+        "API documentation for the Tagg@d backend. Routes are available under /api (current version alias), " +
+        "/api/v2 (current), and /api/v1 (deprecated — see GET /api/versions for sunset details).",
     },
     servers: [
       {
+        url: `http://localhost:${process.env.PORT || 5002}/api/v2`,
+        description: "Current version (v2)",
+      },
+      {
+        url: `http://localhost:${process.env.PORT || 5002}/api/v1`,
+        description: "Deprecated version (v1)",
+      },
+      {
         url: `http://localhost:${process.env.PORT || 5002}`,
-        description: "Development Server",
+        description: "Development Server (unversioned root)",
       },
     ],
     components: {
