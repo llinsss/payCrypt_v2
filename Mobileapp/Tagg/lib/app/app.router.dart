@@ -26,6 +26,7 @@ import 'package:Tagg/ui/views/notifications/notifications_view.dart' as _i19;
 import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart' as _i22;
 import 'package:Tagg/ui/views/profile_details/profile_details_view.dart'
     as _i15;
+import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart' as _i21;
 import 'package:Tagg/ui/views/settings/settings_view.dart' as _i11;
 import 'package:Tagg/ui/views/signin/signin_view.dart' as _i4;
 import 'package:Tagg/ui/views/signup/signup_view.dart' as _i5;
@@ -566,6 +567,22 @@ extension NavigatorStateExtension on _i21.NavigationService {
         transition: transition);
   }
 
+  Future<dynamic> navigateToTransactionDetailView({
+    required int transactionId,
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  }) async {
+    return navigateTo<dynamic>(Routes.transactionDetailView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        arguments: {'transactionId': transactionId},
+        transition: transition);
+  }
+
   Future<dynamic> replaceWithHomeView([
     int? routerId,
     bool preventDuplicates = true,
@@ -831,6 +848,22 @@ extension NavigatorStateExtension on _i21.NavigationService {
         id: routerId,
         preventDuplicates: preventDuplicates,
         parameters: parameters,
+        transition: transition);
+  }
+
+  Future<dynamic> replaceWithTransactionDetailView({
+    required int transactionId,
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  }) async {
+    return replaceWith<dynamic>(Routes.transactionDetailView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        arguments: {'transactionId': transactionId},
         transition: transition);
   }
 }
