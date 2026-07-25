@@ -1,18 +1,29 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import app from "./app.js";
-import db, { ensureConnectionWithRetry } from "./config/database.js";
-import redis from "./config/redis.js";
-import "./listeners.js";
-import "./workers.js";
-import AuditLog from "./models/AuditLog.js";
-import ExportService from "./services/ExportService.js";
-
 import http from "http";
-import SocketService from "./services/SocketService.js";
+import { validateEnv } from "./config/env.validation.js";
 
-import { initApollo } from './graphql/apollo.js';
+let validatedEnv;
+try {
+  validatedEnv = validateEnv(process.env);
+  Object.assign(process.env, validatedEnv);
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+
+const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: AuditLog }, { default: ExportService }, { default: SocketService }, { initApollo }] = await Promise.all([
+  import("./app.js"),
+  import("./config/database.js"),
+  import("./config/redis.js"),
+  import("./listeners.js"),
+  import("./workers.js"),
+  import("./models/AuditLog.js"),
+  import("./services/ExportService.js"),
+  import("./services/SocketService.js"),
+  import("./graphql/apollo.js"),
+]);
 
 const PORT = process.env.PORT || 3000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;

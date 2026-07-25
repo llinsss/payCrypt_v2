@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { runWithCorrelation } from "../utils/asyncContext.js";
 
 // Header names — kept as constants so requestLogger and correlationId stay in sync
 export const CORRELATION_ID_HEADER = "x-correlation-id";
@@ -32,7 +33,10 @@ export const correlationId = (req, res, next) => {
   res.setHeader(CORRELATION_ID_HEADER, corrId);
   res.setHeader(REQUEST_ID_HEADER, reqId);
 
-  next();
+  // Propagate both IDs through AsyncLocalStorage so any code reached from
+  // this request (services, queues, workers) can pick them up without
+  // needing them passed explicitly — see utils/asyncContext.js.
+  runWithCorrelation(corrId, reqId, next);
 };
 
 function isValidUUID(value) {

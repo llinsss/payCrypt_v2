@@ -5,6 +5,7 @@ import { User, Balance, Token } from "../models/index.js";
 import * as contract from "../contracts/index.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
+import * as flow from "../contracts/services/flow.js";
 import LockService from "../services/LockService.js";
 import ExchangeRateService from "../services/exchange-rate-api.js";
 
@@ -187,6 +188,8 @@ export const updateUserBalance = async (req, res) => {
         try {
           const onchainValue = await (chain == "starknet"
             ? starknet.getTagBalance(user.tag)
+            : chain === "flow"
+            ? flow.getTagBalance(user.tag)
             : evm.getTagBalance(chain, user.tag));
 
           const dbValue = Number(balance.amount);

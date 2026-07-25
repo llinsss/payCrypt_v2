@@ -16,7 +16,7 @@ class BillView extends StackedView<BillViewModel> {
     Widget? child,
   ) {
     return Scaffold(
-      backgroundColor: const Color(0xFF090715),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -49,122 +49,130 @@ class BillView extends StackedView<BillViewModel> {
   }
 
   Widget _buildTopNavigation(BillViewModel viewModel) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF090715).withOpacity(0.1),
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(5),
-          bottomRight: Radius.circular(5),
-        ),
-      ),
-      child: Column(
-        children: [
-          // Navigation Bar
-          Container(
-            height: 64,
-            decoration: const BoxDecoration(
-              color: Color(0xFF090715),
-              border: Border(
-                bottom: BorderSide(color: Color(0xFF262140), width: 1),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Logo Section
-                Row(
-                  children: [
-                    SvgPicture.asset(
-                      AppAssets.log,
-                      height: 29,
-                      width: 29,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      "Tagged",
-                      style: GoogleFonts.inter(
-                        fontStyle: FontStyle.italic,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16.24,
-                        height: 20 / 16.24, // line-height to font-size ratio
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-
-                // Profile and Settings
-                Row(
-                  children: [
-                    // Notification Button
-                    Container(
-                      width: 39,
-                      height: 39,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF130F22),
-                        border: Border.all(color: const Color(0xFF262140)),
-                        borderRadius: BorderRadius.circular(48),
-                      ),
-                      child: const Icon(
-                        Icons.notifications_outlined,
-                        color: Color(0xFFE2E2E2),
-                        size: 16,
-                      ),
-                    ),
-
-                    const SizedBox(width: 14),
-
-                    Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF130F22),
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(48),
-                        ),
-                        child: Image.asset(
-                          AppAssets.profile,
-                        )),
-
-                    const SizedBox(width: 14),
-
-                    // Menu Button
-                    GestureDetector(
-                      onTap: () {},
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF130F22),
-                          border: Border.all(color: const Color(0xFF262140)),
-                          borderRadius: BorderRadius.circular(48),
-                        ),
-                        child: const Icon(
-                          Icons.menu,
-                          color: Color(0xFFE2E2E2),
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+    return Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor.withOpacity(0.1),
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(5),
+              bottomRight: Radius.circular(5),
             ),
           ),
-        ],
-      ),
+          child: Column(
+            children: [
+              // Navigation Bar
+              Container(
+                height: 64,
+                decoration: BoxDecoration(
+                  color: theme.scaffoldBackgroundColor,
+                  border: Border(
+                    bottom: BorderSide(color: theme.colorScheme.outline, width: 1),
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Logo Section
+                    Row(
+                      children: [
+                        SvgPicture.asset(
+                          AppAssets.log,
+                          height: 29,
+                          width: 29,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          "Tagged",
+                          style: GoogleFonts.inter(
+                            fontStyle: FontStyle.italic,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16.24,
+                            height: 20 / 16.24,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Profile and Settings
+                    Row(
+                      children: [
+                        // Notification Button
+                        Container(
+                          width: 39,
+                          height: 39,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            border: Border.all(color: theme.colorScheme.outline),
+                            borderRadius: BorderRadius.circular(48),
+                          ),
+                          child: Icon(
+                            Icons.notifications_outlined,
+                            color: theme.colorScheme.onSurface,
+                            size: 16,
+                          ),
+                        ),
+
+                        const SizedBox(width: 14),
+
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            border: Border.all(color: theme.colorScheme.onSurface),
+                            borderRadius: BorderRadius.circular(48),
+                          ),
+                          child: Image.asset(AppAssets.profile),
+                        ),
+
+                        const SizedBox(width: 14),
+
+                        // Menu Button
+                        GestureDetector(
+                          onTap: () {},
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface,
+                              border: Border.all(color: theme.colorScheme.outline),
+                              borderRadius: BorderRadius.circular(48),
+                            ),
+                            child: Icon(
+                              Icons.menu,
+                              color: theme.colorScheme.onSurface,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _buildHeader() {
-    return const Text(
-      'Pay Bills',
-      style: TextStyle(
-        color: Color(0xFFE2E2E2),
-        fontSize: 18,
-        fontWeight: FontWeight.w500,
-      ),
+    return Builder(
+      builder: (context) {
+        return Text(
+          'Pay Bills',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onBackground,
+            fontSize: 18,
+            fontWeight: FontWeight.w500,
+          ),
+        );
+      },
     );
   }
 
@@ -213,51 +221,57 @@ class BillView extends StackedView<BillViewModel> {
     bool isSelected,
     BillViewModel viewModel,
   ) {
-    return GestureDetector(
-      onTap: () => viewModel.selectService(title),
-      child: Container(
-        width: 190,
-        height: 80,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF181027), Color(0xFF110F20)],
-          ),
-          border: Border.all(
-            color:
-                isSelected ? const Color(0xFF674AA6) : const Color(0xFF262140),
-          ),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              padding: const EdgeInsets.all(6), // to give breathing room
-              decoration: BoxDecoration(
-                color: const Color(0xFF120D1E),
-                border: Border.all(color: const Color(0xFF262140)),
-                borderRadius: BorderRadius.circular(100),
+    return Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        return GestureDetector(
+          onTap: () => viewModel.selectService(title),
+          child: Container(
+            width: 190,
+            height: 80,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border.all(
+                color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outline,
               ),
-              child: SvgPicture.asset(
-                assetPath,
-                width: 20,
-                height: 20,
-              ),
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 12),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurface.withOpacity(0.1),
+                    border: Border.all(color: theme.colorScheme.outline),
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  child: SvgPicture.asset(
+                    assetPath,
+                    width: 20,
+                    height: 20,
+                    colorFilter: ColorFilter.mode(
+                      theme.colorScheme.onSurface,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -410,46 +424,51 @@ class BillView extends StackedView<BillViewModel> {
     required TextEditingController controller,
     String hintText = '',
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFFE2E2E2),
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          height: 60,
-          decoration: BoxDecoration(
-            color: const Color(0xFF120F21),
-            border: Border.all(color: const Color(0xFF262140), width: 2),
-            borderRadius: BorderRadius.circular(48),
-          ),
-          alignment: Alignment.center,
-          child: TextField(
-            controller: controller,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-              hintText: hintText,
-              hintStyle: const TextStyle(
-                color: Color(0xFF867EA5),
+    return Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: theme.colorScheme.onBackground,
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
             ),
-          ),
-        ),
-      ],
+            const SizedBox(height: 12),
+            Container(
+              height: 60,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                border: Border.all(color: theme.colorScheme.outline, width: 2),
+                borderRadius: BorderRadius.circular(48),
+              ),
+              alignment: Alignment.center,
+              child: TextField(
+                controller: controller,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                  hintText: hintText,
+                  hintStyle: TextStyle(
+                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

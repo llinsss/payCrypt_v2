@@ -239,3 +239,68 @@ export const require2FA = async (req, res, next) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const googleLogin = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      return res.status(400).json({ error: "Google ID token required" });
+    }
+
+    const { OAuth2Client } = await import("google-auth-library");
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const email = payload.email;
+    const googleId = payload.sub;
+
+    let user = await User.findByEmail(email);
+
+    if (!user) {
+      const defaultTag = email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "_");
+      user = await User.create({
+        email,
+        tag: defaultTag,
+        password: "", // No password for Google users
+        photo: payload.picture || `https://api.dicebear.com/9.x/initials/svg?seed=${defaultTag}`,
+        role: "user",
+        google_id: googleId,
+      });
+
+      await Wallet.create({ user_id: user.id });
+      await BankAccount.create({ user_id: user.id });
+      await balanceQueue.add("create-balances", {
+        user_id: user.id,
+        tag: defaultTag,
+      });
+
+      return res.status(201).json({
+        message: "Account created via Google Sign-In",
+        isNewUser: true,
+        token: signToken({ userId: user.id }),
+        user: sanitizeAuthUser(user),
+      });
+    }
+
+    const token = signToken({ userId: user.id });
+    await User.update(user.id, { last_login: new Date() });
+
+    sanitizeAuthUser(user);
+
+    res.status(200).json({
+      message: "Login successful",
+      isNewUser: false,
+      token,
+      user,
+    });
+  } catch (error) {
+    console.error("Google login failed:", error);
+    res.status(401).json({ error: "Invalid Google token or authentication failed" });
+  }
+};

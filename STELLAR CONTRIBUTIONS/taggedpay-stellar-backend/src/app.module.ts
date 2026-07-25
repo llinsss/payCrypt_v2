@@ -8,6 +8,7 @@ import { StellarModule } from './stellar/stellar.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { TagsModule } from './tags/tags.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -36,6 +37,7 @@ import configuration from './config/configuration';
     StellarModule,
     AccountsModule,
     PaymentsModule,
+    TagsModule,
     WebhooksModule,
   ],
   controllers: [AppController],

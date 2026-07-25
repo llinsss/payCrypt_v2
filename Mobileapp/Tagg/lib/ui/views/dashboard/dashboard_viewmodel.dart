@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/models/dashboard_summary.dart';
 import 'package:Tagg/models/transaction_model.dart';
@@ -7,14 +9,19 @@ import 'package:Tagg/models/chains_models.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
+import 'package:Tagg/services/connectivity_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/widgets.dart';
 
 class DashboardViewModel extends BaseViewModel {
+  final ScrollController transactionScrollController = ScrollController();
   final _dialogService = locator<DialogService>();
   final _snackbarService = locator<SnackbarService>();
   final _userService = locator<UserService>();
@@ -59,9 +66,18 @@ class DashboardViewModel extends BaseViewModel {
 
   int get selectedTabIndex => _selectedTabIndex;
 
+  bool get isOffline => _isOffline;
   bool get hasData => _dashboardSummary != null;
 
   void initialize() {
+    _connectivityService.connectivityStream.listen((result) {
+      _isOffline = result == ConnectivityResult.none;
+      if (!_isOffline) {
+        // Retry when connectivity restores
+        _loadDashboardData();
+      }
+      notifyListeners();
+    });
     _loadDashboardData();
   }
 
@@ -89,8 +105,12 @@ class DashboardViewModel extends BaseViewModel {
       _tokenBalances = await _userService.getUserTokenBalances();
       print('✅ Token balances loaded: ${_tokenBalances.length} tokens');
 
-      print('📜 Loading transactions...');
-      _transactions = await _transactionService.getRecentTransactions();
+      print('📜 Loading transactions (page 1)...');
+      final offset = _currentPage * _pageSize;
+      _transactions = await _transactionService.getUserTransactions(
+        limit: _pageSize,
+        offset: offset,
+      );
       print('✅ Transactions loaded: ${_transactions.length} transactions');
 
       // Calculate balances with live exchange rate
@@ -223,6 +243,10 @@ class DashboardViewModel extends BaseViewModel {
 
   // Action Methods
   Future<void> withdraw() async {
+    if (_isOffline) {
+      _showError('You are offline. Please connect to the internet.');
+      return;
+    }
     setBusy(true);
 
     try {
@@ -311,7 +335,14 @@ class DashboardViewModel extends BaseViewModel {
   }
 
   List<Transaction> _transactions = [];
+  int _currentPage = 0;
+  static const int _pageSize = 20;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+
   List<Transaction> get transactions => _transactions;
+  bool get hasMore => _hasMore;
+  bool get isLoadingMore => _isLoadingMore;
 
   List<Transaction> get filteredTransactions {
     switch (selectedFilterIndex) {
@@ -324,25 +355,38 @@ class DashboardViewModel extends BaseViewModel {
     }
   }
 
-  /// Open transaction details in explorer
-  void openTransactionDetails(Transaction transaction) {
-    if (transaction.txHash != null && transaction.txHash!.isNotEmpty) {
-      final url =
-          'https://sepolia.voyager.online/tx/${transaction.txHash}'; // Example for Starknet, adjust based on chain
-      _launchURL(url);
-    } else {
+  /// Share a receipt for a completed transaction.
+  Future<void> openTransactionDetails(Transaction transaction) async {
+    if (transaction.status.toLowerCase() != 'completed') {
       _dialogService.showDialog(
-        title: 'Transaction Details',
-        description: '''
-Type: ${transaction.displayType}
-Amount: ${transaction.formattedAmount}
-Status: ${transaction.status}
-Reference: ${transaction.reference}
-From: ${transaction.fromAddress}
-To: ${transaction.toAddress}
-        ''',
+        title: 'Receipt unavailable',
+        description: 'Receipts are only available for completed transactions.',
       );
+      return;
     }
+
+    setBusy(true);
+
+    try {
+      final receiptBytes = await _transactionService.getTransactionReceipt(transaction.id);
+      final file = await _saveReceiptToFile(receiptBytes, transaction.id);
+      await Share.shareXFiles([XFile(file.path)], subject: 'Transaction Receipt');
+      _snackbarService.showSnackbar(
+        message: 'Receipt ready to share',
+        duration: const Duration(seconds: 2),
+      );
+    } catch (e) {
+      _showError('Failed to prepare receipt: $e');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  Future<File> _saveReceiptToFile(Uint8List bytes, int transactionId) async {
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/receipt-$transactionId.pdf');
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
   }
 
   void _launchURL(String url) async {
@@ -353,5 +397,49 @@ To: ${transaction.toAddress}
       _dialogService.showDialog(
           title: 'Error', description: 'Could not open URL');
     }
+  }
+
+  /// Load more transactions for infinite scroll
+  Future<void> loadMoreTransactions() async {
+    if (_isLoadingMore || !_hasMore) return;
+
+    _isLoadingMore = true;
+    notifyListeners();
+
+    try {
+      final offset = _currentPage * _pageSize;
+      final nextTransactions = await _transactionService.getUserTransactions(
+        limit: _pageSize,
+        offset: offset,
+      );
+
+      if (nextTransactions.isEmpty) {
+        _hasMore = false;
+      } else {
+        _transactions.addAll(nextTransactions);
+        _currentPage++;
+
+        // Check if there are more transactions
+        if (nextTransactions.length < _pageSize) {
+          _hasMore = false;
+        }
+      }
+
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error loading more transactions: $e');
+      _isLoadingMore = false;
+      notifyListeners();
+    }
+
+    _isLoadingMore = false;
+  }
+
+  /// Reset transaction pagination
+  void resetTransactionPagination() {
+    _transactions = [];
+    _currentPage = 0;
+    _hasMore = true;
+    _isLoadingMore = false;
   }
 }

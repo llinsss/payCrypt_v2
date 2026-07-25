@@ -1,5 +1,6 @@
 import knex from 'knex';
 import config from '../knexfile.js';
+import redis from '../config/redis.js';
 const db = knex(config);
 
 class TagService {
@@ -125,6 +126,50 @@ class TagService {
             });
 
         return { tag: formattedTag, stellarAddress: newStellarAddress };
+    }
+
+    async searchTags(query) {
+        const formattedQuery = query.toLowerCase().trim();
+
+        if (!formattedQuery || formattedQuery.length < 1) {
+            return [];
+        }
+
+        const cacheKey = `tag_search:${formattedQuery}`;
+        const cacheTTL = 300; // 5 minutes
+
+        try {
+            // Try to get from cache
+            const cached = await redis.get(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        } catch (cacheError) {
+            console.warn('Redis cache read error:', cacheError.message);
+            // Continue with database query if cache fails
+        }
+
+        // Query database for matching tags
+        const results = await db('stellar_tags')
+            .where('tag', 'like', `${formattedQuery}%`)
+            .limit(10)
+            .select('id', 'tag', 'stellar_address', 'created_at');
+
+        const formatted = results.map(r => ({
+            id: r.id,
+            tag: r.tag,
+            stellarAddress: r.stellar_address,
+            createdAt: r.created_at
+        }));
+
+        // Store in cache
+        try {
+            await redis.setEx(cacheKey, cacheTTL, JSON.stringify(formatted));
+        } catch (cacheError) {
+            console.warn('Redis cache write error:', cacheError.message);
+        }
+
+        return formatted;
     }
 }
 

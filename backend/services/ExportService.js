@@ -53,11 +53,13 @@ export default {
     if (transactions.length > EXPORT_THRESHOLD) {
       const { exportQueue } = await import("../queues/exportQueue.js");
       if (exportQueue) {
+        const user = await User.query().where({ id: userId }).first();
         await exportQueue.add("export", {
           userId,
           format: fmt,
           filters,
           transactionCount: transactions.length,
+          email: user?.email,
         });
         return {
           statusCode: 202,

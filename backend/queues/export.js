@@ -3,6 +3,9 @@ import { Queue } from "bullmq";
 import queueConfig from "./index.js";
 import ExportService from "../services/ExportService.js";
 import NotificationService from "../services/NotificationService.js";
+import { sendTemplatedEmail } from "../services/external/smtp.js";
+import logger from "../utils/logger.js";
+import db from "../config/database.js";
 
 export const exportQueue = queueConfig
   ? new Queue("export", queueConfig)
@@ -27,10 +30,15 @@ if (exportQueue) {
 
 // Worker function to process export jobs
 export const processExportJob = async (job) => {
-  const { userId, format, filters, email } = job.data;
+  const { userId, format, filters, email, transactionCount } = job.data;
 
   try {
-    console.log(`Starting export job ${job.id} for user ${userId}`);
+    logger.info({
+      msg: `Starting export job ${job.id}`,
+      userId,
+      format,
+      recordCount: transactionCount,
+    });
 
     let filePath;
     if (format === "csv") {
@@ -44,10 +52,14 @@ export const processExportJob = async (job) => {
 
     // Send email notification with download link
     if (email) {
-      await sendExportNotification(email, format, downloadUrl);
+      await sendExportNotification(email, format, downloadUrl, transactionCount);
     }
 
-    console.log(`Export job ${job.id} completed. File: ${fileName}`);
+    logger.info({
+      msg: `Export job completed successfully`,
+      jobId: job.id,
+      fileName,
+    });
 
     return {
       success: true,
@@ -56,7 +68,12 @@ export const processExportJob = async (job) => {
       fileSize: ExportService.getFileSize(filePath),
     };
   } catch (error) {
-    console.error(`Export job ${job.id} failed:`, error);
+    logger.error({
+      msg: `Export job failed`,
+      jobId: job.id,
+      userId,
+      error: error.message,
+    });
     throw error;
   }
 };
@@ -66,31 +83,53 @@ export const processExportJob = async (job) => {
  * @param {string} email - User email
  * @param {string} format - Export format (csv/pdf)
  * @param {string} downloadUrl - Download URL
+ * @param {number} recordCount - Number of records exported
  */
-async function sendExportNotification(email, format, downloadUrl) {
+async function sendExportNotification(email, format, downloadUrl, recordCount) {
   try {
-    // For now, we'll use a simple console log
-    // In production, integrate with your email service (SendGrid, AWS SES, etc.)
-    console.log(`📧 Export ready notification:`);
-    console.log(`To: ${email}`);
-    console.log(`Subject: Your transaction export is ready`);
-    console.log(
-      `Message: Your ${format.toUpperCase()} export is ready for download: ${downloadUrl}`,
-    );
-    console.log(`Note: This link will expire in 24 hours.`);
+    const user = await db("users").where({ email }).first();
+    if (!user) {
+      logger.warn(`User not found for email: ${email}`);
+      return false;
+    }
 
-    // TODO: Replace with actual email service
-    // Example with nodemailer:
-    // const transporter = nodemailer.createTransporter({...});
-    // await transporter.sendMail({
-    //   from: 'noreply@yourapp.com',
-    //   to: email,
-    //   subject: 'Your transaction export is ready',
-    //   html: `<p>Your ${format.toUpperCase()} export is ready for download.</p>
-    //          <p><a href="${downloadUrl}">Download here</a></p>
-    //          <p>This link will expire in 24 hours.</p>`
-    // });
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleString();
+
+    const info = await sendTemplatedEmail(
+      email,
+      "transaction_export_ready",
+      {
+        name: user.name || user.username || "User",
+        format: format.toUpperCase(),
+        recordCount: recordCount || 0,
+        downloadUrl,
+        expiresAt,
+      },
+      "en"
+    );
+
+    if (info) {
+      logger.info({
+        msg: `Export email sent successfully`,
+        email,
+        format,
+        messageId: info.messageId,
+      });
+      return true;
+    } else {
+      logger.error({
+        msg: `Failed to send export email`,
+        email,
+        format,
+      });
+      return false;
+    }
   } catch (error) {
-    console.error("Failed to send export notification:", error);
+    logger.error({
+      msg: "Error sending export notification",
+      email,
+      error: error.message,
+    });
+    return false;
   }
 }

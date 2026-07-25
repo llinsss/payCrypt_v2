@@ -102,15 +102,9 @@ class BalanceViewModel extends BaseViewModel {
       orElse: () => _chains.first,
     );
 
-    // Filter tokens by matching chain symbol or native currency symbol
+    // Filter balances by chain ID from response
     return _tokenBalances.where((token) {
-      final tokenSymbol = token.tokenSymbol.toUpperCase();
-      final chainSymbol = selectedChainObj.symbol.toUpperCase();
-      final nativeCurrencySymbol =
-          selectedChainObj.nativeCurrency.symbol.toUpperCase();
-
-      return tokenSymbol == chainSymbol ||
-          tokenSymbol == nativeCurrencySymbol;
+      return token.chainId == selectedChainObj.id;
     }).toList();
   }
 
