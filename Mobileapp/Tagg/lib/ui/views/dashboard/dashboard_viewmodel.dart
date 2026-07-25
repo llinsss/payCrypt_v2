@@ -11,6 +11,7 @@ import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
 import 'package:Tagg/services/connectivity_service.dart';
 import 'package:Tagg/services/chains_service.dart';
+import 'package:Tagg/services/exchange_rate_service.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 import 'package:intl/intl.dart';
@@ -27,8 +28,7 @@ class DashboardViewModel extends BaseViewModel {
   final _walletService = locator<WalletService>();
   final _transactionService = locator<TransactionService>();
   final _chainsService = locator<ChainsService>();
-  final _connectivityService = locator<ConnectivityService>();
-  bool _isOffline = false;
+  final _exchangeRateService = locator<ExchangeRateService>();
 
   // Dashboard Data - matching web version structure
   DashboardSummary? _dashboardSummary;
@@ -42,6 +42,7 @@ class DashboardViewModel extends BaseViewModel {
   double _availableBalance = 0.00; // Available balance from wallet
   double _lockedBalance = 0.00; // Locked balance from wallet
   double _assetBalance = 0.00; // Total asset value from token balances
+  double _ngnRate = 1600; // Live NGN/USD exchange rate
 
   // UI State
   int _selectedTabIndex = 0;
@@ -61,6 +62,7 @@ class DashboardViewModel extends BaseViewModel {
   double get totalDeposits => _dashboardSummary?.totalDeposit ?? 0.0;
   double get totalWithdrawals => _dashboardSummary?.totalWithdrawal ?? 0.0;
   double get portfolioGrowth => _dashboardSummary?.portfolioGrowth ?? 0.0;
+  double get ngnRate => _ngnRate;
 
   int get selectedTabIndex => _selectedTabIndex;
 
@@ -111,12 +113,8 @@ class DashboardViewModel extends BaseViewModel {
       );
       print('✅ Transactions loaded: ${_transactions.length} transactions');
 
-      // Check if there are more transactions to load
-      _hasMore = _transactions.length >= _pageSize;
-      _currentPage = 1;
-
-      // Calculate balances
-      _calculateBalances();
+      // Calculate balances with live exchange rate
+      await _calculateBalances();
 
       notifyListeners();
     } catch (e, stackTrace) {
@@ -137,14 +135,14 @@ class DashboardViewModel extends BaseViewModel {
     }
   }
 
-  void _calculateBalances() {
+  Future<void> _calculateBalances() async {
     // Total balance - sum of all token USD values
     _totalBalance =
         _tokenBalances.fold(0.0, (sum, token) => sum + token.usdValue);
 
-    // Naira balance - sum of all token USD values * NGN rate
-    // Using 1485 as the conversion rate (you can adjust this)
-    _nairaBalance = _totalBalance * 1485;
+    // Fetch live NGN rate and convert
+    _ngnRate = await _exchangeRateService.getNgnRate();
+    _nairaBalance = _totalBalance * _ngnRate;
 
     // Available and locked balances from wallet data
     _availableBalance = _walletData?.availableBalance ?? 0.0;

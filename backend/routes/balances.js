@@ -8,6 +8,7 @@ import {
   getBalanceByUser,
   updateUserBalance,
   getBalanceByTag,
+  getBalanceSummary,
 } from "../controllers/balanceController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, validateParams } from "../middleware/validation.js";
@@ -77,6 +78,20 @@ router.get("/all", authenticate, balanceQueryLimiter, getBalances);
  *         description: Balance synced
  */
 router.get("/sync", authenticate, updateUserBalance);
+
+/**
+ * @swagger
+ * /api/balances/summary:
+ *   get:
+ *     summary: Get cross-chain balance summary
+ *     tags: [Balances]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Portfolio summary with aggregated USD and NGN values
+ */
+router.get("/summary", authenticate, balanceQueryLimiter, getBalanceSummary);
 
 /**
  * @swagger

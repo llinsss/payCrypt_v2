@@ -13,13 +13,14 @@ class TagService {
             throw new Error('Tag already exists');
         }
 
-        // Insert new tag
+        // Insert new tag with pending status
         const [id] = await db('stellar_tags').insert({
             tag: formattedTag,
-            stellar_address: stellarAddress
+            stellar_address: stellarAddress,
+            status: 'pending'
         }).returning('id'); // PG requires returning for ID
 
-        return { id, tag: formattedTag, stellarAddress };
+        return { id, tag: formattedTag, stellarAddress, status: 'pending' };
     }
 
     async checkAvailability(tag) {
@@ -72,8 +73,39 @@ class TagService {
 
     async resolveTag(tag) {
         const formattedTag = tag.toLowerCase();
-        const mapping = await db('stellar_tags').where({ tag: formattedTag }).first();
+        // Only resolve active tags for payments
+        const mapping = await db('stellar_tags').where({ tag: formattedTag, status: 'active' }).first();
         return mapping;
+    }
+
+    async confirmTag(tag) {
+        const formattedTag = tag.toLowerCase();
+
+        const result = await db('stellar_tags')
+            .where({ tag: formattedTag })
+            .update({
+                status: 'active',
+                confirmed_at: db.fn.now(),
+                updated_at: db.fn.now()
+            })
+            .returning('*');
+
+        return result[0];
+    }
+
+    async failTag(tag, reason) {
+        const formattedTag = tag.toLowerCase();
+
+        const result = await db('stellar_tags')
+            .where({ tag: formattedTag })
+            .update({
+                status: 'failed',
+                failure_reason: reason,
+                updated_at: db.fn.now()
+            })
+            .returning('*');
+
+        return result[0];
     }
 
     async transferTag(tag, newStellarAddress) {
