@@ -1,4 +1,5 @@
 import knex from "knex";
+import * as Sentry from "@sentry/node";
 import knexConfig from "../knexfile.js";
 import logger from "../utils/logger.js";
 import performanceService from "../services/PerformanceService.js";
@@ -72,6 +73,51 @@ db.on("pool-acquire-request-timeout", () => {
     type: "database_pool",
   });
 });
+
+// ===== Periodic pool monitoring =====
+// Reactive listeners above only fire on hard failures (errors, acquire
+// timeouts). This proactively polls pool utilization so we get a warning
+// before requests actually start queuing or timing out.
+const POOL_MONITOR_INTERVAL_MS =
+  Number(process.env.DB_POOL_MONITOR_INTERVAL_MS) || 30000;
+const POOL_UTILIZATION_CRITICAL_THRESHOLD =
+  Number(process.env.DB_POOL_CRITICAL_THRESHOLD_PERCENT) || 80;
+// Don't spam Sentry every interval while the pool stays hot.
+const CRITICAL_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+let lastCriticalAlertAt = 0;
+
+function monitorPoolHealth() {
+  const metrics = getPoolMetrics();
+  if (!metrics) return;
+
+  if (metrics.pendingAcquires > 0) {
+    logger.warn("Database pool has requests waiting for a connection", {
+      ...metrics,
+      type: "database_pool",
+    });
+  }
+
+  if (metrics.utilizationPercent >= POOL_UTILIZATION_CRITICAL_THRESHOLD) {
+    logger.error("Database pool utilization critical", {
+      ...metrics,
+      type: "database_pool",
+      alert: true,
+    });
+
+    const now = Date.now();
+    if (now - lastCriticalAlertAt > CRITICAL_ALERT_COOLDOWN_MS) {
+      lastCriticalAlertAt = now;
+      Sentry.captureMessage("Database connection pool utilization critical", {
+        level: "error",
+        tags: { type: "database_pool" },
+        extra: metrics,
+      });
+    }
+  }
+}
+
+const poolMonitorHandle = setInterval(monitorPoolHealth, POOL_MONITOR_INTERVAL_MS);
+poolMonitorHandle.unref?.();
 
 const SLOW_QUERY_THRESHOLD = process.env.SLOW_QUERY_THRESHOLD || 200; // ms
 const ALERT_QUERY_THRESHOLD = process.env.ALERT_QUERY_THRESHOLD || 1000; // ms
@@ -211,6 +257,15 @@ async function ensureConnectionWithRetry(options = {}) {
   };
 }
 
-export { getPoolMetrics, checkConnectionHealth, ensureConnectionWithRetry };
+function stopPoolMonitoring() {
+  clearInterval(poolMonitorHandle);
+}
+
+export {
+  getPoolMetrics,
+  checkConnectionHealth,
+  ensureConnectionWithRetry,
+  stopPoolMonitoring,
+};
 export default db;
 

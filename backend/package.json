@@ -23,6 +23,7 @@
         "test:db": "node scripts/test-db-setup.js",
         "test:migrations": "node scripts/test-migrations.js",
         "generate:migration-docs": "node scripts/generate-migration-docs.js",
+        "load-test:pool": "node scripts/load-test-pool.js",
         "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit"
     },
     "jest": {

@@ -1,6 +1,7 @@
 import db, {
   getPoolMetrics,
   checkConnectionHealth,
+  stopPoolMonitoring,
 } from "../config/database.js";
 import redis from "../config/redis.js";
 import { checkStellarHealth } from "../services/stellarMonitor.js";
@@ -199,6 +200,7 @@ export const checkAllDependencies = async () => {
 
 export const gracefulShutdown = async () => {
   try {
+    stopPoolMonitoring();
     await db.destroy();
     console.log("Database connection pool closed");
   } catch (error) {
