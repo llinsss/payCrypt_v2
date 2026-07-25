@@ -29,8 +29,8 @@ import 'package:Tagg/ui/views/notifications/notifications_view.dart';
 import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
-import 'package:Tagg/services/push_notification_service.dart';
-import 'package:Tagg/services/notification_service.dart';
+import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart';
+import 'package:Tagg/services/batch_payment_service.dart';
 // @stacked-import
 
 @StackedApp(
@@ -55,7 +55,7 @@ import 'package:Tagg/services/notification_service.dart';
     MaterialRoute(page: ChangePasswordView),
     MaterialRoute(page: ContactSupportView),
     MaterialRoute(page: NotificationsView),
-    MaterialRoute(page: TransactionDetailView),
+    MaterialRoute(page: BatchPaymentView),
 // @stacked-route
   ],
   dependencies: [
@@ -69,8 +69,7 @@ import 'package:Tagg/services/notification_service.dart';
     LazySingleton(classType: WalletService),
     LazySingleton(classType: TransactionService),
     LazySingleton(classType: ChainsService),
-    LazySingleton(classType: PushNotificationService),
-    LazySingleton(classType: NotificationService, resolve: () => NotificationService(locator<ApiService>())),
+    LazySingleton(classType: BatchPaymentService),
 // @stacked-service
   ],
   bottomsheets: [

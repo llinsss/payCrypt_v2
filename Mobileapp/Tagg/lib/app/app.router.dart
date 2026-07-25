@@ -23,7 +23,7 @@ import 'package:Tagg/ui/views/kyc_verification/kyc_verification_view.dart'
     as _i16;
 import 'package:Tagg/ui/views/multi_currency/multi_currency_view.dart' as _i14;
 import 'package:Tagg/ui/views/notifications/notifications_view.dart' as _i19;
-import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart' as _i22;
+import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart' as _i22;
 import 'package:Tagg/ui/views/profile_details/profile_details_view.dart'
     as _i15;
 import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart' as _i21;
@@ -71,7 +71,7 @@ class Routes {
 
   static const notificationsView = '/notifications-view';
 
-  static const transactionDetailView = '/transaction-detail-view';
+  static const batchPaymentView = '/batch-payment-view';
 
   static const all = <String>{
     homeView,
@@ -92,7 +92,7 @@ class Routes {
     changePasswordView,
     contactSupportView,
     notificationsView,
-    transactionDetailView,
+    batchPaymentView,
   };
 }
 
@@ -179,8 +179,8 @@ class StackedRouter extends _i1.RouterBase {
       page: _i19.NotificationsView,
     ),
     _i1.RouteDef(
-      Routes.transactionDetailView,
-      page: _i22.TransactionDetailView,
+      Routes.batchPaymentView,
+      page: _i22.BatchPaymentView,
     ),
   ];
 
@@ -293,15 +293,9 @@ class StackedRouter extends _i1.RouterBase {
         settings: data,
       );
     },
-    _i22.TransactionDetailView: (data) {
-      final args = data.arguments as Map<String, dynamic>?;
-      final transactionId = args != null && args.containsKey('transactionId')
-          ? args['transactionId'] as String
-          : '';
+    _i22.BatchPaymentView: (data) {
       return _i20.MaterialPageRoute<dynamic>(
-        builder: (context) => _i22.TransactionDetailView(
-          transactionId: transactionId,
-        ),
+        builder: (context) => const _i22.BatchPaymentView(),
         settings: data,
       );
     },
@@ -851,19 +845,31 @@ extension NavigatorStateExtension on _i21.NavigationService {
         transition: transition);
   }
 
-  Future<dynamic> replaceWithTransactionDetailView({
-    required int transactionId,
+  Future<dynamic> navigateToBatchPaymentView([
     int? routerId,
     bool preventDuplicates = true,
     Map<String, String>? parameters,
     Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
         transition,
-  }) async {
-    return replaceWith<dynamic>(Routes.transactionDetailView,
+  ]) async {
+    return navigateTo<dynamic>(Routes.batchPaymentView,
         id: routerId,
         preventDuplicates: preventDuplicates,
         parameters: parameters,
-        arguments: {'transactionId': transactionId},
+        transition: transition);
+  }
+
+  Future<dynamic> replaceWithBatchPaymentView([
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  ]) async {
+    return replaceWith<dynamic>(Routes.batchPaymentView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
         transition: transition);
   }
 }
