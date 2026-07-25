@@ -15,6 +15,7 @@ import WebhookEvent from "./WebhookEvent.js";
 import ScheduledPayment from "./ScheduledPayment.js";
 import AuditLog from "./AuditLog.js";
 import Dispute from "./Dispute.js";
+import DeviceToken from "./DeviceToken.js";
 
 export {
   User,
@@ -34,4 +35,5 @@ export {
   ScheduledPayment,
   AuditLog,
   Dispute,
+  DeviceToken,
 };

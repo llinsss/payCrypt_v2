@@ -1,5 +1,6 @@
 import Kyc from "../models/Kyc.js";
 import User from "../models/User.js";
+import NotificationService from "../services/NotificationService.js";
 
 export const createKyc = async (req, res) => {
   try {
@@ -25,6 +26,13 @@ export const approveKyc = async (req, res) => {
 
     await Kyc.update(id, { status: "approved" });
     await User.update(kyc.user_id, { is_verified: 1, kyc_status: "verified" });
+
+    NotificationService.sendToUser(kyc.user_id,
+      "KYC Approved",
+      "Your identity verification has been approved. You now have full access to all features.",
+      { type: "security_notifications" }
+    ).catch(err => console.error('FCM push error (kyc):', err.message));
+
     res.json({ message: "KYC approved" });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -43,6 +51,13 @@ export const rejectKyc = async (req, res) => {
       rejection_reason: reason || null,
     });
     await User.update(kyc.user_id, { is_verified: 0, kyc_status: "rejected" });
+
+    NotificationService.sendToUser(kyc.user_id,
+      "KYC Rejected",
+      `Your identity verification was rejected. Reason: ${reason || "Please try again with valid documents."}`,
+      { type: "security_notifications" }
+    ).catch(err => console.error('FCM push error (kyc):', err.message));
+
     res.json({ message: "KYC rejected" });
   } catch (error) {
     res.status(500).json({ error: error.message });

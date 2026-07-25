@@ -23,6 +23,7 @@ import 'package:Tagg/ui/views/kyc_verification/kyc_verification_view.dart'
     as _i16;
 import 'package:Tagg/ui/views/multi_currency/multi_currency_view.dart' as _i14;
 import 'package:Tagg/ui/views/notifications/notifications_view.dart' as _i19;
+import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart' as _i22;
 import 'package:Tagg/ui/views/profile_details/profile_details_view.dart'
     as _i15;
 import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart' as _i21;
@@ -179,7 +180,7 @@ class StackedRouter extends _i1.RouterBase {
     ),
     _i1.RouteDef(
       Routes.transactionDetailView,
-      page: _i21.TransactionDetailView,
+      page: _i22.TransactionDetailView,
     ),
   ];
 
@@ -292,11 +293,14 @@ class StackedRouter extends _i1.RouterBase {
         settings: data,
       );
     },
-    _i21.TransactionDetailView: (data) {
+    _i22.TransactionDetailView: (data) {
       final args = data.arguments as Map<String, dynamic>?;
+      final transactionId = args != null && args.containsKey('transactionId')
+          ? args['transactionId'] as String
+          : '';
       return _i20.MaterialPageRoute<dynamic>(
-        builder: (context) => _i21.TransactionDetailView(
-          transactionId: args?['transactionId'] as int? ?? 0,
+        builder: (context) => _i22.TransactionDetailView(
+          transactionId: transactionId,
         ),
         settings: data,
       );
@@ -815,6 +819,22 @@ extension NavigatorStateExtension on _i21.NavigationService {
         preventDuplicates: preventDuplicates,
         parameters: parameters,
         transition: transition);
+  }
+
+  Future<dynamic> navigateToTransactionDetailView({
+    required String transactionId,
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  }) async {
+    return navigateTo<dynamic>(Routes.transactionDetailView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        transition: transition,
+        arguments: {'transactionId': transactionId});
   }
 
   Future<dynamic> replaceWithNotificationsView([
