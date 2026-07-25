@@ -32,6 +32,7 @@ import {
 } from "../schemas/transaction.js";
 import { processPaymentSchema } from "../schemas/payment.js";
 import { rateLimit } from "../middleware/rateLimiter.js";
+import { privateNoStore } from "../middleware/cacheControl.js";
 
 const router = express.Router();
 

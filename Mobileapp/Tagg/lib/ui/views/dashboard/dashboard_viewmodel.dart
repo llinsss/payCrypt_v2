@@ -16,8 +16,10 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/widgets.dart';
 
 class DashboardViewModel extends BaseViewModel {
+  final ScrollController transactionScrollController = ScrollController();
   final _dialogService = locator<DialogService>();
   final _snackbarService = locator<SnackbarService>();
   final _userService = locator<UserService>();

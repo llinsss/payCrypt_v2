@@ -2,6 +2,7 @@ import { Worker } from "bullmq";
 import db from "../config/database.js";
 import { redisConnection } from "../config/redis.js";
 import { webhookQueue } from "../queues/webhook.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 /**
  * Worker to confirm pending transactions by checking on-chain status
@@ -138,6 +139,8 @@ export const transactionConfirmationWorker = redisConnection
       }
     )
   : null;
+
+if (transactionConfirmationWorker) instrumentBullWorker(transactionConfirmationWorker, "transaction-confirmation");
 
 /**
  * Check if a transaction is confirmed on-chain
