@@ -5,6 +5,7 @@ import Transaction from "./Transaction.js";
 import Notification from "./Notification.js";
 import Chain from "./Chain.js";
 import Wallet from "./Wallet.js";
+import MultiSigWallet from "./MultiSigWallet.js";
 import Kyc from "./Kyc.js";
 import BankAccount from "./BankAccount.js";
 import StellarTag from "./StellarTag.js";
@@ -25,6 +26,7 @@ export {
   Notification,
   Chain,
   Wallet,
+  MultiSigWallet,
   Kyc,
   BankAccount,
   StellarTag,
