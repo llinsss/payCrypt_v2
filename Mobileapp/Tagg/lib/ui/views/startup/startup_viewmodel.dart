@@ -2,22 +2,71 @@ import 'package:stacked/stacked.dart';
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/services/api_service.dart';
+import 'package:Tagg/services/biometric_service.dart';
+import 'package:Tagg/services/auth_service.dart';
+import 'package:Tagg/services/deep_link_service.dart';
 import 'package:stacked_services/stacked_services.dart';
 
 class StartupViewModel extends BaseViewModel {
   final _navigationService = locator<NavigationService>();
   final _apiService = locator<ApiService>();
+  final _biometricService = locator<BiometricService>();
+  final _authService = locator<AuthService>();
+  final _deepLinkService = locator<DeepLinkService>();
 
-  // Place anything here that needs to happen before we get into the application
   Future runStartupLogic() async {
     // Initialize the API service token from storage
     await _apiService.initializeToken();
 
+    // Start listening for deep links
+    _setupDeepLinkListener();
+
+    // Check if user has an active session
+    final hasActiveSession = _authService.isAuthenticated();
+
+    if (hasActiveSession) {
+      // Check if biometric unlock is enabled
+      final isBiometricEnabled = await _biometricService.isBiometricUnlockEnabled();
+
+      if (isBiometricEnabled) {
+        // Attempt biometric authentication
+        final authenticated = await _biometricService.authenticateWithFallback();
+
+        if (authenticated) {
+          // Biometric successful, navigate to home
+          await Future.delayed(const Duration(seconds: 1));
+          _navigationService.replaceWithBottomnavView();
+          return;
+        } else {
+          // Biometric failed, require login
+          _navigationService.replaceWithSigninView();
+          return;
+        }
+      } else {
+        // No biometric enabled, go to home
+        await Future.delayed(const Duration(seconds: 1));
+        _navigationService.replaceWithBottomnavView();
+        return;
+      }
+    }
+
     await Future.delayed(const Duration(seconds: 3));
-
-    // This is where you can make decisions on where your app should navigate when
-    // you have custom startup logic
-
     _navigationService.replaceWithSigninView();
+  }
+
+  void _setupDeepLinkListener() {
+    _deepLinkService.initDeepLinks((deepLink) {
+      if (_authService.isAuthenticated() && deepLink.tag != null) {
+        // Navigate to deposit view with recipient pre-filled
+        // The app will display recipient and amount fields for sending
+        _navigationService.navigateToDepositView();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _deepLinkService.dispose();
+    super.dispose();
   }
 }

@@ -113,7 +113,7 @@ payCrypt_v2/
 ├── src/              # React frontend
 ├── contracts/        # Smart contracts
 ├── packages/         # Shared packages
-└── docs/            # Documentation
+└── docs/             # Documentation
 ```
 
 ## Testing

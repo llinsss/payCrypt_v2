@@ -7,6 +7,7 @@ import PaystackService from "./PaystackService.js";
 import MonnifyService from "./MonnifyService.js";
 import ExchangeRateService from "./exchange-rate-api.js";
 import { publish } from "../config/redis.js";
+import NotificationService from "./NotificationService.js";
 
 class OffRampService {
   /**
@@ -202,6 +203,12 @@ class OffRampService {
         currency: withdrawal.currency,
         message: `Your withdrawal of ${withdrawal.amount_fiat} ${withdrawal.currency} has been delivered.`
       });
+
+      NotificationService.sendToUser(withdrawal.user_id,
+        "Withdrawal Completed",
+        `Your withdrawal of ${withdrawal.amount_fiat} ${withdrawal.currency} has been delivered successfully.`,
+        { type: "transaction_notifications", withdrawal_id: String(withdrawal.id) }
+      ).catch(err => console.error('FCM push error (withdrawal):', err.message));
     } else if (status === 'failed' || status === 'FAILED' || status === 'reversed') {
       await this._handleTransferFailure(withdrawal.id, details.message || 'Transfer failed at provider');
     }

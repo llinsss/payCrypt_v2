@@ -13,34 +13,41 @@ import {
   getPaymentLimits,
   getPaymentHistory,
   updateTransactionNote,
-  searchTransactions
+  searchTransactions,
 } from "../controllers/transactionController.js";
 import {
-  authenticate,
   authenticateJwtOrApiKey,
-  userRateLimiter
+  userRateLimiter,
 } from "../middleware/auth.js";
+import { requireApiKeyScope } from "../middleware/apiKeyAuth.js";
 import { validate, validateQuery, validateParams } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
-import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
+import {
+  transactionSchema,
+  transactionQuerySchema,
+} from "../schemas/transaction.js";
 import { processPaymentSchema } from "../schemas/payment.js";
 import { rateLimit } from "../middleware/rateLimiter.js";
+import { privateNoStore } from "../middleware/cacheControl.js";
 
 const router = express.Router();
 
-router.get("/search", authenticate, rateLimit({ endpointName: "api" }), searchTransactions);
-router.get("/", authenticate, rateLimit({ endpointName: "api" }), getTransactionByUser);
+// Read-only routes - requires transactions:read scope for API keys (JWT users bypass scope check)
+router.get("/search", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), requireApiKeyScope(["transactions:read"]), searchTransactions);
+router.get("/", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), requireApiKeyScope(["transactions:read"]), getTransactionByUser);
 router.get("/export/download", rateLimit({ endpointName: "download", windowMs: 15 * 60 * 1000, max: 10 }), downloadExport);
-router.get("/export", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "export", windowMs: 60 * 60 * 1000, max: 5 }), exportTransactions);
-router.get("/tag/:tag", authenticate, userRateLimiter, validateParams(transactionTagParamSchema), validateQuery(transactionQuerySchema), getTransactionsByTag);
-router.get("/:id", authenticate, rateLimit({ endpointName: "api" }), validateParams(transactionIdParamSchema), getTransactionById);
-router.put("/:id", authenticate, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "transactions" }), validateParams(transactionIdParamSchema), validate(transactionSchema), auditLog("transactions"), updateTransaction);
-router.delete("/:id", authenticate, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "transactions" }), validateParams(transactionIdParamSchema), auditLog("transactions"), deleteTransaction);
+router.get("/export", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "export", windowMs: 60 * 60 * 1000, max: 5 }), requireApiKeyScope(["transactions:read"]), exportTransactions);
+router.get("/tag/:tag", authenticateJwtOrApiKey, userRateLimiter, validateParams(transactionTagParamSchema), validateQuery(transactionQuerySchema), requireApiKeyScope(["transactions:read"]), getTransactionsByTag);
+router.get("/:id", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), validateParams(transactionIdParamSchema), requireApiKeyScope(["transactions:read"]), getTransactionById);
 
-// Payment operations
-router.post("/payment", authenticate, rateLimit({ endpointName: "transactions" }), validate(processPaymentSchema), auditLog("transactions"), processPayment);
-router.post("/batches", authenticate, rateLimit({ endpointName: "transactions" }), validate(batchPaymentSchema), auditLog("transactions"), createBatchPayment);
+// Write routes - requires transactions:write scope for API keys (JWT users bypass scope check)
+router.put("/:id", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "transactions" }), validateParams(transactionIdParamSchema), validate(transactionSchema), auditLog("transactions"), requireApiKeyScope(["transactions:write"]), updateTransaction);
+router.delete("/:id", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "transactions" }), validateParams(transactionIdParamSchema), auditLog("transactions"), requireApiKeyScope(["transactions:write"]), deleteTransaction);
+
+// Payment operations - requires transactions:write or payments:send scope
+router.post("/payment", authenticateJwtOrApiKey, rateLimit({ endpointName: "transactions" }), validate(processPaymentSchema), auditLog("transactions"), requireApiKeyScope(["transactions:write", "payments:send"]), processPayment);
+router.post("/batches", authenticateJwtOrApiKey, rateLimit({ endpointName: "transactions" }), validate(batchPaymentSchema), auditLog("transactions"), requireApiKeyScope(["transactions:write", "payments:send"]), createBatchPayment);
 router.get("/payment/limits", getPaymentLimits);
-router.get("/tag/:tag/history", authenticate, userRateLimiter, getPaymentHistory);
+router.get("/tag/:tag/history", authenticateJwtOrApiKey, userRateLimiter, requireApiKeyScope(["transactions:read"]), getPaymentHistory);
 
 export default router;

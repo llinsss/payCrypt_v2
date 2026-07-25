@@ -107,6 +107,36 @@ class TagController {
             res.status(500).json({ status: 'error', message: 'Internal server error' });
         }
     }
+
+    async search(req, res) {
+        try {
+            const { q } = req.query;
+
+            if (!q || typeof q !== 'string') {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Search query parameter "q" is required'
+                });
+            }
+
+            if (q.length < 1) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Search query must be at least 1 character'
+                });
+            }
+
+            const results = await TagService.searchTags(q);
+
+            res.status(200).json({
+                status: 'success',
+                data: results
+            });
+        } catch (error) {
+            console.error('Search Tags Error:', error);
+            res.status(500).json({ status: 'error', message: 'Internal server error' });
+        }
+    }
 }
 
 export default new TagController();
