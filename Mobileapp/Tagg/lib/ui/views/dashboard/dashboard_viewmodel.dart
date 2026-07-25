@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/models/dashboard_summary.dart';
 import 'package:Tagg/models/transaction_model.dart';
@@ -11,6 +13,8 @@ import 'package:Tagg/services/chains_service.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/widgets.dart';
 
@@ -322,15 +326,38 @@ class DashboardViewModel extends BaseViewModel {
     }
   }
 
-  /// Open transaction details screen
-  void openTransactionDetails(Transaction transaction) {
-    _navigationService.navigateToTransactionDetailView(transactionId: transaction.id);
+  /// Share a receipt for a completed transaction.
+  Future<void> openTransactionDetails(Transaction transaction) async {
+    if (transaction.status.toLowerCase() != 'completed') {
+      _dialogService.showDialog(
+        title: 'Receipt unavailable',
+        description: 'Receipts are only available for completed transactions.',
+      );
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      final receiptBytes = await _transactionService.getTransactionReceipt(transaction.id);
+      final file = await _saveReceiptToFile(receiptBytes, transaction.id);
+      await Share.shareXFiles([XFile(file.path)], subject: 'Transaction Receipt');
+      _snackbarService.showSnackbar(
+        message: 'Receipt ready to share',
+        duration: const Duration(seconds: 2),
+      );
+    } catch (e) {
+      _showError('Failed to prepare receipt: $e');
+    } finally {
+      setBusy(false);
+    }
   }
 
-  @override
-  void dispose() {
-    transactionScrollController.dispose();
-    super.dispose();
+  Future<File> _saveReceiptToFile(Uint8List bytes, int transactionId) async {
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/receipt-$transactionId.pdf');
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
   }
 
   void _launchURL(String url) async {

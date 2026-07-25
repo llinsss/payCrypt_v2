@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:Tagg/ui/common/api_constants.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -49,6 +50,23 @@ class ApiService {
         headers: _headers,
       );
       return _handleResponse(response);
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
+  Future<Uint8List> getBytes(String endpoint) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConstants.apiUrl}$endpoint'),
+        headers: _headers,
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return response.bodyBytes;
+      }
+
+      throw Exception(_extractErrorMessage(response));
     } catch (e) {
       throw Exception('Network error: $e');
     }
@@ -118,39 +136,45 @@ class ApiService {
         return json.decode(response.body);
       }
       return null;
-    } else if (response.statusCode == 400) {
-      throw Exception(
-          'Bad Request: The server could not understand the request');
-    } else if (response.statusCode == 401) {
-      throw Exception('Unauthorized: Please login again');
-    } else if (response.statusCode == 403) {
-      throw Exception(
-          'Forbidden: You do not have permission to perform this action');
-    } else if (response.statusCode == 404) {
-      throw Exception('Not Found: The requested resource does not exist');
-    } else if (response.statusCode == 409) {
-      throw Exception(
-          'Conflict: The request could not be completed due to a conflict');
-    } else if (response.statusCode == 422) {
-      throw Exception(
-          'Unprocessable Entity: Validation failed or invalid data');
-    } else if (response.statusCode == 429) {
-      throw Exception('Too Many Requests: You have hit the rate limit');
-    } else if (response.statusCode == 500) {
-      throw Exception(
-          'Internal Server Error: Something went wrong on the server');
-    } else if (response.statusCode == 502) {
-      throw Exception('Bad Gateway: Invalid response from upstream server');
-    } else if (response.statusCode == 503) {
-      throw Exception(
-          'Service Unavailable: Server is temporarily down or overloaded');
-    } else if (response.statusCode == 504) {
-      throw Exception('Gateway Timeout: The server took too long to respond');
-    } else {
-      final error = response.body.isNotEmpty
-          ? json.decode(response.body)['message'] ?? 'Request failed'
-          : 'Request failed with status: ${response.statusCode}';
-      throw Exception(error);
     }
+
+    throw Exception(_extractErrorMessage(response));
+  }
+
+  String _extractErrorMessage(http.Response response) {
+    if (response.statusCode == 400) {
+      return 'Bad Request: The server could not understand the request';
+    } else if (response.statusCode == 401) {
+      return 'Unauthorized: Please login again';
+    } else if (response.statusCode == 403) {
+      return 'Forbidden: You do not have permission to perform this action';
+    } else if (response.statusCode == 404) {
+      return 'Not Found: The requested resource does not exist';
+    } else if (response.statusCode == 409) {
+      return 'Conflict: The request could not be completed due to a conflict';
+    } else if (response.statusCode == 422) {
+      return 'Unprocessable Entity: Validation failed or invalid data';
+    } else if (response.statusCode == 429) {
+      return 'Too Many Requests: You have hit the rate limit';
+    } else if (response.statusCode == 500) {
+      return 'Internal Server Error: Something went wrong on the server';
+    } else if (response.statusCode == 502) {
+      return 'Bad Gateway: Invalid response from upstream server';
+    } else if (response.statusCode == 503) {
+      return 'Service Unavailable: Server is temporarily down or overloaded';
+    } else if (response.statusCode == 504) {
+      return 'Gateway Timeout: The server took too long to respond';
+    }
+
+    if (response.body.isNotEmpty) {
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+          return decoded['message'].toString();
+        }
+      } catch (_) {}
+    }
+
+    return 'Request failed with status: ${response.statusCode}';
   }
 }
