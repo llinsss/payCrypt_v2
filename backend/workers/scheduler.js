@@ -95,6 +95,12 @@ export const executionWorker = redisConnection
                         body: `Your scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} has been executed successfully.`,
                     });
 
+                    NotificationService.sendToUser(payment.user_id,
+                        "Scheduled Payment Executed",
+                        `Your scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} has been executed successfully.`,
+                        { type: "payment_notifications", scheduled_payment_id: String(payment.id) }
+                    ).catch(err => console.error('FCM push error (scheduled payment):', err.message));
+
                     processed++;
                     console.log(`✅ Scheduler: executed payment #${payment.id}`);
                 } catch (error) {

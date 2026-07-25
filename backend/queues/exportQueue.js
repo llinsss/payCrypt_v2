@@ -1,6 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import ExportService from "../services/ExportService.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 export const exportQueue = redisConnection
   ? new Queue("transaction-export", {
@@ -26,6 +27,8 @@ export const exportWorker =
       concurrency: 2,
     }
   );
+
+if (exportWorker) instrumentBullWorker(exportWorker, "transaction-export");
 
 if (exportWorker) {
   exportWorker.on("completed", (job) =>
