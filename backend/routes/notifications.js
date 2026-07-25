@@ -7,6 +7,8 @@ import {
   getUnreadNotificationByUserId,
   getPreferences,
   updatePreferences,
+  registerDeviceToken,
+  unregisterDeviceToken,
 } from "../controllers/notificationController.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -16,6 +18,9 @@ router.get("/", authenticate, getNotificationByUserId);
 router.get("/unread", authenticate, getUnreadNotificationByUserId);
 router.get("/preferences", authenticate, getPreferences);
 router.put("/preferences", authenticate, updatePreferences);
+router.post("/device-token", authenticate, registerDeviceToken);
+router.delete("/device-token", authenticate, unregisterDeviceToken);
+router.post("/device-token/unregister", authenticate, unregisterDeviceToken);
 router.get("/:id", authenticate, getNotificationById);
 router.put("/:id", authenticate, updateNotification);
 router.delete("/:id", authenticate, deleteNotification);

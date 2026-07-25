@@ -1,5 +1,6 @@
 import { createClient } from "redis";
 import dotenv from "dotenv";
+import { instrumentRedisClient } from "../observability/sentry.js";
 dotenv.config();
 
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -20,6 +21,9 @@ const redis = createRedisClient("Main");
 
 // Subscriber client specifically for SUB
 const subClient = createRedisClient("Sub");
+
+instrumentRedisClient(redis, "main");
+instrumentRedisClient(subClient, "subscriber");
 
 const redisConnection = {
   host: process.env.REDIS_HOST || 'localhost',

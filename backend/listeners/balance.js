@@ -10,6 +10,7 @@ import {
 import secureRandomString from "../utils/random-string.js";
 import * as evm from "../contracts/services/evm.js";
 import * as starknet from "../contracts/services/starknet.js";
+import * as flow from "../contracts/services/flow.js";
 import { chains } from "../contracts/index.js";
 
 const POLL_INTERVAL = 10_000;
@@ -82,8 +83,10 @@ export const startBalancePoller = async () => {
             const chain = chains[token.symbol];
             try {
               const onchainValue = await withRetry(() =>
-                chain == "starknet"
+                chain === "starknet"
                   ? starknet.getTagBalance(user.tag)
+                  : chain === "flow"
+                  ? flow.getTagBalance(user.tag)
                   : evm.getTagBalance(chain, user.tag)
               );
 

@@ -1,4 +1,5 @@
 import 'package:Tagg/ui/common/app_assets.dart';
+import 'package:Tagg/ui/common/offline_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -19,6 +20,7 @@ class SwapView extends StackedView<SwapViewModel> {
       body: SafeArea(
         child: Column(
           children: [
+            if (viewModel.isOffline) const OfflineBanner(),
             _buildTopNavigation(viewModel),
         
             SizedBox(height: 30),
@@ -471,9 +473,15 @@ class SwapView extends StackedView<SwapViewModel> {
   }
 
   Widget _buildSwapButton(SwapViewModel viewModel) {
-    return GestureDetector(
-      onTap: () => viewModel.performSwap(),
-      child: Container(
+    return Tooltip(
+      message: viewModel.isOffline ? 'Offline' : '',
+      child: IgnorePointer(
+        ignoring: viewModel.isOffline,
+        child: Opacity(
+          opacity: viewModel.isOffline ? 0.5 : 1.0,
+          child: GestureDetector(
+            onTap: () => viewModel.performSwap(),
+            child: Container(
         width: double.infinity,
         height: 60,
         decoration: BoxDecoration(
@@ -489,6 +497,8 @@ class SwapView extends StackedView<SwapViewModel> {
                   color: Color(0xFFE2E2E2),
                   fontSize: 14,
                   fontWeight: FontWeight.w500)),
+        ),
+          ),
         ),
       ),
     );

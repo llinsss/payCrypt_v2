@@ -13,13 +13,13 @@ export const seed = async (knex) => {
     await knex("stellar_tags").insert([
       {
         tag: "@stellar_demo",
-        stellar_address: "GAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        stellar_address: "GDMTPCGZXQKOCDCB2YGFZYZKFEJDMKFGA4F4UCKCODVSXGMIBUWLBCTW",
         created_at: knex.fn.now(),
         updated_at: knex.fn.now(),
       },
       {
         tag: "@test_account",
-        stellar_address: "GBXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        stellar_address: "GDCAD62OOVRVJTRXELXYKUAUF7C3NG4D6T6L2TUKRCQMMSCKYF45IVO6",
         created_at: knex.fn.now(),
         updated_at: knex.fn.now(),
       },
@@ -36,8 +36,8 @@ export const seed = async (knex) => {
     // Insert example stellar accounts
     await knex("stellar_accounts").insert([
       {
-        stellar_address: "GAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-        public_key: "GAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        stellar_address: "GDMTPCGZXQKOCDCB2YGFZYZKFEJDMKFGA4F4UCKCODVSXGMIBUWLBCTW",
+        public_key: "GDMTPCGZXQKOCDCB2YGFZYZKFEJDMKFGA4F4UCKCODVSXGMIBUWLBCTW",
         account_type: "standard",
         xlm_balance: 1000.0,
         sequence_number: 123456,

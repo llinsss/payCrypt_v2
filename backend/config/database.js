@@ -2,6 +2,7 @@ import knex from "knex";
 import knexConfig from "../knexfile.js";
 import logger from "../utils/logger.js";
 import performanceService from "../services/PerformanceService.js";
+import * as Sentry from "@sentry/node";
 
 const CONNECTION_ACQUIRE_TIMEOUT_MS =
   Number(process.env.DB_ACQUIRE_TIMEOUT_MS) || 30000;
@@ -78,11 +79,18 @@ const ALERT_QUERY_THRESHOLD = process.env.ALERT_QUERY_THRESHOLD || 1000; // ms
 
 db.on("query", (query) => {
   query.__startTime = Date.now();
+  query.__sentrySpan = Sentry.startInactiveSpan({
+    name: query.sql || "database query",
+    op: "db.query",
+    attributes: { "db.system": "postgresql", "db.operation": query.method || "query" },
+  });
 });
 
 db.on("query-response", (response, obj, builder) => {
   if (obj.__startTime) {
     const duration = Date.now() - obj.__startTime;
+    obj.__sentrySpan?.setAttribute("db.duration_ms", duration);
+    obj.__sentrySpan?.end();
     const sql = obj.sql;
     const isSlow = duration >= SLOW_QUERY_THRESHOLD;
 
@@ -119,6 +127,9 @@ db.on("query-response", (response, obj, builder) => {
 db.on("query-error", (error, obj) => {
   if (obj.__startTime) {
     const duration = Date.now() - obj.__startTime;
+    obj.__sentrySpan?.setAttribute("db.duration_ms", duration);
+    obj.__sentrySpan?.setStatus({ code: 2 });
+    obj.__sentrySpan?.end();
     logger.error(`Database Query Error (${duration}ms): ${obj.sql}`, {
       error: error.message,
       duration,
@@ -213,4 +224,3 @@ async function ensureConnectionWithRetry(options = {}) {
 
 export { getPoolMetrics, checkConnectionHealth, ensureConnectionWithRetry };
 export default db;
-
