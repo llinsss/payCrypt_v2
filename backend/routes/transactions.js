@@ -25,11 +25,12 @@ import { auditLog } from "../middleware/audit.js";
 import { transactionSchema, transactionQuerySchema } from "../schemas/transaction.js";
 import { processPaymentSchema } from "../schemas/payment.js";
 import { rateLimit } from "../middleware/rateLimiter.js";
+import { privateNoStore } from "../middleware/cacheControl.js";
 
 const router = express.Router();
 
 router.get("/search", authenticate, rateLimit({ endpointName: "api" }), searchTransactions);
-router.get("/", authenticate, rateLimit({ endpointName: "api" }), getTransactionByUser);
+router.get("/", authenticate, rateLimit({ endpointName: "api" }), privateNoStore, getTransactionByUser);
 router.get("/export/download", rateLimit({ endpointName: "download", windowMs: 15 * 60 * 1000, max: 10 }), downloadExport);
 router.get("/export", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), rateLimit({ endpointName: "export", windowMs: 60 * 60 * 1000, max: 5 }), exportTransactions);
 router.get("/tag/:tag", authenticate, userRateLimiter, validateParams(transactionTagParamSchema), validateQuery(transactionQuerySchema), getTransactionsByTag);
