@@ -22,7 +22,9 @@ import exportRoutes from "./exports.js";
 import ussdRoutes from "./ussd.js";
 import batchPaymentRoutes from "./batchPayments.js";
 import keyRoutes from "./keys.js";
-import { deprecationWarning } from "../middleware/apiVersion.js";
+import tagRoutes from "./tagRoutes.js";
+import withdrawalRoutes from "./withdrawals.js";
+import { versionHeaders, CURRENT_VERSION, DEPRECATIONS } from "../middleware/apiVersion.js";
 
 const router = express.Router();
 
@@ -50,20 +52,56 @@ const registerRoutes = (router) => {
   router.use("/ussd", ussdRoutes);
   router.use("/batches", batchPaymentRoutes);
   router.use("/keys", keyRoutes);
+  router.use("/tags", tagRoutes);
+  router.use("/withdrawals", withdrawalRoutes);
 };
+
+/**
+ * @swagger
+ * /api/versions:
+ *   get:
+ *     summary: List available API versions and their deprecation status
+ *     tags: [Versioning]
+ *     responses:
+ *       200:
+ *         description: Version metadata
+ */
+router.get("/versions", (req, res) => {
+  const versions = new Set([1, CURRENT_VERSION]);
+  res.status(200).json({
+    current: CURRENT_VERSION,
+    versions: Array.from(versions)
+      .sort((a, b) => a - b)
+      .map((version) => {
+        const deprecation = DEPRECATIONS[version];
+        return {
+          version,
+          status: deprecation ? "deprecated" : version === CURRENT_VERSION ? "current" : "supported",
+          ...(deprecation && {
+            deprecatedAt: deprecation.deprecatedAt.toISOString(),
+            sunset: deprecation.sunsetAt.toISOString(),
+            migrationGuide: deprecation.migrationGuide,
+          }),
+        };
+      }),
+  });
+});
 
 // V1 routes (deprecated)
 const v1Router = express.Router();
-v1Router.use(deprecationWarning('v1', '2025-12-31'));
+v1Router.use(versionHeaders(1));
 registerRoutes(v1Router);
 router.use("/v1", v1Router);
 
 // V2 routes (current)
 const v2Router = express.Router();
+v2Router.use(versionHeaders(CURRENT_VERSION));
 registerRoutes(v2Router);
 router.use("/v2", v2Router);
 
-// Default to v2 for backward compatibility
+// Default (unversioned) alias — kept for backward compatibility, always
+// mirrors the current version.
+router.use(versionHeaders(CURRENT_VERSION));
 registerRoutes(router);
 
 export default router;
