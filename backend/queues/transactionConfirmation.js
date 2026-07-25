@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection } from "../config/redis.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 /**
  * Queue for processing transaction confirmations
@@ -23,6 +24,7 @@ export const transactionConfirmationQueue = redisConnection
       },
     })
   : null;
+attachRedisErrorAlert(transactionConfirmationQueue, "transaction-confirmation-queue");
 
 if (transactionConfirmationQueue) {
   console.log("📬 Transaction confirmation queue initialized");

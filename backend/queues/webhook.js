@@ -5,7 +5,7 @@ import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import { validateWebhookUrl } from "../utils/validateWebhookUrl.js";
-import { instrumentBullWorker } from "../observability/sentry.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 // ========== Queue ==========
 
@@ -18,6 +18,7 @@ export const webhookQueue = redisConnection
       },
     })
   : null;
+attachRedisErrorAlert(webhookQueue, "webhook-delivery-queue");
 
 if (webhookQueue) {
   webhookQueue.on("waiting", (job) =>
@@ -60,6 +61,7 @@ export const webhookWorker = redisConnection
       },
     )
   : null;
+attachRedisErrorAlert(webhookWorker, "webhook-delivery-worker");
 
 if (webhookWorker) instrumentBullWorker(webhookWorker, "webhook-delivery");
 

@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import { createUserBalance } from "../controllers/balanceController.js";
-import { instrumentBullWorker } from "../observability/sentry.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 export const balanceWorker = redisConnection ? new Worker(
   "balance-setup",
@@ -16,6 +16,7 @@ export const balanceWorker = redisConnection ? new Worker(
     concurrency: 5,
   }
 ) : null;
+attachRedisErrorAlert(balanceWorker, "balance-setup-worker");
 
 if (balanceWorker) instrumentBullWorker(balanceWorker, "balance-setup");
 

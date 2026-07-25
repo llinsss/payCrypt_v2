@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import db from "../config/database.js";
 import { redisConnection } from "../config/redis.js";
 import { webhookQueue } from "../queues/webhook.js";
-import { instrumentBullWorker } from "../observability/sentry.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 /**
  * Worker to confirm pending transactions by checking on-chain status
@@ -223,6 +223,7 @@ async function checkTransactionFailure(txHash, chain) {
 
   return false;
 }
+attachRedisErrorAlert(transactionConfirmationWorker, "transaction-confirmation-worker");
 
 if (transactionConfirmationWorker) {
   transactionConfirmationWorker.on("completed", (job) => {

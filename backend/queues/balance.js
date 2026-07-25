@@ -1,7 +1,9 @@
 import { Queue } from "bullmq";
 import queueConfig from "./index.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 export const balanceQueue = queueConfig ? new Queue("balance-setup", queueConfig) : null;
+attachRedisErrorAlert(balanceQueue, "balance-setup-queue");
 
 if (balanceQueue) {
   balanceQueue.on("waiting", (job) =>

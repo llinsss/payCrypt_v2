@@ -1,7 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import WebhookDeliveryService from "../services/WebhookDeliveryService.js";
-import { instrumentBullWorker } from "../observability/sentry.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 // ========== Retry Queue Setup ==========
 // Utilizes custom explicit delays managed entirely via the delivery service,
@@ -17,6 +17,7 @@ export const webhookRetryQueue = redisConnection
       },
     })
   : null;
+attachRedisErrorAlert(webhookRetryQueue, "webhook-retry-queue");
 
 if (webhookRetryQueue) {
   webhookRetryQueue.on("waiting", (job) =>
@@ -56,6 +57,7 @@ export const webhookRetryWorker = redisConnection
       },
     )
   : null;
+attachRedisErrorAlert(webhookRetryWorker, "webhook-retry-worker");
 
 if (webhookRetryWorker) instrumentBullWorker(webhookRetryWorker, "webhook-retry");
 
