@@ -15,10 +15,13 @@ import 'package:stacked_shared/stacked_shared.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/chains_service.dart';
+import '../services/notification_service.dart';
+import '../services/push_notification_service.dart';
 import '../services/transaction_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/user_service.dart';
 import '../services/wallet_service.dart';
+import '../services/batch_payment_service.dart';
 
 final locator = StackedLocator.instance;
 

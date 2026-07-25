@@ -7,6 +7,7 @@ import {
   deleteToken,
 } from "../controllers/tokenController.js";
 import { authenticate } from "../middleware/auth.js";
+import { publicCache } from "../middleware/cacheControl.js";
 const router = express.Router();
 
 /**
@@ -35,7 +36,7 @@ const router = express.Router();
  *         description: Token created
  */
 router.post("/", createToken);
-router.get("/", getTokens);
+router.get("/", publicCache(3600), getTokens);
 
 /**
  * @swagger
