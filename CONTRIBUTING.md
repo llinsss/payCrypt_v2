@@ -54,6 +54,21 @@ Thank you for your interest in contributing to Tagged! This document provides gu
    npm run dev
    ```
 
+## Local development data
+
+The development seed creates five users, each with the password `DemoPass123!`:
+
+| User | Email | KYC state |
+| --- | --- | --- |
+| `@demo_alice` | `alice@demo.tagged.local` | verified |
+| `@demo_bola` | `bola@demo.tagged.local` | pending |
+| `@demo_chidi` | `chidi@demo.tagged.local` | none |
+| `@demo_dayo` | `dayo@demo.tagged.local` | verified |
+| `@demo_eni` | `eni@demo.tagged.local` | rejected |
+
+These credentials and records are for local development and staging only. Do
+not use them in production or reuse the password for real accounts.
+
 ## Code Standards
 
 ### JavaScript/TypeScript
@@ -89,7 +104,7 @@ payCrypt_v2/
 ├── src/              # React frontend
 ├── contracts/        # Smart contracts
 ├── packages/         # Shared packages
-└── docs/            # Documentation
+└── docs/             # Documentation
 ```
 
 ## Testing

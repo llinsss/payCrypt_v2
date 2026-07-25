@@ -27,6 +27,7 @@ class DashboardView extends StackedView<DashboardViewModel> {
             // Main Content
             Expanded(
               child: SingleChildScrollView(
+                controller: viewModel.transactionScrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
