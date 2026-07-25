@@ -1,4 +1,5 @@
 import 'package:Tagg/ui/common/app_assets.dart';
+import 'package:Tagg/ui/common/offline_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -45,12 +46,15 @@ class DashboardView extends StackedView<DashboardViewModel> {
       body: SafeArea(
         child: Column(
           children: [
+            if (viewModel.isOffline) const OfflineBanner(),
+
             // Status Bar and Navigation
             _buildTopNavigation(viewModel),
 
             // Main Content
             Expanded(
               child: SingleChildScrollView(
+                controller: viewModel.transactionScrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,19 +210,46 @@ class DashboardView extends StackedView<DashboardViewModel> {
         // Action Buttons
         Row(
           children: [
-            _buildActionButton(
-              assetPath: AppAssets.up,
-              onTap: viewModel.withdraw,
+            Tooltip(
+              message: 'Offline',
+              child: IgnorePointer(
+                ignoring: viewModel.isOffline,
+                child: Opacity(
+                  opacity: viewModel.isOffline ? 0.5 : 1.0,
+                  child: _buildActionButton(
+                    assetPath: AppAssets.up,
+                    onTap: viewModel.isOffline ? () {} : viewModel.withdraw,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(width: 12),
-            _buildActionButton(
-              assetPath: AppAssets.down,
-              onTap: viewModel.deposit,
+            Tooltip(
+              message: 'Offline',
+              child: IgnorePointer(
+                ignoring: viewModel.isOffline,
+                child: Opacity(
+                  opacity: viewModel.isOffline ? 0.5 : 1.0,
+                  child: _buildActionButton(
+                    assetPath: AppAssets.down,
+                    onTap: viewModel.isOffline ? () {} : viewModel.deposit,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(width: 12),
-            _buildActionButton(
-              assetPath: AppAssets.refresh,
-              onTap: viewModel.refresh,
+            Tooltip(
+              message: 'Offline',
+              child: IgnorePointer(
+                ignoring: viewModel.isOffline,
+                child: Opacity(
+                  opacity: viewModel.isOffline ? 0.5 : 1.0,
+                  child: _buildActionButton(
+                    assetPath: AppAssets.refresh,
+                    onTap: viewModel.isOffline ? () {} : viewModel.refresh,
+                  ),
+                ),
+              ),
             ),
           ],
         ),

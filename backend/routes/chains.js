@@ -6,10 +6,11 @@ import {
   updateChain,
   deleteChain,
 } from "../controllers/chainController.js";
+import { publicCache } from "../middleware/cacheControl.js";
 const router = express.Router();
 
 router.post("/", createChain);
-router.get("/", getChains);
+router.get("/", publicCache(3600), getChains);
 router.get("/:id", getChainById);
 router.put("/:id", updateChain);
 router.delete("/:id", deleteChain);
