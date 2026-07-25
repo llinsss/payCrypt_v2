@@ -63,3 +63,47 @@ export const getDashboardSummary = async (req, res) => {
     res.status(500).json({ success: false, error: "Failed to get dashboard summary" });
   }
 };
+
+export const getOverview = async (req, res) => {
+  try {
+    const { from, to, userId } = req.query;
+    const data = await AnalyticsService.getOverview({ from, to, userId });
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error("Error in getOverview:", error);
+    res.status(500).json({ success: false, error: "Failed to get analytics overview" });
+  }
+};
+
+export const getVolume = async (req, res) => {
+  try {
+    const { period = "daily", from, to, userId } = req.query;
+    const data = await AnalyticsService.getVolume({ period, from, to, userId });
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error("Error in getVolume:", error);
+    res.status(500).json({ success: false, error: "Failed to get transaction volume" });
+  }
+};
+
+export const getTokens = async (req, res) => {
+  try {
+    const { from, to, userId } = req.query;
+    const data = await AnalyticsService.getTokens({ from, to, userId });
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error("Error in getTokens:", error);
+    res.status(500).json({ success: false, error: "Failed to get top tokens" });
+  }
+};
+
+export const getChains = async (req, res) => {
+  try {
+    const { from, to, userId } = req.query;
+    const data = await AnalyticsService.getChains({ from, to, userId });
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error("Error in getChains:", error);
+    res.status(500).json({ success: false, error: "Failed to get top chains" });
+  }
+};
