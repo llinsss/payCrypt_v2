@@ -5,16 +5,19 @@ import Notification from "../models/Notification.js";
 import PaymentService from "../services/PaymentService.js";
 import { apiKeyRotationQueue } from "./apiKeyRotationWorker.js";
 import { reconciliationQueue, registerReconciliationJob } from "./reconciliation.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 // ========== Queues ==========
 
 const schedulerQueue = redisConnection
     ? new Queue("scheduled-payment-executor", { connection: redisConnection })
     : null;
+attachRedisErrorAlert(schedulerQueue, "scheduled-payment-executor-queue");
 
 const notifierQueue = redisConnection
     ? new Queue("scheduled-payment-notifier", { connection: redisConnection })
     : null;
+attachRedisErrorAlert(notifierQueue, "scheduled-payment-notifier-queue");
 
 // ========== Execution Worker ==========
 // Runs every 60 seconds — picks up due payments, executes them via PaymentService
@@ -101,6 +104,7 @@ export const executionWorker = redisConnection
         }
     )
     : null;
+attachRedisErrorAlert(executionWorker, "scheduled-payment-executor-worker");
 
 // ========== Notification Worker ==========
 // Runs every 5 minutes — sends reminders for payments due within 30 minutes
@@ -161,6 +165,7 @@ export const notificationWorker = redisConnection
         }
     )
     : null;
+attachRedisErrorAlert(notificationWorker, "scheduled-payment-notifier-worker");
 
 // ========== Register Repeatable Jobs ==========
 

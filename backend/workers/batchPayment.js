@@ -1,6 +1,7 @@
 import { Worker } from "bullmq";
 import queueConfig from "../queues/index.js";
 import BatchPaymentService from "../services/BatchPaymentService.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 const batchPaymentWorker = new Worker(
     "batch-payments",
@@ -28,6 +29,7 @@ const batchPaymentWorker = new Worker(
     },
     queueConfig
 );
+attachRedisErrorAlert(batchPaymentWorker, "batch-payments-worker");
 
 batchPaymentWorker.on("completed", (job) => {
     console.log(`Batch payment job ${job.id} completed`);

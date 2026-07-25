@@ -1,6 +1,7 @@
 import { Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import { processExportJob } from "../queues/export.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 export const exportWorker = redisConnection
   ? new Worker("export", processExportJob, {
@@ -8,6 +9,7 @@ export const exportWorker = redisConnection
       concurrency: 2, // Limit concurrent export jobs
     })
   : null;
+attachRedisErrorAlert(exportWorker, "export-worker");
 
 if (exportWorker) {
   exportWorker.on("completed", (job) => {

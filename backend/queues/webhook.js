@@ -5,6 +5,7 @@ import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import { validateWebhookUrl } from "../utils/validateWebhookUrl.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 // ========== Queue ==========
 
@@ -17,6 +18,7 @@ export const webhookQueue = redisConnection
       },
     })
   : null;
+attachRedisErrorAlert(webhookQueue, "webhook-delivery-queue");
 
 if (webhookQueue) {
   webhookQueue.on("waiting", (job) =>
@@ -53,14 +55,13 @@ export const webhookWorker = redisConnection
 
         return { success };
       },
-
-      },
       {
         connection: redisConnection,
         concurrency: 10,
       },
     )
   : null;
+attachRedisErrorAlert(webhookWorker, "webhook-delivery-worker");
 
 if (webhookWorker) {
   webhookWorker.on("completed", (job) =>
