@@ -4,7 +4,7 @@ import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
 import { authSchemas } from "../schemas/auth.js";
-import { rateLimit } from "../middleware/rateLimiter.js";
+import { rateLimit, strictAuthRateLimit } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
@@ -47,7 +47,7 @@ const router = express.Router();
  *       400:
  *         description: Validation error
  */
-router.post("/register", rateLimit({ endpointName: "register", windowMs: 60 * 60 * 1000, max: 5 }), validate(authSchemas.register), auditLog("auth"), register);
+router.post("/register", strictAuthRateLimit("register"), validate(authSchemas.register), auditLog("auth"), register);
 
 /**
  * @swagger
@@ -96,10 +96,10 @@ router.post("/register", rateLimit({ endpointName: "register", windowMs: 60 * 60
  *       401:
  *         description: Unauthorized
  */
-router.post("/login", rateLimit({ endpointName: "login", windowMs: 15 * 60 * 1000, max: 5 }), validate(authSchemas.login), auditLog("auth"), login);
+router.post("/login", strictAuthRateLimit("login"), validate(authSchemas.login), auditLog("auth"), login);
 router.post("/google", rateLimit({ endpointName: "google-login", windowMs: 15 * 60 * 1000, max: 10 }), auditLog("auth"), googleLogin);
 router.post("/2fa/setup", authenticate, auditLog("auth"), setup2FA);
 router.post("/2fa/enable", authenticate, validate(authSchemas.twoFactorToken), auditLog("auth"), enable2FA);
-router.post("/2fa/verify", authenticate, validate(authSchemas.twoFactorToken), auditLog("auth"), verify2FA);
+router.post("/2fa/verify", authenticate, strictAuthRateLimit("twoFactorVerify"), validate(authSchemas.twoFactorToken), auditLog("auth"), verify2FA);
 
 export default router;
