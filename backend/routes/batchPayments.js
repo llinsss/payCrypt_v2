@@ -23,6 +23,41 @@ router.post(
     createBatchPayment
 );
 
+/**
+ * @swagger
+ * /api/batchPayments/{id}:
+ *   get:
+ *     summary: Get Batchpayments /:id
+ *     tags: [Batchpayments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.get("/:id", authenticate, getBatchPaymentStatus);
 
 export default router;

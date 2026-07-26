@@ -24,6 +24,7 @@
         "test:db": "node scripts/test-db-setup.js",
         "test:migrations": "node scripts/test-migrations.js",
         "generate:migration-docs": "node scripts/generate-migration-docs.js",
+        "docs:postman": "node scripts/generate-postman-collection.js",
         "load-test:pool": "node scripts/load-test-pool.js",
         "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit"
     },
@@ -92,6 +93,7 @@
         "@jest/globals": "^29.7.0",
         "jest": "^29.7.0",
         "nodemon": "^3.0.1",
+        "openapi-to-postmanv2": "^6.3.1",
         "prettier": "^3.8.1",
         "supertest": "^7.2.2"
     }

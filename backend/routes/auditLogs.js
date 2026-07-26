@@ -30,11 +30,125 @@ const auditLogQuerySchema = Joi.object({
   sortOrder: Joi.string().valid("asc", "desc").optional().default("desc"),
 });
 
+/**
+ * @swagger
+ * /api/auditLogs/stats:
+ *   get:
+ *     summary: Get Auditlogs /stats
+ *     tags: [Auditlogs]
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.get("/stats", getAuditLogStats);
+
+/**
+ * @swagger
+ * /api/auditLogs/cleanup:
+ *   delete:
+ *     summary: Delete Auditlogs /cleanup
+ *     tags: [Auditlogs]
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
 
 router.delete("/cleanup", cleanupAuditLogs);
 
+/**
+ * @swagger
+ * /api/auditLogs:
+ *   get:
+ *     summary: Get Auditlogs /
+ *     tags: [Auditlogs]
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.get("/", validateQuery(auditLogQuerySchema), getAuditLogs);
+
+/**
+ * @swagger
+ * /api/auditLogs/{id}:
+ *   get:
+ *     summary: Get Auditlogs /:id
+ *     tags: [Auditlogs]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
 
 router.get("/:id", getAuditLogById);
 

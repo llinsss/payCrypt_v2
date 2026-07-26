@@ -49,6 +49,34 @@ const router = express.Router();
  *         description: List of balances
  */
 router.post("/", authenticate, validate(balanceCreateSchema), createBalance);
+/**
+ * @swagger
+ * /api/balances:
+ *   get:
+ *     summary: Get Balances /
+ *     tags: [Balances]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
 router.get("/", authenticate, balanceQueryLimiter, privateNoStore, getBalanceByUser);
 
 /**
@@ -140,10 +168,203 @@ router.get("/summary", authenticate, balanceQueryLimiter, getBalanceSummary);
  *         description: Balance deleted
  */
 router.get("/:id", authenticate, balanceQueryLimiter, getBalanceById);
+/**
+ * @swagger
+ * /api/balances/{id}:
+ *   put:
+ *     summary: Put Balances /:id
+ *     tags: [Balances]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               exampleField:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.put("/:id", authenticate, validate(balanceUpdateSchema), updateBalance);
+/**
+ * @swagger
+ * /api/balances/{id}:
+ *   delete:
+ *     summary: Delete Balances /:id
+ *     tags: [Balances]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.delete("/:id", authenticate, deleteBalance);
+/**
+ * @swagger
+ * /api/balances/{id}:
+ *   get:
+ *     summary: Get Balances /:id
+ *     tags: [Balances]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.get("/:id", authenticate, balanceQueryLimiter, validateParams(numericIdParamSchema), getBalanceById);
+/**
+ * @swagger
+ * /api/balances/{id}:
+ *   put:
+ *     summary: Put Balances /:id
+ *     tags: [Balances]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               exampleField:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.put("/:id", authenticate, validateParams(numericIdParamSchema), validate(balanceUpdateSchema), updateBalance);
+/**
+ * @swagger
+ * /api/balances/{id}:
+ *   delete:
+ *     summary: Delete Balances /:id
+ *     tags: [Balances]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+
 router.delete("/:id", authenticate, validateParams(numericIdParamSchema), deleteBalance);
 
 /**
