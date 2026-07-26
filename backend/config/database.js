@@ -3,7 +3,6 @@ import * as Sentry from "@sentry/node";
 import knexConfig from "../knexfile.js";
 import logger from "../utils/logger.js";
 import performanceService from "../services/PerformanceService.js";
-import * as Sentry from "@sentry/node";
 
 const CONNECTION_ACQUIRE_TIMEOUT_MS =
   Number(process.env.DB_ACQUIRE_TIMEOUT_MS) || 30000;
@@ -25,7 +24,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const db = knex(knexConfig);
+// knexfile exports named environments; pass the selected environment rather
+// than the whole map to Knex. Falling back to development keeps local starts
+// usable when NODE_ENV is not set.
+const db = knex(knexConfig[process.env.NODE_ENV] || knexConfig.development);
 
 function getPool() {
   try {
