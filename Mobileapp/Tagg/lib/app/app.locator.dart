@@ -15,10 +15,13 @@ import 'package:stacked_shared/stacked_shared.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/chains_service.dart';
+<<<<<<< HEAD
 import '../services/notification_service.dart';
 import '../services/push_notification_service.dart';
+=======
+import '../services/swap_service.dart';
+>>>>>>> 177d623 (#340 Implement Token Swap Backend Endpoint FIXED)
 import '../services/transaction_service.dart';
-import '../services/connectivity_service.dart';
 import '../services/user_service.dart';
 import '../services/wallet_service.dart';
 import '../services/theme_service.dart';
@@ -44,5 +47,9 @@ Future<void> setupLocator({
   locator.registerLazySingleton(() => WalletService());
   locator.registerLazySingleton(() => TransactionService());
   locator.registerLazySingleton(() => ChainsService());
+<<<<<<< HEAD
   locator.registerLazySingleton(() => ThemeService());
+=======
+  locator.registerLazySingleton(() => SwapService());
+>>>>>>> 177d623 (#340 Implement Token Swap Backend Endpoint FIXED)
 }

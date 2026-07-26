@@ -40,11 +40,20 @@ class ApiConstants {
   static const String transactions = '/transactions';
   static String transactionById(int id) => '/transactions/$id';
 
+<<<<<<< HEAD
   // Notification endpoints
   static const String notifications = '/notifications';
   static const String notificationPreferences = '/notifications/preferences';
   static const String deviceToken = '/notifications/device-token';
   static const String unreadNotifications = '/notifications/unread';
+=======
+  // Swap endpoints
+  static const String swap = '/swap';
+  static const String swapQuote = '/swap/quote';
+  static const String swapConfirm = '/swap/confirm';
+  static const String swapTokens = '/swap/tokens';
+  static const String swapChains = '/swap/chains';
+>>>>>>> 177d623 (#340 Implement Token Swap Backend Endpoint FIXED)
 
   // Health check
   static const String health = '/health';

@@ -8,6 +8,7 @@ import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
+import 'package:Tagg/services/swap_service.dart';
 // @stacked-import
 
 import 'test_helpers.mocks.dart';
@@ -24,6 +25,7 @@ import 'test_helpers.mocks.dart';
     MockSpec<WalletService>(onMissingStub: OnMissingStub.returnDefault),
     MockSpec<TransactionService>(onMissingStub: OnMissingStub.returnDefault),
     MockSpec<ChainsService>(onMissingStub: OnMissingStub.returnDefault),
+    MockSpec<SwapService>(onMissingStub: OnMissingStub.returnDefault),
 // @stacked-mock-spec
   ],
 )
@@ -45,6 +47,7 @@ void registerServices() {
   getAndRegisterKycService();
   getAndRegisterTransactionService();
   getAndRegisterChainsService();
+  getAndRegisterSwapService();
 // @stacked-mock-register
 }
 
@@ -141,6 +144,13 @@ MockChainsService getAndRegisterChainsService() {
   _removeRegistrationIfExists<ChainsService>();
   final service = MockChainsService();
   locator.registerSingleton<ChainsService>(service);
+  return service;
+}
+
+MockSwapService getAndRegisterSwapService() {
+  _removeRegistrationIfExists<SwapService>();
+  final service = MockSwapService();
+  locator.registerSingleton<SwapService>(service);
   return service;
 }
 // @stacked-mock-create

@@ -21,6 +21,7 @@ import 'package:Tagg/models/withdrawal_models.dart' as _i6;
 import 'package:Tagg/services/api_service.dart' as _i12;
 import 'package:Tagg/services/auth_service.dart' as _i13;
 import 'package:Tagg/services/chains_service.dart' as _i19;
+import 'package:Tagg/services/swap_service.dart' as _i21;
 import 'package:Tagg/services/transaction_service.dart' as _i17;
 import 'package:Tagg/services/user_service.dart' as _i14;
 import 'package:Tagg/services/wallet_service.dart' as _i16;
@@ -1187,4 +1188,247 @@ class MockChainsService extends _i1.Mock implements _i19.ChainsService {
         returnValue: _i10.Future<List<String>>.value(<String>[]),
         returnValueForMissingStub: _i10.Future<List<String>>.value(<String>[]),
       ) as _i10.Future<List<String>>);
+}
+
+/// A class which mocks [SwapService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockSwapService extends _i1.Mock implements _i21.SwapService {
+  @override
+  _i10.Future<_i21.SwapQuote> getQuote({
+    String? fromToken,
+    String? toToken,
+    double? amount,
+    int? chainId,
+    double? slippage = 0.5,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getQuote,
+          [],
+          {
+            #fromToken: fromToken,
+            #toToken: toToken,
+            #amount: amount,
+            #chainId: chainId,
+            #slippage: slippage,
+          },
+        ),
+        returnValue: _i10.Future<_i21.SwapQuote>.value(
+          _i21.SwapQuote(
+            quoteId: 'test-quote-id',
+            fromToken: 'STRK',
+            toToken: 'LSK',
+            fromTokenId: 1,
+            toTokenId: 2,
+            chainId: 1,
+            amount: '100',
+            slippage: 0.5,
+            rate: 0.32,
+            expectedOutput: '32.0',
+            minimumOutput: '31.84',
+            feePercent: 0.3,
+            feeAmount: '0.3',
+            estimatedGas: '0',
+            priceImpact: '0.01',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            createdAt: '2026-01-01T00:00:00.000Z',
+          ),
+        ),
+        returnValueForMissingStub: _i10.Future<_i21.SwapQuote>.value(
+          _i21.SwapQuote(
+            quoteId: 'test-quote-id',
+            fromToken: 'STRK',
+            toToken: 'LSK',
+            fromTokenId: 1,
+            toTokenId: 2,
+            chainId: 1,
+            amount: '100',
+            slippage: 0.5,
+            rate: 0.32,
+            expectedOutput: '32.0',
+            minimumOutput: '31.84',
+            feePercent: 0.3,
+            feeAmount: '0.3',
+            estimatedGas: '0',
+            priceImpact: '0.01',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            createdAt: '2026-01-01T00:00:00.000Z',
+          ),
+        ),
+      ) as _i10.Future<_i21.SwapQuote>);
+
+  @override
+  _i10.Future<_i21.SwapResult> confirmSwap({
+    String? quoteId,
+    String? fromToken,
+    String? toToken,
+    double? amount,
+    int? chainId,
+    double? minReceiveAmount,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #confirmSwap,
+          [],
+          {
+            #quoteId: quoteId,
+            #fromToken: fromToken,
+            #toToken: toToken,
+            #amount: amount,
+            #chainId: chainId,
+            #minReceiveAmount: minReceiveAmount,
+          },
+        ),
+        returnValue: _i10.Future<_i21.SwapResult>.value(
+          _i21.SwapResult(
+            swapId: 'test-swap-id',
+            reference: 'SWAPREF123',
+            userId: 1,
+            fromToken: 'STRK',
+            toToken: 'LSK',
+            fromTokenId: 1,
+            toTokenId: 2,
+            chainId: 1,
+            inputAmount: '100',
+            outputAmount: '32.0',
+            rate: 0.32,
+            feePercent: 0.3,
+            feeAmount: '0.3',
+            status: 'completed',
+            txHash: '0xabc123',
+            completedAt: '2026-01-01T00:00:00.000Z',
+          ),
+        ),
+        returnValueForMissingStub: _i10.Future<_i21.SwapResult>.value(
+          _i21.SwapResult(
+            swapId: 'test-swap-id',
+            reference: 'SWAPREF123',
+            userId: 1,
+            fromToken: 'STRK',
+            toToken: 'LSK',
+            fromTokenId: 1,
+            toTokenId: 2,
+            chainId: 1,
+            inputAmount: '100',
+            outputAmount: '32.0',
+            rate: 0.32,
+            feePercent: 0.3,
+            feeAmount: '0.3',
+            status: 'completed',
+            txHash: '0xabc123',
+            completedAt: '2026-01-01T00:00:00.000Z',
+          ),
+        ),
+      ) as _i10.Future<_i21.SwapResult>);
+
+  @override
+  _i10.Future<dynamic> executeSwap({
+    String? fromToken,
+    String? toToken,
+    double? amount,
+    int? chainId,
+    double? slippage = 0.5,
+    bool? confirm = true,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #executeSwap,
+          [],
+          {
+            #fromToken: fromToken,
+            #toToken: toToken,
+            #amount: amount,
+            #chainId: chainId,
+            #slippage: slippage,
+            #confirm: confirm,
+          },
+        ),
+        returnValue: _i10.Future<dynamic>.value(
+          _i21.SwapResult(
+            swapId: 'test-swap-id',
+            reference: 'SWAPREF123',
+            userId: 1,
+            fromToken: 'STRK',
+            toToken: 'LSK',
+            fromTokenId: 1,
+            toTokenId: 2,
+            chainId: 1,
+            inputAmount: '100',
+            outputAmount: '32.0',
+            rate: 0.32,
+            feePercent: 0.3,
+            feeAmount: '0.3',
+            status: 'completed',
+            txHash: '0xabc123',
+            completedAt: '2026-01-01T00:00:00.000Z',
+          ),
+        ),
+        returnValueForMissingStub: _i10.Future<dynamic>.value(
+          _i21.SwapResult(
+            swapId: 'test-swap-id',
+            reference: 'SWAPREF123',
+            userId: 1,
+            fromToken: 'STRK',
+            toToken: 'LSK',
+            fromTokenId: 1,
+            toTokenId: 2,
+            chainId: 1,
+            inputAmount: '100',
+            outputAmount: '32.0',
+            rate: 0.32,
+            feePercent: 0.3,
+            feeAmount: '0.3',
+            status: 'completed',
+            txHash: '0xabc123',
+            completedAt: '2026-01-01T00:00:00.000Z',
+          ),
+        ),
+      ) as _i10.Future<dynamic>);
+
+  @override
+  _i10.Future<Map<String, dynamic>> getSwapStatus(String? swapId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getSwapStatus,
+          [swapId],
+        ),
+        returnValue: _i10.Future<Map<String, dynamic>>.value(<String, dynamic>{
+          'swapId': swapId,
+          'status': 'completed',
+        }),
+        returnValueForMissingStub:
+            _i10.Future<Map<String, dynamic>>.value(<String, dynamic>{
+          'swapId': swapId,
+          'status': 'completed',
+        }),
+      ) as _i10.Future<Map<String, dynamic>>);
+
+  @override
+  _i10.Future<List<Map<String, dynamic>>> getSupportedTokens() =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getSupportedTokens,
+          [],
+        ),
+        returnValue: _i10.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub:
+            _i10.Future<List<Map<String, dynamic>>>.value(
+                <Map<String, dynamic>>[]),
+      ) as _i10.Future<List<Map<String, dynamic>>>);
+
+  @override
+  _i10.Future<List<Map<String, dynamic>>> getSupportedChains() =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getSupportedChains,
+          [],
+        ),
+        returnValue: _i10.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub:
+            _i10.Future<List<Map<String, dynamic>>>.value(
+                <Map<String, dynamic>>[]),
+      ) as _i10.Future<List<Map<String, dynamic>>>);
 }
