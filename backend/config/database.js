@@ -1,9 +1,7 @@
 import knex from "knex";
-import * as Sentry from "@sentry/node";
 import knexConfig from "../knexfile.js";
 import logger from "../utils/logger.js";
 import performanceService from "../services/PerformanceService.js";
-import * as Sentry from "@sentry/node";
 
 const CONNECTION_ACQUIRE_TIMEOUT_MS =
   Number(process.env.DB_ACQUIRE_TIMEOUT_MS) || 30000;
