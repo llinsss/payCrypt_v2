@@ -1,5 +1,4 @@
 import { jest } from "@jest/globals";
-import { createRequire } from "module";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be declared before importing the modules under test
@@ -14,7 +13,7 @@ const mockChildLogger = {
   error: mockLoggerError,
 };
 
-jest.mock("../../utils/logger.js", () => ({
+jest.mock("../utils/logger.js", () => ({
   createRequestLogger: jest.fn(() => mockChildLogger),
   default: { child: jest.fn(() => mockChildLogger) },
   stream: { write: jest.fn() },
@@ -24,9 +23,9 @@ import {
   requestLogger,
   sanitizeHeaders,
   sanitizeBody,
-} from "../../middleware/requestLogger.js";
+} from "../middleware/requestLogger.js";
 
-import { correlationId, CORRELATION_ID_HEADER, REQUEST_ID_HEADER } from "../../middleware/correlationId.js";
+import { correlationId, CORRELATION_ID_HEADER, REQUEST_ID_HEADER } from "../middleware/correlationId.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -339,11 +338,11 @@ describe("requestLogger middleware", () => {
     expect(String(requestCall[1].body)).toMatch(/BODY_TOO_LARGE/);
   });
 
-  it("includes userId from req.user when authenticated", () => {
+  it("includes userId from req.user when authenticated", async () => {
     const req = makeReq({ user: { id: 42 } });
     const res = makeRes();
 
-    const { createRequestLogger } = await import("../../utils/logger.js");
+    const { createRequestLogger } = await import("../utils/logger.js");
 
     requestLogger(req, res, jest.fn());
 
