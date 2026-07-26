@@ -122,6 +122,42 @@ export const cancelScheduledPayment = async (req, res) => {
     }
 };
 
+export const resumeScheduledPayment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const payment = await ScheduledPayment.findById(id);
+
+        if (!payment) {
+            return res.status(404).json({ error: "Scheduled payment not found" });
+        }
+
+        if (payment.user_id !== req.user.id) {
+            return res.status(403).json({ error: "Unauthorized" });
+        }
+
+        if (payment.status !== "paused") {
+            return res.status(400).json({
+                error: `Cannot resume a payment with status '${payment.status}'. Only paused payments can be resumed.`,
+            });
+        }
+
+        const resumed = await ScheduledPayment.resume(id);
+
+        await Notification.create({
+            user_id: req.user.id,
+            title: "Scheduled Payment Resumed",
+            body: `Scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} has been resumed and will be retried shortly.`,
+        });
+
+        res.json({
+            message: "Scheduled payment resumed successfully",
+            scheduledPayment: resumed,
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 export const getUpcomingPayments = async (req, res) => {
     try {
         const { id: userId } = req.user;
