@@ -1,5 +1,5 @@
 import express from 'express';
-import { getHealth, getReadiness, getLiveness } from '../controllers/healthController.js';
+import { getHealth, getReadiness, getLiveness, getStellarStreamHealth } from '../controllers/healthController.js';
 
 const router = express.Router();
 
@@ -59,5 +59,19 @@ router.get('/ready', getReadiness);
  *         description: System is not alive
  */
 router.get('/live', getLiveness);
+
+/**
+ * @swagger
+ * /api/health/stellar-stream:
+ *   get:
+ *     summary: Stellar Horizon streaming status
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Streams are active (or disabled by configuration)
+ *       503:
+ *         description: One or more streams are disconnected
+ */
+router.get('/stellar-stream', getStellarStreamHealth);
 
 export default router;

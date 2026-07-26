@@ -2,6 +2,7 @@ import "./workers/balance.js";
 import "./workers/scheduler.js";
 import "./workers/transactionConfirmation.js";
 import "./workers/batchPayment.js";
+import "./workers/stellarStream.js";
 import "./queues/exportQueue.js";
 import UssdService from "./services/UssdService.js";
 // import "./workers/starknet.js";
