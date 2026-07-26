@@ -2,6 +2,7 @@ import db from "../config/database.js";
 import { createUserRateLimiter, createTierRateLimiter } from "../config/rateLimiting.js";
 import * as Sentry from "@sentry/node";
 import { verifyToken } from "../config/jwt.js";
+import { authenticateApiKey } from "./apiKeyAuth.js";
 
 export const requireAdmin = (req, res, next) => {
   if (req.user?.role !== 'admin') {
@@ -9,6 +10,8 @@ export const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+export const isAdmin = requireAdmin;
 
 export const authenticate = async (req, res, next) => {
   try {

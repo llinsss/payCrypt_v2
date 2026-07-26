@@ -27,9 +27,12 @@ import 'package:Tagg/ui/views/change_password/change_password_view.dart';
 import 'package:Tagg/ui/views/contact_support/contact_support_view.dart';
 import 'package:Tagg/ui/views/notifications/notifications_view.dart';
 import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart';
+import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
+import 'package:Tagg/services/connectivity_service.dart';
+import 'package:Tagg/services/swap_service.dart';
 // @stacked-import
 
 @StackedApp(
@@ -68,6 +71,8 @@ import 'package:Tagg/services/exchange_rate_service.dart';
     LazySingleton(classType: WalletService),
     LazySingleton(classType: TransactionService),
     LazySingleton(classType: ChainsService),
+    LazySingleton(classType: ConnectivityService),
+    LazySingleton(classType: SwapService),
     LazySingleton(classType: ExchangeRateService),
 // @stacked-service
   ],

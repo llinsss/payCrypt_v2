@@ -36,6 +36,9 @@ class ApiConstants {
   static const String tokens = '/tokens';
   static String tokenById(int id) => '/tokens/$id';
 
+  // Swap endpoint (two-step quote -> confirm)
+  static const String swap = '/swap';
+
   // Transaction endpoints
   static const String transactions = '/transactions';
   static String transactionById(int id) => '/transactions/$id';

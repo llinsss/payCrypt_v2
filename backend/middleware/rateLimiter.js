@@ -6,8 +6,6 @@ import logger from "../utils/logger.js";
 /**
  * IP Whitelist from environment
  */
-const IP_WHITELIST = (process.env.IP_WHITELIST || "").split(",").map(ip => ip.trim()).filter(Boolean);
-
 /**
  * Rate Limiter Middleware Factory
  * @param {Object} options
@@ -26,7 +24,8 @@ export const rateLimit = (options = {}) => {
 
   return async (req, res, next) => {
     // 1. IP Whitelist bypass
-    if (IP_WHITELIST.includes(req.ip)) {
+    const ipWhitelist = (process.env.IP_WHITELIST || "").split(",").map(ip => ip.trim()).filter(Boolean);
+    if (ipWhitelist.includes(req.ip)) {
       return next();
     }
 
@@ -64,7 +63,7 @@ export const rateLimit = (options = {}) => {
     }
 
     // 5. Set Headers
-    res.setHeader("X-RateLimit-Limit", Math.floor(capacity));
+    res.setHeader("X-RateLimit-Limit", String(Math.floor(capacity)));
     res.setHeader("X-RateLimit-Remaining", remaining);
 
     // Calculate reset time (when bucket will be full)

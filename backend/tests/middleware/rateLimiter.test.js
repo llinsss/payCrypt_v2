@@ -54,6 +54,7 @@ describe("RateLimiter Middleware", () => {
   it("should bypass rate limiting for whitelisted IPs", async () => {
     process.env.IP_WHITELIST = "127.0.0.1, 192.168.1.1";
     
+    RateLimitService.consume.mockClear();
     const middleware = rateLimit({ endpointName: "api" });
     await middleware(req, res, next);
 

@@ -1,6 +1,32 @@
 import ExportService from "../services/ExportService.js";
 import { exportQueue } from "../queues/exportQueue.js";
 
+export const requestExport = async (req, res) => {
+  req.query = { ...req.query, ...req.body };
+  return exportTransactions(req, res);
+};
+
+export const getExportStatus = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    if (!exportQueue) {
+      return res.status(503).json({ error: "Export queue unavailable" });
+    }
+    const job = await exportQueue.getJob(jobId);
+    if (!job) {
+      return res.status(404).json({ error: "Export job not found" });
+    }
+    return res.json({
+      id: job.id,
+      status: await job.getState(),
+      progress: job.progress,
+      failedReason: job.failedReason || null,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 export const exportTransactions = async (req, res) => {
   try {
     const userId = req.user?.id;

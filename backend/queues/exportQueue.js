@@ -2,6 +2,7 @@ import { Queue, Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import ExportService from "../services/ExportService.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 export const exportQueue = redisConnection
   ? new Queue("transaction-export", {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 const mockWalletFindById = jest.fn();
 const mockWalletGetByUser = jest.fn();
@@ -45,6 +45,10 @@ function mockResponse() {
 }
 
 describe("Wallet Service", () => {
+  beforeEach(() => {
+    mockWalletGetByUser.mockImplementation((userId) => Balance.default.getByUser(userId));
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });

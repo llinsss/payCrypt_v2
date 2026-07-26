@@ -7,21 +7,22 @@ import jwt from "jsonwebtoken";
  * - Centralized configuration for consistency
  */
 
-// Validate JWT_SECRET at startup
-if (!process.env.JWT_SECRET) {
+// Validate JWT_SECRET at startup. Tests use an isolated fallback so importing
+// modules does not terminate Jest before individual unit tests can set mocks.
+if (!process.env.JWT_SECRET && process.env.NODE_ENV !== "test") {
   console.error("❌ FATAL: JWT_SECRET environment variable is not set!");
   console.error("   Set JWT_SECRET in your .env file before starting the server.");
   process.exit(1);
 }
 
+const JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-with-at-least-32-characters";
+
 // Validate JWT_SECRET strength
-if (process.env.JWT_SECRET.length < 32) {
+if (JWT_SECRET.length < 32 && process.env.NODE_ENV !== "test") {
   console.error("❌ FATAL: JWT_SECRET must be at least 32 characters long!");
   console.error("   Use a strong, randomly generated secret.");
   process.exit(1);
 }
-
-const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_ISSUER = process.env.JWT_ISSUER || "tagged-backend";
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "tagged-api";
 

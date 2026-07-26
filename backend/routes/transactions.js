@@ -25,8 +25,12 @@ import { auditLog } from "../middleware/audit.js";
 import {
   transactionSchema,
   transactionQuerySchema,
+  transactionIdParamSchema,
+  transactionTagParamSchema,
 } from "../schemas/transaction.js";
-import { processPaymentSchema } from "../schemas/payment.js";
+import { processPaymentSchema, batchPaymentSchema } from "../schemas/payment.js";
+import { downloadExport, exportTransactions } from "../controllers/exportController.js";
+import { createBatchPayment } from "../controllers/batchPaymentController.js";
 import { rateLimit } from "../middleware/rateLimiter.js";
 import { privateNoStore } from "../middleware/cacheControl.js";
 

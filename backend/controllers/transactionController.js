@@ -3,17 +3,56 @@ import User from "../models/User.js";
 import PaymentService from "../services/PaymentService.js";
 import ReceiptService from "../services/ReceiptService.js";
 import LockService from "../services/LockService.js";
+import IdempotencyService from "../services/IdempotencyService.js";
 import { processPaymentSchema, transactionHistoryQuerySchema } from "../schemas/payment.js";
 
 export const createTransaction = async (req, res) => {
   try {
+    const { amount, to_tag, recipient_tag, idempotency_key } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ error: "Amount must be greater than 0" });
+    }
+
+    if (!to_tag && !recipient_tag) {
+      return res.status(400).json({ error: "Recipient tag is required" });
+    }
+
+    if (idempotency_key) {
+      const existing = typeof IdempotencyService.get === "function"
+        ? await IdempotencyService.get(idempotency_key)
+        : await IdempotencyService.getRecord?.(idempotency_key);
+
+      if (existing) {
+        const data = existing.result ? JSON.parse(existing.result) : existing.response || existing;
+        return res.status(200).json({
+          success: true,
+          message: "Transaction already processed",
+          data,
+        });
+      }
+    }
+
     const transactionData = {
       ...req.body,
       user_id: req.user.id,
     };
 
     const transaction = await Transaction.create(transactionData);
-    res.status(201).json(transaction);
+
+    if (idempotency_key) {
+      if (typeof IdempotencyService.create === "function") {
+        await IdempotencyService.create(idempotency_key, transaction);
+      } else if (typeof IdempotencyService.saveResponse === "function") {
+        await IdempotencyService.saveResponse(idempotency_key, transaction);
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Transaction created successfully",
+      data: transaction,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
