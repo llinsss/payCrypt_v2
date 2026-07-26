@@ -2,6 +2,7 @@ import { Queue, Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import WebhookDeliveryService from "../services/WebhookDeliveryService.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 // ========== Retry Queue Setup ==========
 // Utilizes custom explicit delays managed entirely via the delivery service,

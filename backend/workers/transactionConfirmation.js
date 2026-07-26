@@ -3,6 +3,7 @@ import db from "../config/database.js";
 import { redisConnection } from "../config/redis.js";
 import { webhookQueue } from "../queues/webhook.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 /**
  * Worker to confirm pending transactions by checking on-chain status
