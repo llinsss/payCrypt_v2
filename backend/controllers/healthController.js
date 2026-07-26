@@ -2,6 +2,7 @@ import {
     checkAllDependencies,
     getConnectionPoolStats,
 } from "../utils/dbHealth.js";
+import StellarStreamService from "../services/StellarStreamService.js";
 
 /**
  * GET /api/health
@@ -97,6 +98,23 @@ export const getReadiness = async (req, res) => {
 
     const statusCode = readiness.status === "ready" ? 200 : 503;
     res.status(statusCode).json(readiness);
+};
+
+/**
+ * GET /api/health/stellar-stream
+ * Reports whether the Horizon SSE streams are connected, per account.
+ */
+export const getStellarStreamHealth = (req, res) => {
+    const status = StellarStreamService.getStatus();
+
+    // Not enabled is a valid state, not a failure.
+    const healthy = !status.running || status.active === status.total;
+
+    res.status(healthy ? 200 : 503).json({
+        status: !status.running ? "disabled" : healthy ? "ok" : "degraded",
+        timestamp: new Date().toISOString(),
+        ...status,
+    });
 };
 
 /**
