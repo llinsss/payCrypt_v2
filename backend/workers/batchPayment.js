@@ -2,6 +2,7 @@ import { Worker } from "bullmq";
 import queueConfig from "../queues/index.js";
 import BatchPaymentService from "../services/BatchPaymentService.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 const batchPaymentWorker = new Worker(
     "batch-payments",
