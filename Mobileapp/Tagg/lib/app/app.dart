@@ -33,6 +33,11 @@ import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
 import 'package:Tagg/services/connectivity_service.dart';
 import 'package:Tagg/services/swap_service.dart';
+import 'package:Tagg/services/batch_payment_service.dart';
+import 'package:Tagg/services/biometric_service.dart';
+import 'package:Tagg/services/deep_link_service.dart';
+import 'package:Tagg/services/notification_service.dart';
+import 'package:Tagg/services/push_notification_service.dart';
 // @stacked-import
 
 @StackedApp(
@@ -74,6 +79,11 @@ import 'package:Tagg/services/swap_service.dart';
     LazySingleton(classType: ConnectivityService),
     LazySingleton(classType: SwapService),
     LazySingleton(classType: ExchangeRateService),
+    LazySingleton(classType: BatchPaymentService),
+    LazySingleton(classType: BiometricService),
+    LazySingleton(classType: DeepLinkService),
+    LazySingleton(classType: NotificationService),
+    LazySingleton(classType: PushNotificationService),
 // @stacked-service
   ],
   bottomsheets: [

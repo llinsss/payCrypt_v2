@@ -3,7 +3,6 @@ import * as Sentry from "@sentry/node";
 import knexConfig from "../knexfile.js";
 import logger from "../utils/logger.js";
 import performanceService from "../services/PerformanceService.js";
-import * as Sentry from "@sentry/node";
 
 const CONNECTION_ACQUIRE_TIMEOUT_MS =
   Number(process.env.DB_ACQUIRE_TIMEOUT_MS) || 30000;
@@ -25,7 +24,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const db = knex(knexConfig);
+const environment = process.env.KNEX_ENV || process.env.NODE_ENV || "development";
+const selectedKnexConfig = knexConfig[environment] || knexConfig.development || knexConfig;
+const db = knex(selectedKnexConfig);
 
 function getPool() {
   try {
@@ -43,7 +44,7 @@ function getPoolMetrics() {
     const free = pool.numFree();
     const pendingAcquires = pool.numPendingAcquires?.() ?? 0;
     const pendingCreates = pool.numPendingCreates?.() ?? 0;
-    const max = knexConfig.pool?.max ?? 10;
+    const max = selectedKnexConfig.pool?.max ?? 10;
     const total = used + free;
     const utilizationPercent = max > 0 ? Math.round((used / max) * 100) : 0;
     return {

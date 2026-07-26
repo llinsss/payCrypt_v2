@@ -1,10 +1,12 @@
+import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/services/api_service.dart';
 import 'package:Tagg/ui/common/api_constants.dart';
 
 class NotificationService {
-  final ApiService _apiService;
+  NotificationService({ApiService? apiService})
+      : _apiService = apiService ?? locator<ApiService>();
 
-  NotificationService(this._apiService);
+  final ApiService _apiService;
 
   Future<Map<String, dynamic>> getPreferences() async {
     try {
