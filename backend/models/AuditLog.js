@@ -5,7 +5,7 @@ const AuditLog = {
    * Create a new audit log entry
    */
   async create(logData) {
-    const [id] = await db("audit_logs").insert({
+    const [{ id }] = await db("audit_logs").insert({
       user_id: logData.userId || null,
       action: logData.action,
       resource: logData.resource,
@@ -16,7 +16,7 @@ const AuditLog = {
       method: logData.method,
       endpoint: logData.endpoint,
       status_code: logData.statusCode || null,
-    });
+    }).returning('id');
 
     return this.findById(id);
   },
@@ -138,7 +138,7 @@ const AuditLog = {
    * Used when Stellar transaction fails or DB commit fails after Stellar success
    */
   async createFailedTransactionAudit(logData) {
-    const [id] = await db("audit_logs").insert({
+    const [{ id }] = await db("audit_logs").insert({
       user_id: logData.userId || null,
       action: "payment_failed",
       resource: "transaction",
@@ -149,7 +149,7 @@ const AuditLog = {
       method: "PAYMENT",
       endpoint: "/internal/failed-transaction",
       status_code: null,
-    });
+    }).returning('id');
 
     return this.findById(id);
   },

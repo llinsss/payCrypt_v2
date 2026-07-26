@@ -2,6 +2,7 @@ import { Queue, Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import WebhookDeliveryService from "../services/WebhookDeliveryService.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 // ========== Retry Queue Setup ==========
 // Utilizes custom explicit delays managed entirely via the delivery service,
@@ -34,14 +35,15 @@ export const webhookRetryWorker = redisConnection
       "webhook-retry",
       async (job) => {
         // We offload the execution and iteration back to the core Delivery logic
-        const { eventId, webhookId, payload, url, secret, attempt } = job.data;
-        
+        const { eventId, eventKey, webhookId, payload, url, secret, attempt } = job.data;
+
         console.log(`⚙️ Executing Webhook Retry (attempt ${attempt}): event ${eventId} for webhook ${webhookId}`);
 
-        // Perform HTTP Request directly or inject back into standard stream 
+        // Perform HTTP Request directly or inject back into standard stream
         // to avoid code duplication, WebhookDeliveryService handles the dispatch
         await WebhookDeliveryService.executeDelivery({
           eventId,
+          eventKey,
           webhookId,
           payload,
           url,
