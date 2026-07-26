@@ -57,6 +57,8 @@ class AuthService {
     }
   }
 
+  bool isAuthenticated() => _apiService.isAuthenticated;
+
   Future<void> logout() async {
     await _apiService.clearToken();
     await _googleSignIn.signOut();

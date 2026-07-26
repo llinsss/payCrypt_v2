@@ -19,6 +19,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/widgets.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class DashboardViewModel extends BaseViewModel {
   final ScrollController transactionScrollController = ScrollController();
@@ -29,6 +30,7 @@ class DashboardViewModel extends BaseViewModel {
   final _transactionService = locator<TransactionService>();
   final _chainsService = locator<ChainsService>();
   final _exchangeRateService = locator<ExchangeRateService>();
+  final _connectivityService = locator<ConnectivityService>();
 
   // Dashboard Data - matching web version structure
   DashboardSummary? _dashboardSummary;
@@ -47,6 +49,7 @@ class DashboardViewModel extends BaseViewModel {
   // UI State
   int _selectedTabIndex = 0;
   int selectedFilterIndex = 0;
+  bool _isOffline = false;
 
   // Getters
   DashboardSummary? get dashboardSummary => _dashboardSummary;

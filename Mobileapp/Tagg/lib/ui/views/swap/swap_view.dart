@@ -501,7 +501,11 @@ class SwapView extends StackedView<SwapViewModel> {
 
   Widget _buildSwapButton(SwapViewModel viewModel) {
     return Tooltip(
-      message: viewModel.isOffline ? 'Offline' : viewModel.isBusy ? 'Swap in progress' : '',
+      message: viewModel.isOffline
+          ? 'Offline'
+          : viewModel.isBusy
+              ? 'Swap in progress'
+              : '',
       child: IgnorePointer(
         ignoring: viewModel.isOffline || viewModel.isBusy,
         child: Opacity(
@@ -509,31 +513,38 @@ class SwapView extends StackedView<SwapViewModel> {
           child: GestureDetector(
             onTap: () => viewModel.performSwap(),
             child: Container(
-        width: double.infinity,
-        height: 60,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [Color(0xFF674AA6), Color(0xFF2E235C)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter),
-          borderRadius: BorderRadius.circular(48),
-        ),
-        child: Center(
-          child: viewModel.isBusy
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE2E2E2)),
-                  ),
-                )
-              : Text("Swap",
-                  style: GoogleFonts.instrumentSans(
-                      color: Color(0xFFE2E2E2),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500)),
-        ),
+              width: double.infinity,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF674AA6), Color(0xFF2E235C)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+                borderRadius: BorderRadius.circular(48),
+              ),
+              child: Center(
+                child: viewModel.isBusy
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFFE2E2E2),
+                          ),
+                        ),
+                      )
+                    : Text(
+                        "Swap",
+                        style: GoogleFonts.instrumentSans(
+                          color: const Color(0xFFE2E2E2),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+              ),
+            ),
           ),
         ),
       ),

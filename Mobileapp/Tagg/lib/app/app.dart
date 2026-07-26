@@ -62,6 +62,7 @@ import 'package:Tagg/services/push_notification_service.dart';
     MaterialRoute(page: ChangePasswordView),
     MaterialRoute(page: ContactSupportView),
     MaterialRoute(page: NotificationsView),
+    MaterialRoute(page: TransactionDetailView),
     MaterialRoute(page: BatchPaymentView),
 // @stacked-route
   ],

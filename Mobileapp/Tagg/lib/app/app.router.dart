@@ -8,7 +8,7 @@
 import 'package:flutter/material.dart' as _i20;
 import 'package:flutter/material.dart';
 import 'package:stacked/stacked.dart' as _i1;
-import 'package:stacked_services/stacked_services.dart' as _i21;
+import 'package:stacked_services/stacked_services.dart' as _i23;
 import 'package:Tagg/ui/views/balance/balance_view.dart' as _i7;
 import 'package:Tagg/ui/views/bill/bill_view.dart' as _i13;
 import 'package:Tagg/ui/views/bottomnav/bottomnav_view.dart' as _i10;
@@ -71,6 +71,8 @@ class Routes {
 
   static const notificationsView = '/notifications-view';
 
+  static const transactionDetailView = '/transaction-detail-view';
+
   static const batchPaymentView = '/batch-payment-view';
 
   static const all = <String>{
@@ -92,6 +94,7 @@ class Routes {
     changePasswordView,
     contactSupportView,
     notificationsView,
+    transactionDetailView,
     batchPaymentView,
   };
 }
@@ -177,6 +180,10 @@ class StackedRouter extends _i1.RouterBase {
     _i1.RouteDef(
       Routes.notificationsView,
       page: _i19.NotificationsView,
+    ),
+    _i1.RouteDef(
+      Routes.transactionDetailView,
+      page: _i21.TransactionDetailView,
     ),
     _i1.RouteDef(
       Routes.batchPaymentView,
@@ -293,6 +300,18 @@ class StackedRouter extends _i1.RouterBase {
         settings: data,
       );
     },
+    _i21.TransactionDetailView: (data) {
+      final args = data.getArgs<TransactionDetailViewArguments>(
+        orElse: () => const TransactionDetailViewArguments(transactionId: ''),
+      );
+      return _i20.MaterialPageRoute<dynamic>(
+        builder: (context) => _i21.TransactionDetailView(
+          key: args.key,
+          transactionId: args.transactionId,
+        ),
+        settings: data,
+      );
+    },
     _i22.BatchPaymentView: (data) {
       return _i20.MaterialPageRoute<dynamic>(
         builder: (context) => const _i22.BatchPaymentView(),
@@ -308,7 +327,18 @@ class StackedRouter extends _i1.RouterBase {
   Map<Type, _i1.StackedRouteFactory> get pagesMap => _pagesMap;
 }
 
-extension NavigatorStateExtension on _i21.NavigationService {
+class TransactionDetailViewArguments {
+  const TransactionDetailViewArguments({
+    this.key,
+    required this.transactionId,
+  });
+
+  final Key? key;
+
+  final String transactionId;
+}
+
+extension NavigatorStateExtension on _i23.NavigationService {
   Future<dynamic> navigateToHomeView([
     int? routerId,
     bool preventDuplicates = true,
@@ -558,22 +588,6 @@ extension NavigatorStateExtension on _i21.NavigationService {
         id: routerId,
         preventDuplicates: preventDuplicates,
         parameters: parameters,
-        transition: transition);
-  }
-
-  Future<dynamic> navigateToTransactionDetailView({
-    required int transactionId,
-    int? routerId,
-    bool preventDuplicates = true,
-    Map<String, String>? parameters,
-    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
-        transition,
-  }) async {
-    return navigateTo<dynamic>(Routes.transactionDetailView,
-        id: routerId,
-        preventDuplicates: preventDuplicates,
-        parameters: parameters,
-        arguments: {'transactionId': transactionId},
         transition: transition);
   }
 
@@ -828,7 +842,7 @@ extension NavigatorStateExtension on _i21.NavigationService {
         preventDuplicates: preventDuplicates,
         parameters: parameters,
         transition: transition,
-        arguments: {'transactionId': transactionId});
+        arguments: TransactionDetailViewArguments(transactionId: transactionId));
   }
 
   Future<dynamic> replaceWithNotificationsView([

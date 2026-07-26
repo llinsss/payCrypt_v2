@@ -2,6 +2,7 @@ import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/services/auth_service.dart';
 import 'package:Tagg/services/theme_service.dart';
+import 'package:Tagg/services/biometric_service.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 
@@ -10,14 +11,18 @@ class SettingsViewModel extends BaseViewModel {
   final _authService = locator<AuthService>();
   final _dialogService = locator<DialogService>();
   final _themeService = locator<ThemeService>();
+  final _biometricService = locator<BiometricService>();
 
   ThemeMode _currentTheme = ThemeMode.system;
-  ThemeMode get currentTheme => _currentTheme;
+  bool _isBiometricEnabled = false;
 
-  @override
-  void init() {
-    super.init();
+  ThemeMode get currentTheme => _currentTheme;
+  bool get isBiometricEnabled => _isBiometricEnabled;
+
+  Future<void> init() async {
     _currentTheme = _themeService.themeMode;
+    _isBiometricEnabled = await _biometricService.isBiometricUnlockEnabled();
+    notifyListeners();
   }
 
   void onKycTap() {
@@ -48,6 +53,16 @@ class SettingsViewModel extends BaseViewModel {
       await _authService.logout();
       _navigationService.replaceWithSigninView();
     }
+  }
+
+  Future<void> toggleBiometricUnlock(bool enabled) async {
+    _isBiometricEnabled = enabled;
+    if (enabled) {
+      await _biometricService.enableBiometricUnlock();
+    } else {
+      await _biometricService.disableBiometricUnlock();
+    }
+    notifyListeners();
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {

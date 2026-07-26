@@ -1,6 +1,6 @@
 import 'package:Tagg/ui/common/app_assets.dart';
 import 'package:Tagg/services/theme_service.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:stacked/stacked.dart';
