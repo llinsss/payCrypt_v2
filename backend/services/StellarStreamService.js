@@ -20,6 +20,10 @@ const PROCESSED_TTL = 7 * 24 * 60 * 60;
 const BACKOFF_BASE_MS = 1000;
 const BACKOFF_MAX_MS = 60000;
 
+// How often to pick up accounts registered after startup.
+const REFRESH_INTERVAL_MS =
+  Number(process.env.STELLAR_STREAM_REFRESH_MS) || 60000;
+
 /**
  * Real-time Stellar Horizon payment streaming.
  *
@@ -34,6 +38,7 @@ class StellarStreamService {
     this.streams = new Map();
     this.timers = new Map();
     this.started = false;
+    this.refreshTimer = null;
   }
 
   /* ---------------------------------------------------------------- cursors */
@@ -88,19 +93,48 @@ class StellarStreamService {
     if (this.started) return;
     this.started = true;
 
-    const accounts = await StellarAccount.getActive(1000, 0);
-    if (!accounts.length) {
-      logger.info("Stellar stream: no active accounts to monitor");
-      return;
-    }
+    await this.syncAccounts();
 
-    for (const account of accounts) {
-      this.subscribe(account.stellar_address);
-    }
-
-    logger.info(`Stellar stream: monitoring ${accounts.length} account(s)`, {
+    logger.info(`Stellar stream: monitoring ${this.streams.size} account(s)`, {
       horizon: HORIZON_URL,
     });
+
+    // Accounts registered after boot would otherwise go unmonitored until the
+    // next restart, so re-scan periodically.
+    this.refreshTimer = setInterval(() => {
+      this.syncAccounts().catch((error) => {
+        logger.error("Stellar stream: account refresh failed", {
+          error: error.message,
+        });
+      });
+    }, REFRESH_INTERVAL_MS);
+
+    if (typeof this.refreshTimer.unref === "function") {
+      this.refreshTimer.unref();
+    }
+  }
+
+  /**
+   * Open streams for any active account we are not already watching, and drop
+   * streams for accounts that are no longer active.
+   */
+  async syncAccounts() {
+    const accounts = await StellarAccount.getActive(1000, 0);
+    const active = new Set(accounts.map((a) => a.stellar_address));
+
+    for (const address of active) {
+      if (!this.streams.has(address)) {
+        logger.info(`Stellar stream: new account detected ${address}`);
+        await this.subscribe(address);
+      }
+    }
+
+    for (const address of [...this.streams.keys()]) {
+      if (!active.has(address)) {
+        logger.info(`Stellar stream: account deactivated ${address}`);
+        this.closeStream(address);
+      }
+    }
   }
 
   async subscribe(address) {
@@ -212,6 +246,10 @@ class StellarStreamService {
 
   stop() {
     this.started = false;
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+    }
     for (const address of [...this.streams.keys()]) {
       this.closeStream(address);
     }

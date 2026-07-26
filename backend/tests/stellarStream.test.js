@@ -242,6 +242,45 @@ describe("StellarStreamService — reconnection", () => {
   });
 });
 
+describe("StellarStreamService — account discovery", () => {
+  it("subscribes to accounts registered after startup", async () => {
+    mockAccountGetActive.mockResolvedValue([{ stellar_address: ADDRESS }]);
+    await StellarStreamService.syncAccounts();
+    expect(StellarStreamService.streams.has(ADDRESS)).toBe(true);
+
+    // A second account appears later.
+    mockAccountGetActive.mockResolvedValue([
+      { stellar_address: ADDRESS },
+      { stellar_address: "GNEWACCOUNT" },
+    ]);
+    await StellarStreamService.syncAccounts();
+    expect(StellarStreamService.streams.has("GNEWACCOUNT")).toBe(true);
+    expect(StellarStreamService.streams.size).toBe(2);
+  });
+
+  it("closes streams for accounts that become inactive", async () => {
+    mockAccountGetActive.mockResolvedValue([
+      { stellar_address: ADDRESS },
+      { stellar_address: "GGONE" },
+    ]);
+    await StellarStreamService.syncAccounts();
+    expect(StellarStreamService.streams.size).toBe(2);
+
+    mockAccountGetActive.mockResolvedValue([{ stellar_address: ADDRESS }]);
+    await StellarStreamService.syncAccounts();
+    expect(StellarStreamService.streams.has("GGONE")).toBe(false);
+    expect(StellarStreamService.streams.size).toBe(1);
+  });
+
+  it("does not re-subscribe to an account it already watches", async () => {
+    mockAccountGetActive.mockResolvedValue([{ stellar_address: ADDRESS }]);
+    await StellarStreamService.syncAccounts();
+    const first = StellarStreamService.streams.get(ADDRESS);
+    await StellarStreamService.syncAccounts();
+    expect(StellarStreamService.streams.get(ADDRESS)).toBe(first);
+  });
+});
+
 describe("StellarStreamService — health status", () => {
   it("reports disabled when not started", () => {
     const status = StellarStreamService.getStatus();
