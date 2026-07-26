@@ -96,6 +96,22 @@ export const updateDisputeStatusSchema = Joi.object({
     }),
 }).unknown(false);
 
+// ─── Update Dispute (Admin) ──────────────────────────────
+
+export const updateDisputeAdminSchema = Joi.object({
+    status: Joi.string()
+        .valid("under_review", "escalated", "resolved", "closed")
+        .messages({
+            "any.only": "Status must be one of: under_review, escalated, resolved, closed",
+        }),
+    adminNotes: Joi.string().max(2000).allow(null, "").messages({
+        "string.max": "Admin notes must be 2000 characters or less",
+    }),
+    outcome: Joi.string().valid("upheld", "rejected").allow(null).messages({
+        "any.only": "Outcome must be one of: upheld, rejected",
+    }),
+}).unknown(false);
+
 // ─── Escalate Dispute ────────────────────────────────────
 
 export const escalateDisputeSchema = Joi.object({
