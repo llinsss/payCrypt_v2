@@ -8,6 +8,12 @@ Welcome to the Tagged documentation. This directory contains comprehensive guide
 - [README](../README.md) - Project overview and quick start
 - [CONTRIBUTING](../CONTRIBUTING.md) - How to contribute
 - [CHANGELOG](../CHANGELOG.md) - Version history
+- **[Getting Started Guide](api/getting-started.md)** - Complete API walkthrough: register → get JWT → create wallet → send payment
+
+### API Reference
+- **[API Docs Site (Redoc)](api/)** - Interactive API documentation powered by Redoc
+- **[OpenAPI Spec](api/openapi.json)** - Full OpenAPI 3.0 specification JSON
+- **[Postman Collection](../docs/Tagged_API.postman_collection.json)** - Importable Postman collection for API testing
 
 ### Setup & Deployment
 - [Database Setup](DATABASE_SETUP.md) - Database configuration

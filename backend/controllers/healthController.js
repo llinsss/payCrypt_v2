@@ -2,11 +2,8 @@ import {
     checkAllDependencies,
     getConnectionPoolStats,
 } from "../utils/dbHealth.js";
+import { checkStellarStreamHealth } from "../utils/stellarStreamHealth.js";
 
-/**
- * GET /api/health
- * Comprehensive health check — returns detailed status of all dependencies
- */
 export const getHealth = async (req, res) => {
     const health = {
         status: "ok",
@@ -17,13 +14,16 @@ export const getHealth = async (req, res) => {
             database: { status: "unknown" },
             redis: { status: "unknown" },
             stellar: { status: "unknown" },
+            stellarStream: { status: "unknown" },
         },
     };
 
     try {
-        const dependencies = await checkAllDependencies();
+        const [dependencies, streamHealth] = await Promise.all([
+            checkAllDependencies(),
+            checkStellarStreamHealth(),
+        ]);
 
-        // Database
         health.checks.database = {
             status: dependencies.database.healthy ? "up" : "down",
             latencyMs: dependencies.database.latencyMs,
@@ -31,14 +31,12 @@ export const getHealth = async (req, res) => {
             pool: getConnectionPoolStats(),
         };
 
-        // Redis
         health.checks.redis = {
             status: dependencies.redis.healthy ? "up" : "down",
             latencyMs: dependencies.redis.latencyMs,
             message: dependencies.redis.message,
         };
 
-        // Stellar (external API)
         health.checks.stellar = {
             status: dependencies.stellar.healthy ? "up" : "down",
             latencyMs: dependencies.stellar.latencyMs,
@@ -46,14 +44,28 @@ export const getHealth = async (req, res) => {
             details: dependencies.stellar.details || undefined,
         };
 
-        // Determine overall status
-        if (!dependencies.healthy) {
-            const allDown =
-                !dependencies.database.healthy &&
-                !dependencies.redis.healthy &&
-                !dependencies.stellar.healthy;
+        health.checks.stellarStream = {
+            status: streamHealth.healthy ? "up" : "down",
+            running: streamHealth.running,
+            connected: streamHealth.connected,
+            latencyMs: streamHealth.latencyMs,
+            message: streamHealth.message,
+            details: streamHealth.details || undefined,
+        };
 
-            health.status = allDown ? "down" : "degraded";
+        const criticalChecks = [
+            dependencies.database.healthy,
+            dependencies.redis.healthy,
+            streamHealth.healthy,
+        ];
+        
+        const allCriticalDown = criticalChecks.every(check => !check);
+        const someCriticalDown = criticalChecks.some(check => !check);
+
+        if (allCriticalDown) {
+            health.status = "down";
+        } else if (someCriticalDown) {
+            health.status = "degraded";
         }
     } catch (error) {
         console.error("Health check failed:", error);
@@ -65,11 +77,6 @@ export const getHealth = async (req, res) => {
     res.status(statusCode).json(health);
 };
 
-/**
- * GET /api/health/ready
- * Readiness probe — checks that critical dependencies (database + Redis) are
- * responsive. Used by load balancers to decide whether to route traffic here.
- */
 export const getReadiness = async (req, res) => {
     const readiness = {
         status: "ready",
@@ -83,7 +90,6 @@ export const getReadiness = async (req, res) => {
         readiness.checks.database = dependencies.database.healthy ? "up" : "down";
         readiness.checks.redis = dependencies.redis.healthy ? "up" : "down";
 
-        // App is not ready if critical dependencies are down
         const isReady = dependencies.database.healthy && dependencies.redis.healthy;
 
         if (!isReady) {
@@ -99,11 +105,6 @@ export const getReadiness = async (req, res) => {
     res.status(statusCode).json(readiness);
 };
 
-/**
- * GET /api/health/live
- * Liveness probe — confirms the process is alive and the event loop is not frozen.
- * Used by orchestrators (e.g. Kubernetes) to restart unresponsive containers.
- */
 export const getLiveness = (req, res) => {
     res.status(200).json({
         status: "alive",

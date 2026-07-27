@@ -25,6 +25,7 @@ import batchPaymentRoutes from "./batchPayments.js";
 import keyRoutes from "./keys.js";
 import tagRoutes from "./tagRoutes.js";
 import withdrawalRoutes from "./withdrawals.js";
+import stellarStreamRoutes from "./stellarStream.js";
 import { versionHeaders, CURRENT_VERSION, DEPRECATIONS } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -56,18 +57,9 @@ const registerRoutes = (router) => {
   router.use("/keys", keyRoutes);
   router.use("/tags", tagRoutes);
   router.use("/withdrawals", withdrawalRoutes);
+  router.use("/stellar-stream", stellarStreamRoutes);
 };
 
-/**
- * @swagger
- * /api/versions:
- *   get:
- *     summary: List available API versions and their deprecation status
- *     tags: [Versioning]
- *     responses:
- *       200:
- *         description: Version metadata
- */
 router.get("/versions", (req, res) => {
   const versions = new Set([1, CURRENT_VERSION]);
   res.status(200).json({
@@ -89,20 +81,16 @@ router.get("/versions", (req, res) => {
   });
 });
 
-// V1 routes (deprecated)
 const v1Router = express.Router();
 v1Router.use(versionHeaders(1));
 registerRoutes(v1Router);
 router.use("/v1", v1Router);
 
-// V2 routes (current)
 const v2Router = express.Router();
 v2Router.use(versionHeaders(CURRENT_VERSION));
 registerRoutes(v2Router);
 router.use("/v2", v2Router);
 
-// Default (unversioned) alias — kept for backward compatibility, always
-// mirrors the current version.
 router.use(versionHeaders(CURRENT_VERSION));
 registerRoutes(router);
 
