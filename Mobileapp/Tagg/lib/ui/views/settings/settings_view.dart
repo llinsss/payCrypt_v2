@@ -323,6 +323,8 @@ class SettingsView extends StackedView<SettingsViewModel> {
         const SizedBox(height: 12),
         _buildAppearanceSelector(viewModel),
         const SizedBox(height: 12),
+        _buildCurrencySelector(viewModel),
+        const SizedBox(height: 12),
         _buildSettingItem(
           icon: Icons.notifications_outlined,
           title: 'Notifications',
@@ -439,6 +441,70 @@ class SettingsView extends StackedView<SettingsViewModel> {
             color: isSelected ? Colors.white : const Color(0xFF867EA5),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCurrencySelector(SettingsViewModel viewModel) {
+    final currencies = ['USD', 'EUR', 'GBP', 'NGN'];
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF181027), Color(0xFF110F20)],
+        ),
+        border: Border.all(color: const Color(0xFF262140)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF120D1E),
+                  border: Border.all(color: const Color(0xFF262140)),
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: const Icon(Icons.currency_exchange, size: 18, color: Color(0xFFE2E2E2)),
+              ),
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Display Currency', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 16, color: Colors.white)),
+                  SizedBox(height: 4),
+                  Text('Choose the currency used for balances', style: TextStyle(fontWeight: FontWeight.w400, fontSize: 14, color: Color(0xFF867EA5))),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: currencies.map((currency) {
+              final selected = viewModel.preferredCurrency == currency;
+              return GestureDetector(
+                onTap: () => viewModel.setPreferredCurrency(currency),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: selected ? const Color(0xFF674AA6) : const Color(0xFF120D1E),
+                    border: Border.all(color: selected ? const Color(0xFF674AA6) : const Color(0xFF262140)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(currency, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: selected ? Colors.white : const Color(0xFF867EA5))),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
