@@ -35,7 +35,7 @@ export const webhookWorker = redisConnection
   ? new Worker(
       "webhook-delivery",
       async (job) => {
-        const { webhookId, eventId, url, secret, payload } = job.data;
+        const { webhookId, eventId, eventKey, url, secret, payload } = job.data;
 
         // Lazy import to prevent circular issues with dependencies
         const { default: WebhookDeliveryService } = await import("../services/WebhookDeliveryService.js");
@@ -47,6 +47,7 @@ export const webhookWorker = redisConnection
 
         const success = await WebhookDeliveryService.executeDelivery({
           eventId,
+          eventKey,
           webhookId,
           payload,
           url,

@@ -11,6 +11,7 @@ Welcome to the Tagged documentation. This directory contains comprehensive guide
 
 ### Setup & Deployment
 - [Database Setup](DATABASE_SETUP.md) - Database configuration
+- [Migration Audit](MIGRATION_AUDIT.md) - Migration gap audit and naming convention
 - [Deployment Checklist](DEPLOYMENT_CHECKLIST.md) - Production deployment guide
 - [Security Setup](SECURITY_SETUP.md) - Security configuration
 

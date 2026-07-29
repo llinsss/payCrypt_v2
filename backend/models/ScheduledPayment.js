@@ -2,7 +2,7 @@ import db from "../config/database.js";
 
 const ScheduledPayment = {
     async create(data) {
-        const [id] = await db("scheduled_payments").insert(data);
+        const [{ id }] = await db("scheduled_payments").insert(data).returning("id");
         return this.findById(id);
     },
 
@@ -108,6 +108,32 @@ const ScheduledPayment = {
 
     async cancel(id) {
         return this.update(id, { status: "cancelled" });
+    },
+
+    // Records an execution failure. After `maxFailures` consecutive failures
+    // the payment is paused instead of retried on the next scheduler tick.
+    async recordFailure(id, reason, { maxFailures = 3, retryDelayMs = 15 * 60 * 1000 } = {}) {
+        const current = await this.findById(id);
+        const failureCount = (current?.failure_count || 0) + 1;
+        const paused = failureCount >= maxFailures;
+
+        return this.update(id, {
+            failure_count: failureCount,
+            failure_reason: reason,
+            last_failure_at: new Date(),
+            status: paused ? "paused" : "pending",
+            scheduled_at: paused ? current.scheduled_at : new Date(Date.now() + retryDelayMs),
+        });
+    },
+
+    async resume(id) {
+        return this.update(id, {
+            status: "pending",
+            failure_count: 0,
+            failure_reason: null,
+            last_failure_at: null,
+            scheduled_at: new Date(),
+        });
     },
 
     async delete(id) {

@@ -2,6 +2,7 @@ import axios from "axios";
 import crypto from "crypto";
 import Webhook from "../models/Webhook.js";
 import WebhookEvent from "../models/WebhookEvent.js";
+import AuditLog from "../models/AuditLog.js";
 import { webhookQueue } from "../queues/webhook.js";
 import { validateWebhookUrl } from "../utils/validateWebhookUrl.js";
 import WebhookSignature from "../utils/webhookSignature.js";
@@ -164,6 +165,18 @@ const WebhookService = {
         console.error("Failed to create WebhookEvent record:", err.message);
       }
 
+      if (!isNew) {
+        console.warn(`Skipping duplicate webhook delivery for event ${eventId} (webhook ${webhook.id}, key ${idempotencyKey})`);
+        await AuditLog.create({
+          userId: webhook.user_id || null,
+          action: "webhook_delivery_skipped",
+          resource: "webhook",
+          resourceId: String(webhook.id),
+          details: { eventId, eventType, idempotencyKey, reason: "duplicate event" },
+        }).catch((err) => console.error("Failed to log skipped webhook delivery:", err.message));
+        continue;
+      }
+
       if (!webhookQueue) {
         console.warn("Webhook queue unavailable — skipping delivery");
         continue;
@@ -177,6 +190,7 @@ const WebhookService = {
         {
           webhookId: webhook.id,
           eventId,
+          eventKey: idempotencyKey,
           url: webhook.url,
           secret: webhook.secret,
           payload,

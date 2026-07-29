@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import RateLimitService from "../services/RateLimitService.js";
 import AuditLog from "../models/AuditLog.js";
 import User from "../models/User.js";
@@ -82,6 +83,12 @@ export const rateLimit = (options = {}) => {
         statusCode: 429
       });
 
+      Sentry.captureMessage(`Rate limit exceeded for ${endpointName}`, {
+        level: "warning",
+        tags: { endpointName, ip: req.ip },
+        extra: { endpoint: req.originalUrl, identifier, capacity },
+      });
+
       const retryAfter = Math.ceil(1 / (refillRatePerMs * 1000)); // Time to get 1 token
       res.setHeader("Retry-After", retryAfter);
       return res.status(429).json({
@@ -93,6 +100,22 @@ export const rateLimit = (options = {}) => {
 
     next();
   };
+};
+
+export const AUTH_RATE_LIMITS = {
+  login: { endpointName: "login", windowMs: 15 * 60 * 1000, max: 5 },
+  register: { endpointName: "register", windowMs: 60 * 60 * 1000, max: 5 },
+  forgotPassword: { endpointName: "forgot-password", windowMs: 60 * 60 * 1000, max: 3 },
+  resetPassword: { endpointName: "reset-password", windowMs: 60 * 60 * 1000, max: 3 },
+  twoFactorVerify: { endpointName: "2fa-verify", windowMs: 15 * 60 * 1000, max: 5 },
+};
+
+export const strictAuthRateLimit = (preset) => {
+  const config = AUTH_RATE_LIMITS[preset];
+  if (!config) {
+    throw new Error(`Unknown strictAuthRateLimit preset: ${preset}`);
+  }
+  return rateLimit(config);
 };
 
 export default rateLimit;
