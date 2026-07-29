@@ -105,6 +105,67 @@ Postgres/Redis volumes and start from a clean database).
 5. Update documentation
 6. Submit PR with clear description
 
+### Safe Knex Query Patterns
+
+Knex parameterises the query builder for you, so ordinary calls are already safe:
+
+```js
+db("transactions").where("user_id", userId);          // safe — bound automatically
+```
+
+The `raw` family is different: it takes SQL as text. Interpolating a value into
+that text reintroduces SQL injection regardless of how safe the rest of the
+query is.
+
+```js
+// Never do this — userId is concatenated straight into the SQL.
+db.raw(`SELECT * FROM transactions WHERE user_id = ${userId}`);
+
+// Do this — the value is bound, and the driver escapes it.
+db.raw("SELECT * FROM transactions WHERE user_id = ?", [userId]);
+```
+
+The same applies to every text-taking method: `whereRaw`, `orWhereRaw`,
+`havingRaw`, `groupByRaw`, `orderByRaw`, `joinRaw`.
+
+```js
+// Bindings work in these too.
+query.groupByRaw("DATE_TRUNC(?, created_at)", [period]);
+```
+
+**Identifiers cannot be bound.** Bindings replace *values*, not table or column
+names, so a dynamic column has to be validated instead. Check it against an
+allow-list and never pass request input through:
+
+```js
+const SORTABLE = { created: "created_at", amount: "usd_value" };
+const column = SORTABLE[req.query.sortBy] ?? "created_at";  // allow-list
+query.orderByRaw(`${column} DESC`); // check-raw-sql-allow: column is allow-listed above
+```
+
+A template literal with no `${}` in it is just a string and is perfectly fine —
+multi-line SQL is often clearer that way.
+
+#### Automated check
+
+`backend/scripts/check-raw-sql.js` fails on interpolated raw SQL. Run it any
+time:
+
+```bash
+cd backend && npm run check:raw-sql
+```
+
+To have it run before every commit, enable the committed hooks once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Migrations, seeds and one-off scripts are excluded — they build DDL from trusted
+local input, never from request data. If you have a genuinely safe interpolation
+that the check flags, add a `check-raw-sql-allow` comment on that line stating
+why it is safe.
+
 ## Project Structure
 
 ```
