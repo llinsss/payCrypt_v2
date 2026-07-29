@@ -321,6 +321,8 @@ class SettingsView extends StackedView<SettingsViewModel> {
           onTap: () {},
         ),
         const SizedBox(height: 12),
+        _buildLanguageSelector(viewModel),
+        const SizedBox(height: 12),
         _buildAppearanceSelector(viewModel),
         const SizedBox(height: 12),
         _buildCurrencySelector(viewModel),
@@ -441,6 +443,71 @@ class SettingsView extends StackedView<SettingsViewModel> {
             color: isSelected ? Colors.white : const Color(0xFF867EA5),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLanguageSelector(SettingsViewModel viewModel) {
+    final languages = viewModel.availableLanguages;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF181027), Color(0xFF110F20)],
+        ),
+        border: Border.all(color: const Color(0xFF262140)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF120D1E),
+                  border: Border.all(color: const Color(0xFF262140)),
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: const Icon(Icons.language, size: 18, color: Color(0xFFE2E2E2)),
+              ),
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Language', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 16, color: Colors.white)),
+                  SizedBox(height: 4),
+                  Text('Choose your preferred language', style: TextStyle(fontWeight: FontWeight.w400, fontSize: 14, color: Color(0xFF867EA5))),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: languages.entries.map((entry) {
+              final selected = viewModel.currentLanguage == entry.key;
+              return GestureDetector(
+                onTap: () => viewModel.setLanguage(entry.key),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: selected ? const Color(0xFF674AA6) : const Color(0xFF120D1E),
+                    border: Border.all(color: selected ? const Color(0xFF674AA6) : const Color(0xFF262140)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(entry.value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: selected ? Colors.white : const Color(0xFF867EA5))),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

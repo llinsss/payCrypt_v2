@@ -4,7 +4,7 @@ import Notification from "../models/Notification.js";
 export const createScheduledPayment = async (req, res) => {
     try {
         const { id: userId, tag: senderTag } = req.user;
-        const { recipientTag, amount, asset, assetIssuer, memo, scheduledAt } = req.body;
+        const { recipientTag, amount, asset, assetIssuer, memo, scheduledAt, frequency, maxExecutions } = req.body;
 
         if (senderTag === recipientTag) {
             return res.status(400).json({ error: "Cannot schedule a payment to yourself" });
@@ -19,6 +19,8 @@ export const createScheduledPayment = async (req, res) => {
             asset_issuer: assetIssuer || null,
             memo: memo || null,
             scheduled_at: new Date(scheduledAt),
+            frequency: frequency || "once",
+            max_executions: maxExecutions || null,
             status: "pending",
         });
 
