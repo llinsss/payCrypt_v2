@@ -317,8 +317,8 @@ class SettingsView extends StackedView<SettingsViewModel> {
         _buildSettingItem(
           icon: Icons.headset_mic_outlined,
           title: 'Contact Support',
-          subtitle: 'Reach us via email',
-          onTap: () {},
+          subtitle: 'Submit a support ticket',
+          onTap: () => viewModel.onContactSupportTap(),
         ),
         const SizedBox(height: 12),
         _buildAppearanceSelector(viewModel),

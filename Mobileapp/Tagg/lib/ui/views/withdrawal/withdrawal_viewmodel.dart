@@ -27,6 +27,9 @@ class WithdrawalViewModel extends BaseViewModel {
   final recipientTagController = TextEditingController();
   final walletAddressController = TextEditingController();
   final accountNumberController = TextEditingController();
+  // Optional note attached to the transaction (issue #476)
+  final notesController = TextEditingController();
+  static const int maxNotesLength = 100;
 
   // User token balances
   List<UserTokenBalance> _tokenBalances = [];
@@ -67,6 +70,7 @@ class WithdrawalViewModel extends BaseViewModel {
     recipientTagController.dispose();
     walletAddressController.dispose();
     accountNumberController.dispose();
+    notesController.dispose();
     super.dispose();
   }
 
@@ -398,18 +402,21 @@ class WithdrawalViewModel extends BaseViewModel {
   }) async {
     final amount = amountController.text.trim();
     final receiverTag = recipientTagController.text.trim();
+    final notes = notesController.text.trim();
 
     try {
       final response = await _walletService.withdrawToTag(
         balanceId: _selectedBalance!.id,
         amount: amount,
         receiverTag: receiverTag,
+        notes: notes.isNotEmpty ? notes : null,
       );
 
       if (response.isSuccess) {
         // Clear form
         amountController.clear();
         recipientTagController.clear();
+        notesController.clear();
 
         // Reload balances
         await loadBalances();

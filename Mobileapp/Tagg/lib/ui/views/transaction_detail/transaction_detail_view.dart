@@ -110,8 +110,36 @@ class TransactionDetailView
           _buildDetailRow('To', tx.toAddress),
           if (tx.description != null && tx.description!.isNotEmpty)
             _buildDetailRow('Description', tx.description!),
+          if (tx.notes != null && tx.notes!.isNotEmpty)
+            _buildDetailRow('Note', tx.notes!),
           if (tx.txHash != null && tx.txHash!.isNotEmpty)
             _buildDetailRow('Tx Hash', tx.txHash!),
+          const SizedBox(height: 24),
+          // Get help with this transaction (issue #454)
+          Semantics(
+            label: 'Get help with this transaction',
+            button: true,
+            child: OutlinedButton.icon(
+              onPressed: () => viewModel.navigateToContactSupport(),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF262140)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              icon: const Icon(Icons.headset_mic_outlined,
+                  color: Color(0xFF9D55FF), size: 18),
+              label: Text(
+                'Get Help with This Transaction',
+                style: GoogleFonts.manrope(
+                  fontSize: 13,
+                  color: const Color(0xFF9D55FF),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

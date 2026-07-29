@@ -1,4 +1,5 @@
 import 'package:Tagg/app/app.locator.dart';
+import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/models/transaction_model.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:stacked/stacked.dart';
@@ -42,5 +43,12 @@ class TransactionDetailViewModel extends BaseViewModel {
 
   void navigateBack() {
     _navigationService.back();
+  }
+
+  /// Navigate to the contact support view with this transaction pre-linked.
+  void navigateToContactSupport() {
+    _navigationService.navigateToContactSupportView(
+      prefillTransactionId: transactionId,
+    );
   }
 }

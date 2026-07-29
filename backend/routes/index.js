@@ -26,6 +26,7 @@ import batchPaymentRoutes from "./batchPayments.js";
 import keyRoutes from "./keys.js";
 import tagRoutes from "./tagRoutes.js";
 import withdrawalRoutes from "./withdrawals.js";
+import supportTicketRoutes from "./supportTickets.js";
 import { versionHeaders, CURRENT_VERSION, DEPRECATIONS } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -58,6 +59,7 @@ const registerRoutes = (router) => {
   router.use("/keys", keyRoutes);
   router.use("/tags", tagRoutes);
   router.use("/withdrawals", withdrawalRoutes);
+  router.use("/support-tickets", supportTicketRoutes);
 };
 
 /**

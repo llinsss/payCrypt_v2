@@ -282,8 +282,14 @@ class StackedRouter extends _i1.RouterBase {
       );
     },
     _i18.ContactSupportView: (data) {
+      final args = data.getArgs<ContactSupportViewArguments>(
+        orElse: () => const ContactSupportViewArguments(),
+      );
       return _i20.MaterialPageRoute<dynamic>(
-        builder: (context) => const _i18.ContactSupportView(),
+        builder: (context) => _i18.ContactSupportView(
+          key: args.key,
+          prefillTransactionId: args.prefillTransactionId,
+        ),
         settings: data,
       );
     },
