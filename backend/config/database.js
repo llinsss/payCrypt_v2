@@ -24,7 +24,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const db = knex(knexConfig);
+// knexfile exports named environments; pass the selected environment rather
+// than the whole map to Knex. Falling back to development keeps local starts
+// usable when NODE_ENV is not set.
+const db = knex(knexConfig[process.env.NODE_ENV] || knexConfig.development);
 
 function getPool() {
   try {

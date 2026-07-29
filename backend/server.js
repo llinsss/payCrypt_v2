@@ -3,6 +3,7 @@ dotenv.config();
 
 import http from "http";
 import { validateEnv } from "./config/env.validation.js";
+import stellarStreamService from "./services/StellarStreamService.js";
 
 let validatedEnv;
 try {
@@ -78,11 +79,31 @@ const isProduction = process.env.NODE_ENV === "production";
     }
   }
 
+  // Start only after migrations complete, so the stream never races the
+  // stellar account/tag tables at boot. It reconnects internally on Horizon
+  // outages and restores each account's Redis cursor after a restart.
+  if (connectionResult.ok) {
+    try {
+      await stellarStreamService.start();
+    } catch (error) {
+      console.error("Stellar payment stream failed to start:", error.message);
+      if (isProduction) process.exit(1);
+    }
+  }
+
   const httpServer = http.createServer(app);
 
   SocketService.init(httpServer);
 
   await initApollo(app, null, httpServer);
+
+  const shutdown = (signal) => {
+    console.log(`${signal} received; stopping Stellar payment streams`);
+    stellarStreamService.stop();
+    httpServer.close(() => process.exit(0));
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 
   httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT} (with WebSockets)`);
