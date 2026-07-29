@@ -4,6 +4,7 @@ import 'package:Tagg/models/dashboard_summary.dart';
 import 'package:Tagg/models/user_token_balance.dart';
 import 'package:Tagg/services/api_service.dart';
 import 'package:Tagg/ui/common/api_constants.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class UserService {
   final ApiService _apiService = locator<ApiService>();
@@ -64,5 +65,24 @@ class UserService {
 
   Future<void> updateProfile(Map<String, dynamic> data) async {
     await _apiService.post(ApiConstants.userProfile, data);
+  }
+
+  Future<String> getPreferredCurrency() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('preferred_currency') ?? 'USD';
+  }
+
+  Future<void> setPreferredCurrency(String currency) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('preferred_currency', currency);
+    await updateProfile({'preferredCurrency': currency});
+  }
+
+  Future<Map<String, dynamic>> getWithdrawalStatus(int withdrawalId) async {
+    final response = await _apiService.get('/withdrawals/$withdrawalId');
+    if (response is Map<String, dynamic>) {
+      return response['data'] ?? {};
+    }
+    return {};
   }
 }

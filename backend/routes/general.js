@@ -25,6 +25,15 @@ router.get("/bill/data-services", controller.bill_data_services);
 router.post("/bill/requery", controller.bill_requery);
 router.post("/bill/verify-customer", controller.bill_verify_customer);
 router.get("/exchange-rates", publicCache(900), controller.get_exchange_rates);
+router.get("/exchange-rates/:currency", publicCache(900), async (req, res) => {
+  try {
+    const { currency } = req.params;
+    const rates = await exchangerateapi.rate(currency);
+    res.json({ base: "USD", currency: currency?.toUpperCase() || "USD", rate: rates?.[currency?.toUpperCase()] || 1 });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 router.get("/convert", controller.convert_currency);
 // Health check endpoint
 router.get("/health", (req, res) => {

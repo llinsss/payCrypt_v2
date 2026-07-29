@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:Tagg/app/app.locator.dart';
+import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/models/user_token_balance.dart';
 import 'package:Tagg/models/chains_models.dart';
 import 'package:Tagg/services/user_service.dart';
@@ -15,6 +17,7 @@ class WithdrawalViewModel extends BaseViewModel {
   final _userService = locator<UserService>();
   final _chainsService = locator<ChainsService>();
   final _snackbarService = locator<SnackbarService>();
+  final _navigationService = locator<NavigationService>();
 
   int selectedNavIndex = 1;
   int selectedWithdrawMethod = 0;
@@ -49,8 +52,17 @@ class WithdrawalViewModel extends BaseViewModel {
   double get platformFeeAmount => _platformFeeAmount;
   double get totalFeeAmount => _totalFeeAmount;
 
+  Timer? _pollingTimer;
+  Map<String, dynamic>? _withdrawal;
+  Map<String, dynamic>? get withdrawal => _withdrawal;
+  String _currentStep = 'submitted';
+  String get currentStep => _currentStep;
+  bool _isTerminalState = false;
+  bool get isTerminalState => _isTerminalState;
+
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     amountController.dispose();
     recipientTagController.dispose();
     walletAddressController.dispose();
@@ -139,8 +151,57 @@ class WithdrawalViewModel extends BaseViewModel {
   }
 
   void continueWithdrawal() {
-    // Handle next step
     debugPrint("Continue tapped with method $selectedWithdrawMethod");
+  }
+
+  void openStatusScreen(Map<String, dynamic> withdrawal) {
+    _withdrawal = withdrawal;
+    _currentStep = 'submitted';
+    _isTerminalState = false;
+    notifyListeners();
+    _navigationService.navigateTo(Routes.withdrawalStatusView);
+  }
+
+  void startStatusPolling(int withdrawalId) {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      try {
+        final data = await _userService.getWithdrawalStatus(withdrawalId);
+        _withdrawal = data;
+        _updateStepFromStatus(data['status']?.toString() ?? 'pending');
+        notifyListeners();
+        if (_isTerminalState) {
+          _pollingTimer?.cancel();
+        }
+      } catch (e) {
+        debugPrint('Withdrawal status polling failed: $e');
+      }
+    });
+  }
+
+  void _updateStepFromStatus(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        _currentStep = 'submitted';
+        _isTerminalState = false;
+        break;
+      case 'processing':
+        _currentStep = 'processing';
+        _isTerminalState = false;
+        break;
+      case 'completed':
+        _currentStep = 'sent';
+        _isTerminalState = true;
+        break;
+      case 'failed':
+      case 'reversed':
+        _currentStep = 'failed';
+        _isTerminalState = true;
+        break;
+      default:
+        _currentStep = 'submitted';
+        _isTerminalState = false;
+    }
   }
 
   /// Initialize and load user balances
@@ -289,7 +350,7 @@ class WithdrawalViewModel extends BaseViewModel {
           onError('Crypto wallet withdrawal coming soon');
           break;
         case 2: // Bank Account
-          onError('Bank account withdrawal coming soon');
+          await _initiateBankWithdrawal(onSuccess: onSuccess, onError: onError);
           break;
       }
     } catch (e) {
@@ -297,6 +358,35 @@ class WithdrawalViewModel extends BaseViewModel {
       onError('Withdrawal failed: ${e.toString()}');
     } finally {
       setBusy(false);
+    }
+  }
+
+  Future<void> _initiateBankWithdrawal({
+    required Function(String message) onSuccess,
+    required Function(String message) onError,
+  }) async {
+    final amount = amountController.text.trim();
+    try {
+      final response = await _walletService.initiateBankWithdrawal(
+        tokenId: _selectedBalance!.tokenId,
+        bankAccountId: 1,
+        amountCrypto: double.parse(amount),
+      );
+
+      if (response is Map<String, dynamic> && response['data'] != null) {
+        final id = response['data']['id'];
+        if (id != null) {
+          amountController.clear();
+          accountNumberController.clear();
+          startStatusPolling(id);
+          _navigationService.navigateTo(Routes.withdrawalStatusView);
+          return;
+        }
+      }
+
+      onError('Withdrawal failed');
+    } catch (e) {
+      onError('Withdrawal failed: ${e.toString()}');
     }
   }
 
