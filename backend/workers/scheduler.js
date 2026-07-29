@@ -5,6 +5,8 @@ import Notification from "../models/Notification.js";
 import AuditLog from "../models/AuditLog.js";
 import PaymentService from "../services/PaymentService.js";
 import KeyVaultService from "../services/KeyVaultService.js";
+import NotificationService from "../services/NotificationService.js";
+import { sendEmail } from "../services/external/smtp.js";
 import { apiKeyRotationQueue } from "./apiKeyRotationWorker.js";
 import { reconciliationQueue, registerReconciliationJob } from "./reconciliation.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
@@ -85,24 +87,21 @@ export const executionWorker = redisConnection
                         // Secrets are automatically cleared after callback execution
                     });
 
-                    // Mark as completed
+                    // Mark as completed and clear any prior failure tracking
                     await ScheduledPayment.update(payment.id, {
                         status: "completed",
                         executed_at: new Date(),
+                        failure_count: 0,
+                        failure_reason: null,
+                        last_failure_at: null,
                     });
 
-                    // Notify the user
-                    await Notification.create({
-                        user_id: payment.user_id,
-                        title: "Scheduled Payment Executed",
-                        body: `Your scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} has been executed successfully.`,
-                    });
-
-                    NotificationService.sendToUser(payment.user_id,
+                    // Notify the user (creates the in-app record and sends the push)
+                    await NotificationService.sendToUser(payment.user_id,
                         "Scheduled Payment Executed",
                         `Your scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} has been executed successfully.`,
                         { type: "payment_notifications", scheduled_payment_id: String(payment.id) }
-                    ).catch(err => console.error('FCM push error (scheduled payment):', err.message));
+                    ).catch(err => console.error('Notification error (scheduled payment success):', err.message));
 
                     processed++;
                     console.log(`✅ Scheduler: executed payment #${payment.id}`);
@@ -126,17 +125,29 @@ export const executionWorker = redisConnection
                         });
                     }
 
-                    await ScheduledPayment.update(payment.id, {
-                        status: "failed",
-                        failure_reason: error.message,
-                    });
+                    const updatedPayment = await ScheduledPayment.recordFailure(payment.id, error.message);
+                    const isPaused = updatedPayment.status === "paused";
 
-                    // Notify the user about the failure
-                    await Notification.create({
-                        user_id: payment.user_id,
-                        title: "Scheduled Payment Failed",
-                        body: `Your scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} has failed: ${error.message}`,
-                    });
+                    const baseMessage = `Your scheduled payment of ${payment.amount} ${payment.asset} to @${payment.recipient_tag} failed: ${error.message}`;
+                    const title = isPaused
+                        ? "Scheduled Payment Paused After Repeated Failures"
+                        : "Scheduled Payment Failed";
+                    const body = isPaused
+                        ? `${baseMessage}. After ${updatedPayment.failure_count} failed attempts, this scheduled payment has been paused — resume it from the app once the issue is resolved.`
+                        : `${baseMessage}. We'll try again shortly.`;
+
+                    // Notify the user about the failure (in-app + push)
+                    await NotificationService.sendToUser(payment.user_id, title, body, {
+                        type: "payment_notifications",
+                        scheduled_payment_id: String(payment.id),
+                        priority: isPaused ? "high" : "normal",
+                    }).catch(err => console.error('Notification error (scheduled payment failure):', err.message));
+
+                    // Email is the durable channel for a failure the user might miss in-app
+                    if (payment.user_email) {
+                        await sendEmail(payment.user_email, title, body)
+                            .catch(err => console.error('Email error (scheduled payment failure):', err.message));
+                    }
 
                     failed++;
                 }

@@ -73,4 +73,4 @@ const config = {
   },
 };
 
-export default config;
+export default config[process.env.NODE_ENV] || config.development;

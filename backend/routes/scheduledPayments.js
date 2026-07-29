@@ -4,6 +4,7 @@ import {
     getScheduledPayments,
     getScheduledPaymentById,
     cancelScheduledPayment,
+    resumeScheduledPayment,
     getUpcomingPayments,
 } from "../controllers/scheduledPaymentController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -41,5 +42,8 @@ router.get("/:id", authenticate, getScheduledPaymentById);
 
 // Cancel a scheduled payment
 router.patch("/:id/cancel", authenticate, cancelScheduledPayment);
+
+// Resume a paused scheduled payment
+router.patch("/:id/resume", authenticate, resumeScheduledPayment);
 
 export default router;
