@@ -5,18 +5,27 @@ class WithdrawToTagRequest {
   final int balanceId;
   final String amount;
   final String receiverTag;
+  final String? notes;
+  final String? metadata;
 
   WithdrawToTagRequest({
     required this.balanceId,
     required this.amount,
     required this.receiverTag,
+    this.notes,
+    this.metadata,
   });
 
-  Map<String, dynamic> toJson() => {
-        'balance_id': balanceId,
-        'amount': amount,
-        'receiver_tag': receiverTag,
-      };
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{
+      'balance_id': balanceId,
+      'amount': amount,
+      'receiver_tag': receiverTag,
+    };
+    if (notes != null && notes!.isNotEmpty) map['notes'] = notes;
+    if (metadata != null && metadata!.isNotEmpty) map['metadata'] = metadata;
+    return map;
+  }
 }
 
 /// Response model for withdrawal transactions

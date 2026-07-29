@@ -27,7 +27,8 @@ class WithdrawalViewModel extends BaseViewModel {
   final recipientTagController = TextEditingController();
   final walletAddressController = TextEditingController();
   final accountNumberController = TextEditingController();
-
+  final notesController = TextEditingController();
+  final metadataController = TextEditingController();
   // User token balances
   List<UserTokenBalance> _tokenBalances = [];
   List<UserTokenBalance> get tokenBalances => _tokenBalances;
@@ -67,6 +68,8 @@ class WithdrawalViewModel extends BaseViewModel {
     recipientTagController.dispose();
     walletAddressController.dispose();
     accountNumberController.dispose();
+    notesController.dispose();
+    metadataController.dispose();
     super.dispose();
   }
 
@@ -404,12 +407,16 @@ class WithdrawalViewModel extends BaseViewModel {
         balanceId: _selectedBalance!.id,
         amount: amount,
         receiverTag: receiverTag,
+        notes: notesController.text.trim(),
+        metadata: metadataController.text.trim(),
       );
 
       if (response.isSuccess) {
         // Clear form
         amountController.clear();
         recipientTagController.clear();
+        notesController.clear();
+        metadataController.clear();
 
         // Reload balances
         await loadBalances();

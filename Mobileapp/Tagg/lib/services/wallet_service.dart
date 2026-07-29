@@ -70,12 +70,16 @@ class WalletService {
     required int balanceId,
     required String amount,
     required String receiverTag,
+    String? notes,
+    String? metadata,
   }) async {
     try {
       final request = WithdrawToTagRequest(
         balanceId: balanceId,
         amount: amount,
         receiverTag: receiverTag,
+        notes: notes,
+        metadata: metadata,
       );
 
       final response = await _apiService.post(
