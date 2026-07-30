@@ -27,11 +27,8 @@ import 'package:Tagg/ui/views/change_password/change_password_view.dart';
 import 'package:Tagg/ui/views/contact_support/contact_support_view.dart';
 import 'package:Tagg/ui/views/notifications/notifications_view.dart';
 import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart';
-#340-Implement-Token-Swap-Backend-Endpoint-FIX
-import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart';
-
 import 'package:Tagg/ui/views/withdrawal_status/withdrawal_status_view.dart';
-
+import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
