@@ -36,6 +36,10 @@ import {
 } from "./middleware/validation.js";
 
 import { rateLimit } from "./middleware/rateLimiter.js";
+import {
+  applyPayloadLimits,
+  payloadTooLargeHandler,
+} from "./middleware/payloadLimits.js";
 import { initSentry } from "./observability/sentry.js";
 
 dotenv.config();
@@ -114,18 +118,16 @@ app.use(
   }),
 );
 
-// Request body parsing with size limits.
-// Capture the raw request buffer so webhook handlers (e.g. Paystack) can verify
-// HMAC signatures against the exact bytes received, not the re-serialized JSON.
-app.use(
-  express.json({
-    limit: "10mb",
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  }),
-);
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+// Request body parsing with tiered size limits.
+//
+// A single 10mb limit applied everywhere meant any endpoint could be used to
+// buffer 10mb of attacker-supplied JSON. Limits are now scoped per route class
+// (10kb auth / 50kb default / 10mb upload) — see middleware/payloadLimits.js.
+//
+// Each parser preserves the raw request buffer so webhook handlers (e.g.
+// Paystack) can verify HMAC signatures against the exact bytes received rather
+// than the re-serialized JSON.
+applyPayloadLimits(app);
 
 // Detect SQL Injection attempts
 app.use(detectSqlInjection);
@@ -267,6 +269,9 @@ app.all("*", (req, res, next) => {
 
 // Setup Sentry error handler
 Sentry.setupExpressErrorHandler(app);
+
+// Oversized request bodies get a described 413 rather than a bare status.
+app.use(payloadTooLargeHandler);
 
 // Global error handler
 app.use((error, req, res, next) => {

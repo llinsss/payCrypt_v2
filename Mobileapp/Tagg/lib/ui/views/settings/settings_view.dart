@@ -325,11 +325,35 @@ class SettingsView extends StackedView<SettingsViewModel> {
         const SizedBox(height: 12),
         _buildCurrencySelector(viewModel),
         const SizedBox(height: 12),
-        _buildSettingItem(
-          icon: Icons.notifications_outlined,
-          title: 'Notifications',
-          subtitle: 'Manage push notifications',
-          onTap: () => viewModel.onNotificationTap(),
+        const SizedBox(height: 24),
+        const Text(
+          'Notifications',
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            fontSize: 18,
+            color: Color(0xFFE2E2E2),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildBiometricToggle(
+          title: 'Push Notifications',
+          subtitle: 'Receive alerts on your device',
+          value: viewModel.pushEnabled,
+          onChanged: (value) => viewModel.togglePushNotifications(value),
+        ),
+        const SizedBox(height: 12),
+        _buildBiometricToggle(
+          title: 'Email Alerts',
+          subtitle: 'Receive updates via email',
+          value: viewModel.emailEnabled,
+          onChanged: (value) => viewModel.toggleEmailNotifications(value),
+        ),
+        const SizedBox(height: 12),
+        _buildBiometricToggle(
+          title: 'In-App Notifications',
+          subtitle: 'Show alerts inside the app',
+          value: viewModel.inAppEnabled,
+          onChanged: (value) => viewModel.toggleInAppNotifications(value),
         ),
       ],
     );

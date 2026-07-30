@@ -10,6 +10,8 @@ import 'package:Tagg/services/api_service.dart';
 import 'package:Tagg/services/push_notification_service.dart';
 import 'package:stacked_services/stacked_services.dart';
 
+import 'package:sentry_flutter/sentry_flutter.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -26,7 +28,13 @@ Future<void> main() async {
     await pushService.initialize(apiService: apiService);
   }
 
-  runApp(const MainApp());
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = 'https://example@sentry.io/12345'; // Placeholder DSN
+      options.tracesSampleRate = 1.0;
+    },
+    appRunner: () => runApp(const MainApp()),
+  );
 }
 
 class MainApp extends StatefulWidget {

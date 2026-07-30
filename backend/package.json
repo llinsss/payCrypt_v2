@@ -12,6 +12,7 @@
         "dev": "nodemon server.js",
         "start": "node server.js",
         "lint": "npx --yes eslint .",
+        "check:raw-sql": "node scripts/check-raw-sql.js",
         "backup:db": "node scripts/backup.js",
         "migrate": "knex migrate:latest && knex seed:run",
         "migrate:rollback": "knex migrate:rollback",
