@@ -2,7 +2,11 @@ import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/services/auth_service.dart';
 import 'package:Tagg/services/theme_service.dart';
+#340-Implement-Token-Swap-Backend-Endpoint-FIX
 import 'package:Tagg/services/biometric_service.dart';
+
+import 'package:Tagg/services/user_service.dart';
+
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 
@@ -11,7 +15,11 @@ class SettingsViewModel extends BaseViewModel {
   final _authService = locator<AuthService>();
   final _dialogService = locator<DialogService>();
   final _themeService = locator<ThemeService>();
+#340-Implement-Token-Swap-Backend-Endpoint-FIX
   final _biometricService = locator<BiometricService>();
+
+  final _userService = locator<UserService>();
+
 
   ThemeMode _currentTheme = ThemeMode.system;
   bool _isBiometricEnabled = false;
@@ -19,9 +27,24 @@ class SettingsViewModel extends BaseViewModel {
   ThemeMode get currentTheme => _currentTheme;
   bool get isBiometricEnabled => _isBiometricEnabled;
 
+#340-Implement-Token-Swap-Backend-Endpoint-FIX
   Future<void> init() async {
     _currentTheme = _themeService.themeMode;
     _isBiometricEnabled = await _biometricService.isBiometricUnlockEnabled();
+
+  String _preferredCurrency = 'USD';
+  String get preferredCurrency => _preferredCurrency;
+
+  @override
+  void init() {
+    super.init();
+    _currentTheme = _themeService.themeMode;
+    _loadPreferredCurrency();
+  }
+
+  Future<void> _loadPreferredCurrency() async {
+    _preferredCurrency = await _userService.getPreferredCurrency();
+
     notifyListeners();
   }
 
@@ -68,6 +91,12 @@ class SettingsViewModel extends BaseViewModel {
   Future<void> setThemeMode(ThemeMode mode) async {
     _currentTheme = mode;
     await _themeService.setThemeMode(mode);
+    notifyListeners();
+  }
+
+  Future<void> setPreferredCurrency(String currency) async {
+    _preferredCurrency = currency;
+    await _userService.setPreferredCurrency(currency);
     notifyListeners();
   }
 }
