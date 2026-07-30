@@ -22,6 +22,9 @@ import 'package:flutter/widgets.dart';
 
 class DashboardViewModel extends BaseViewModel {
   final ScrollController transactionScrollController = ScrollController();
+
+  /// Guard so the first-visit coach marks are only triggered once per mount.
+  bool coachMarksChecked = false;
   final _dialogService = locator<DialogService>();
   final _snackbarService = locator<SnackbarService>();
   final _userService = locator<UserService>();

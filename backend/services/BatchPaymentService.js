@@ -7,6 +7,7 @@ import Transaction from "../models/Transaction.js";
 import pLimit from "p-limit";
 import batchPaymentQueue from "../queues/batchPaymentQueue.js";
 import KeyVaultService from "./KeyVaultService.js";
+import { buildMerkleTree, getProof, verifyLeaf } from "../utils/merkle.js";
 
 const { TransactionBuilder, Operation, Asset, Keypair, Memo } = StellarSdk;
 
@@ -207,15 +208,56 @@ class BatchPaymentService {
       }
     }
 
+    // Compute a Merkle root over the valid payment leaves (recipient + amount +
+    // token) so the batch's integrity can be verified before each payment runs.
+    let merkleRoot = null;
+    if (validItems.length > 0) {
+      const leaves = validItems.map((item) => ({
+        recipient: item.recipientAddress,
+        amount: item.amount,
+        token: asset,
+      }));
+      const { tree } = buildMerkleTree(leaves);
+      merkleRoot = tree.getHexRoot();
+      // Attach each leaf + its Merkle proof so it can be re-verified against the
+      // persisted root immediately before execution.
+      validItems.forEach((item, i) => {
+        item.leaf = leaves[i];
+        item.merkleProof = getProof(tree, leaves[i]);
+      });
+    }
+
     return {
       senderAddress,
       validItems,
       failures,
+      merkleRoot,
       totalCost: validItems.reduce((sum, item) => sum + item.totalCost, 0),
       totalFees: validItems.reduce((sum, item) => sum + item.feeInfo.fee, 0),
       totalAmount: validItems.reduce((sum, item) => sum + item.amount, 0),
       token,
     };
+  }
+
+  /**
+   * Verify a prepared batch item's Merkle proof against the batch root.
+   * Throws a BatchProcessingError (integrity failure) if the leaf does not
+   * belong to the committed root — this indicates the batch was tampered with
+   * after the root was computed.
+   */
+  assertLeafIntegrity(item, merkleRoot) {
+    if (!merkleRoot) return;
+    const ok = verifyLeaf({
+      root: merkleRoot,
+      leaf: item.leaf,
+      proof: item.merkleProof,
+    });
+    if (!ok) {
+      throw new BatchProcessingError(
+        `Batch integrity check failed for item ${item.index}: Merkle proof does not match committed root`,
+        { statusCode: 409 },
+      );
+    }
   }
 
   async processAtomicBatch({
@@ -227,7 +269,7 @@ class BatchPaymentService {
     assetIssuer,
     memo,
   }) {
-    const { senderAddress, validItems, failures, token, totalAmount, totalFees, totalCost } = preparedBatch;
+    const { senderAddress, validItems, failures, token, totalAmount, totalFees, totalCost, merkleRoot } = preparedBatch;
 
     if (failures.length > 0) {
       throw new BatchProcessingError("Batch validation failed", {
@@ -253,7 +295,10 @@ class BatchPaymentService {
       );
     }
 
-    await BatchPayment.update(batch.id, { status: BATCH_STATUS.PROCESSING });
+    await BatchPayment.update(batch.id, {
+      status: BATCH_STATUS.PROCESSING,
+      merkle_root: merkleRoot,
+    });
 
     const trx = await db.transaction();
 
@@ -261,6 +306,10 @@ class BatchPaymentService {
       const transactionIds = [];
 
       for (const item of validItems) {
+        // Integrity gate: verify this leaf against the committed Merkle root
+        // before creating the DB record or including it in the on-chain tx.
+        this.assertLeafIntegrity(item, merkleRoot);
+
         const inserted = await trx("transactions").insert({
           user_id: userId,
           token_id: token.id,
@@ -350,6 +399,7 @@ class BatchPaymentService {
         message: "Batch payment processed successfully",
         data: {
           ...updatedBatch,
+          merkleRoot,
           transactions,
           total_fees: totalFees,
         },
@@ -431,7 +481,7 @@ class BatchPaymentService {
     assetIssuer,
     memo,
   }) {
-    const { senderAddress, validItems, failures } = preparedBatch;
+    const { senderAddress, validItems, failures, merkleRoot } = preparedBatch;
     const results = Array(batch.total_items).fill(null);
     let successfulItems = 0;
     let failedItems = 0;
@@ -458,6 +508,7 @@ class BatchPaymentService {
 
     await BatchPayment.update(batch.id, {
       status: BATCH_STATUS.PROCESSING,
+      merkle_root: merkleRoot,
       processed_items: processedItems,
       successful_items: successfulItems,
       failed_items: failedItems,
@@ -467,6 +518,21 @@ class BatchPaymentService {
     const limit = pLimit(10);
     const tasks = validItems.map((item) => {
       return limit(async () => {
+        // Integrity gate: reject any leaf that no longer matches the committed
+        // Merkle root before executing the payment.
+        try {
+          this.assertLeafIntegrity(item, merkleRoot);
+        } catch (integrityError) {
+          results[item.index] = this.buildFailedResult(
+            item.index,
+            item,
+            integrityError.message,
+          );
+          failedItems += 1;
+          processedItems += 1;
+          return;
+        }
+
         if (remainingBalance < item.totalCost) {
           results[item.index] = this.buildFailedResult(
             item.index,
