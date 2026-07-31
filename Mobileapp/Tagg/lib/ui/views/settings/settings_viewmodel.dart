@@ -80,6 +80,10 @@ class SettingsViewModel extends BaseViewModel {
     _navigationService.navigateToNotificationsView();
   }
 
+  void onContactSupportTap() {
+    _navigationService.navigateToContactSupportView();
+  }
+
   Future<void> logout() async {
     final result = await _dialogService.showDialog(
       title: 'Confirm Logout',

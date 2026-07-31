@@ -343,19 +343,84 @@ class DashboardViewModel extends BaseViewModel {
   bool _hasMore = true;
   bool _isLoadingMore = false;
 
+  // Search & filter state (issue #456)
+  String _searchQuery = '';
+  String? _statusFilter;   // 'completed', 'pending', 'failed', or null (all)
+  String? _typeFilter;     // 'credit', 'debit', or null (all)
+
+  String get searchQuery => _searchQuery;
+  String? get statusFilter => _statusFilter;
+  String? get typeFilter => _typeFilter;
+
   List<Transaction> get transactions => _transactions;
   bool get hasMore => _hasMore;
   bool get isLoadingMore => _isLoadingMore;
 
+  /// Update search query and filter the in-memory list.
+  void onSearchChanged(String query) {
+    _searchQuery = query.trim().toLowerCase();
+    notifyListeners();
+  }
+
+  /// Set status filter ('completed', 'pending', 'failed', or null for all).
+  void setStatusFilter(String? status) {
+    _statusFilter = status;
+    notifyListeners();
+  }
+
+  /// Set type filter ('credit', 'debit', or null for all).
+  void setTypeFilter(String? type) {
+    _typeFilter = type;
+    notifyListeners();
+  }
+
+  /// Clear all search/filter state.
+  void clearSearchFilters() {
+    _searchQuery = '';
+    _statusFilter = null;
+    _typeFilter = null;
+    selectedFilterIndex = 0;
+    notifyListeners();
+  }
+
   List<Transaction> get filteredTransactions {
+    var list = _transactions;
+
+    // Apply type quick-filter (tab buttons)
     switch (selectedFilterIndex) {
-      case 1: // Credit
-        return _transactions.where((t) => t.type == 'credit').toList();
-      case 2: // Debit
-        return _transactions.where((t) => t.type == 'debit').toList();
-      default: // All
-        return _transactions;
+      case 1:
+        list = list.where((t) => t.type == 'credit').toList();
+        break;
+      case 2:
+        list = list.where((t) => t.type == 'debit').toList();
+        break;
     }
+
+    // Apply status filter from filter sheet
+    if (_statusFilter != null) {
+      list = list.where((t) => t.status == _statusFilter).toList();
+    }
+
+    // Apply type filter from filter sheet (overrides tab)
+    if (_typeFilter != null) {
+      list = list.where((t) => t.type == _typeFilter).toList();
+    }
+
+    // Apply search query
+    if (_searchQuery.isNotEmpty) {
+      list = list.where((t) {
+        final q = _searchQuery;
+        return t.reference.toLowerCase().contains(q) ||
+            t.userTag.toLowerCase().contains(q) ||
+            (t.receiverTag?.toLowerCase().contains(q) ?? false) ||
+            t.amount.toLowerCase().contains(q) ||
+            t.tokenSymbol.toLowerCase().contains(q) ||
+            (t.notes?.toLowerCase().contains(q) ?? false) ||
+            (t.description?.toLowerCase().contains(q) ?? false);
+      }).toList();
+    }
+
+    return list;
   }
 
   /// Share a receipt for a completed transaction.

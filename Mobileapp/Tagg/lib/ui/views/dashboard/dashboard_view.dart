@@ -972,6 +972,54 @@ class DashboardView extends StackedView<DashboardViewModel> {
 
           const SizedBox(height: 12),
 
+          // Search bar (issue #456)
+          Semantics(
+            label: 'Search transactions',
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF130F22),
+                border: Border.all(color: const Color(0xFF262140)),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 14),
+                  const Icon(Icons.search, color: Color(0xFF867EA5), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      onChanged: viewModel.onSearchChanged,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Search by @tag, reference, amount…',
+                        hintStyle: const TextStyle(
+                            color: Color(0xFF867EA5), fontSize: 13),
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        suffixIcon: viewModel.searchQuery.isNotEmpty
+                            ? Semantics(
+                                label: 'Clear search',
+                                button: true,
+                                child: GestureDetector(
+                                  onTap: () => viewModel.clearSearchFilters(),
+                                  child: const Icon(Icons.close,
+                                      color: Color(0xFF867EA5), size: 16),
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
           // Filter buttons
           Container(
             height: 49,
