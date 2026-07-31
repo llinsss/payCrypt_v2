@@ -71,11 +71,11 @@ const AnalyticsService = {
     }
 
     const volume = await db("transactions")
-      .select(db.raw(`DATE_TRUNC('${dateTrunc}', created_at) as date`))
+      .select(db.raw("DATE_TRUNC(?, created_at) as date", [dateTrunc]))
       .sum("usd_value as total_volume")
       .where("deleted_at", null)
       .where("status", "completed")
-      .groupByRaw(`DATE_TRUNC('${dateTrunc}', created_at)`)
+      .groupByRaw("DATE_TRUNC(?, created_at)", [dateTrunc])
       .orderBy("date", "asc");
 
     return volume;
@@ -97,11 +97,11 @@ const AnalyticsService = {
         default: dateTrunc = 'day';
       }
       query = db("transactions")
-        .select(db.raw(`DATE_TRUNC('${dateTrunc}', created_at) as date`))
+        .select(db.raw("DATE_TRUNC(?, created_at) as date", [dateTrunc]))
         .avg("usd_value as average_size")
         .where("deleted_at", null)
         .where("status", "completed")
-        .groupByRaw(`DATE_TRUNC('${dateTrunc}', created_at)`)
+        .groupByRaw("DATE_TRUNC(?, created_at)", [dateTrunc])
         .orderBy("date", "asc");
     } else {
         const result = await query.first();
@@ -156,9 +156,9 @@ const AnalyticsService = {
     }
 
     const growth = await db("users")
-      .select(db.raw(`DATE_TRUNC('${dateTrunc}', created_at) as date`))
+      .select(db.raw("DATE_TRUNC(?, created_at) as date", [dateTrunc]))
       .count("* as new_users")
-      .groupByRaw(`DATE_TRUNC('${dateTrunc}', created_at)`)
+      .groupByRaw("DATE_TRUNC(?, created_at)", [dateTrunc])
       .orderBy("date", "asc");
 
     let cumulativeTotal = 0;
@@ -186,13 +186,13 @@ const AnalyticsService = {
 
     let query = db("transactions")
       .select(
-        db.raw(`DATE_TRUNC('${dateTrunc}', created_at) as date`),
+        db.raw("DATE_TRUNC(?, created_at) as date", [dateTrunc]),
         db.raw('COUNT(id) as transaction_count'),
         db.raw('SUM(usd_value) as volume')
       )
       .where("deleted_at", null)
       .where("status", "completed")
-      .groupByRaw(`DATE_TRUNC('${dateTrunc}', created_at)`)
+      .groupByRaw("DATE_TRUNC(?, created_at)", [dateTrunc])
       .orderBy("date", "asc");
 
     if (startDate) {
@@ -229,13 +229,13 @@ const AnalyticsService = {
     const dateTrunc = getTruncFunction(period);
 
     let query = db("transactions")
-      .select(db.raw(`DATE_TRUNC('${dateTrunc}', created_at) as date`))
+      .select(db.raw("DATE_TRUNC(?, created_at) as date", [dateTrunc]))
       .sum("usd_value as volume")
       .count("id as count")
       .where("deleted_at", null)
       .where("status", "completed")
       .whereBetween("created_at", [fromDate, toDate])
-      .groupByRaw(`DATE_TRUNC('${dateTrunc}', created_at)`)
+      .groupByRaw("DATE_TRUNC(?, created_at)", [dateTrunc])
       .orderBy("date", "asc");
 
     if (userId) query = query.where("user_id", userId);

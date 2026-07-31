@@ -1,5 +1,6 @@
 import 'package:Tagg/ui/common/app_assets.dart';
 import 'package:Tagg/ui/common/offline_banner.dart';
+import 'package:Tagg/ui/common/coach_marks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -41,6 +42,13 @@ class DashboardView extends StackedView<DashboardViewModel> {
     DashboardViewModel viewModel,
     Widget? child,
   ) {
+    // Show the first-visit coach marks once, after the first frame.
+    if (!viewModel.coachMarksChecked) {
+      viewModel.coachMarksChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowDashboardCoachMarks(context),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFF090715),
       body: SafeArea(

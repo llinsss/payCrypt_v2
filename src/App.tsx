@@ -29,6 +29,10 @@ import SettingsView from "./components/Settings/SettingsView";
 import AdminDashboard from "./components/Admin/AdminDashboard";
 import AdminUsers from "./components/Admin/AdminUsers";
 import AdminPayouts from "./components/Admin/AdminPayouts";
+import AdminKyc from "./components/Admin/AdminKyc";
+import AdminDisputes from "./components/Admin/AdminDisputes";
+import AdminTransactions from "./components/Admin/AdminTransactions";
+import AdminHealth from "./components/Admin/AdminHealth";
 import KYCForm from "./components/KYC/KYCForm";
 import ApiTest from "./components/Test/ApiTest";
 import { apiClient } from "./utils/api";
@@ -38,7 +42,7 @@ const PrivateLayout: React.FC = () => {
   const { user, isLoading } = useAuth();
   const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   useEffect(() => {
     if (!user) {
@@ -102,10 +106,11 @@ const PrivateLayout: React.FC = () => {
   );
 };
 
-// Guard for admin-only sections
+// Guard for admin-only sections — admin and super_admin roles.
 const AdminGuard: React.FC = () => {
   const { user } = useAuth();
-  if (user?.role !== "admin") {
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  if (!isAdmin) {
     return <Navigate to="/" replace />;
   }
   return <Outlet />;
@@ -231,6 +236,10 @@ function AppRoutes() {
         <Route path="admin" element={<AdminGuard />}>
           <Route path="overview" element={<AdminDashboard />} />
           <Route path="users" element={<AdminUsers />} />
+          <Route path="kyc" element={<AdminKyc />} />
+          <Route path="disputes" element={<AdminDisputes />} />
+          <Route path="transactions" element={<AdminTransactions />} />
+          <Route path="health" element={<AdminHealth />} />
           <Route path="payouts" element={<AdminPayouts />} />
           <Route
             path="analytics"

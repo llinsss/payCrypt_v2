@@ -31,6 +31,31 @@ class SettingsViewModel extends BaseViewModel {
     notifyListeners();
   }
 
+  bool _pushEnabled = true;
+  bool get pushEnabled => _pushEnabled;
+
+  bool _emailEnabled = false;
+  bool get emailEnabled => _emailEnabled;
+
+  bool _inAppEnabled = true;
+  bool get inAppEnabled => _inAppEnabled;
+
+  void togglePushNotifications(bool value) {
+    _pushEnabled = value;
+    notifyListeners();
+    // In a real app, save this to SharedPreferences or backend here
+  }
+
+  void toggleEmailNotifications(bool value) {
+    _emailEnabled = value;
+    notifyListeners();
+  }
+
+  void toggleInAppNotifications(bool value) {
+    _inAppEnabled = value;
+    notifyListeners();
+  }
+
   void onKycTap() {
     _navigationService.navigateToKycVerificationView();
   }
@@ -41,6 +66,14 @@ class SettingsViewModel extends BaseViewModel {
 
   void onchangePasswordTap() {
     _navigationService.navigateToChangePasswordView();
+  }
+
+  bool _isBiometricEnabled = false;
+  bool get isBiometricEnabled => _isBiometricEnabled;
+
+  void toggleBiometricUnlock(bool value) {
+    _isBiometricEnabled = value;
+    notifyListeners();
   }
 
   void onNotificationTap() {

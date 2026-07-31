@@ -2,6 +2,7 @@ import 'package:Tagg/ui/bottom_sheets/notice/notice_sheet.dart';
 import 'package:Tagg/ui/dialogs/info_alert/info_alert_dialog.dart';
 import 'package:Tagg/ui/views/home/home_view.dart';
 import 'package:Tagg/ui/views/startup/startup_view.dart';
+import 'package:Tagg/ui/views/onboarding/onboarding_view.dart';
 import 'package:stacked/stacked_annotations.dart';
 import 'package:stacked_services/stacked_services.dart';
 import 'package:Tagg/ui/views/signin/signin_view.dart';
@@ -39,6 +40,7 @@ import 'package:Tagg/services/support_ticket_service.dart';
   routes: [
     MaterialRoute(page: HomeView),
     MaterialRoute(page: StartupView),
+    MaterialRoute(page: OnboardingView),
     MaterialRoute(page: HomeView),
     MaterialRoute(page: SigninView),
     MaterialRoute(page: SignupView),

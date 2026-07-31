@@ -7,6 +7,7 @@ import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/ui/common/app_assets.dart';
+import 'package:Tagg/ui/common/address_validator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:stacked/stacked.dart';
@@ -42,6 +43,23 @@ class WithdrawalViewModel extends BaseViewModel {
   // Selected balance for withdrawal
   UserTokenBalance? _selectedBalance;
   UserTokenBalance? get selectedBalance => _selectedBalance;
+
+  /// Chain identifier of the currently-selected balance, used to validate the
+  /// recipient wallet address against the correct chain format.
+  String? get selectedChain =>
+      _selectedBalance?.chainSymbol ?? _selectedBalance?.chainName;
+
+  /// Inline validation error for the recipient wallet address field (issue #447).
+  String? addressError;
+
+  /// Re-validate the wallet address as the user types and surface the error
+  /// inline. Cleared while the field is empty so we don't nag mid-typing.
+  void onWalletAddressChanged(String value) {
+    addressError = value.trim().isEmpty
+        ? null
+        : AddressValidator.validate(value, selectedChain);
+    notifyListeners();
+  }
 
   String networkFee = "1%";
   String platformFee = "0.5%";
@@ -317,8 +335,16 @@ class WithdrawalViewModel extends BaseViewModel {
         }
         break;
       case 1: // Crypto Wallet
-        if (walletAddressController.text.trim().isEmpty) {
+        final addr = walletAddressController.text.trim();
+        if (addr.isEmpty) {
           return 'Please enter wallet address';
+        }
+        // Enforce chain-specific address format before submitting.
+        final addrError = AddressValidator.validate(addr, selectedChain);
+        if (addrError != null) {
+          addressError = addrError;
+          notifyListeners();
+          return addrError;
         }
         break;
       case 2: // Bank Account
