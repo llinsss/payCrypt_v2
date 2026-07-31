@@ -981,7 +981,9 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
             decoration: BoxDecoration(
               color: const Color(0xFF120F21),
               border: Border.all(
-                color: const Color(0xFF262140),
+                color: viewModel.addressError != null
+                    ? const Color(0xFFEF4444)
+                    : const Color(0xFF262140),
                 width: 2,
               ),
               borderRadius: BorderRadius.circular(48),
@@ -990,6 +992,7 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: TextField(
               controller: viewModel.walletAddressController,
+              onChanged: viewModel.onWalletAddressChanged,
               style: GoogleFonts.instrumentSans(
                 fontWeight: FontWeight.w500,
                 fontSize: 16,
@@ -1006,6 +1009,22 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
               ),
             ),
           ),
+
+          // Inline chain-specific validation error (issue #447)
+          if (viewModel.addressError != null) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                viewModel.addressError!,
+                style: GoogleFonts.instrumentSans(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                  color: const Color(0xFFEF4444),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

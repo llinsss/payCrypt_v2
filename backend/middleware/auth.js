@@ -3,9 +3,20 @@ import { createUserRateLimiter, createTierRateLimiter } from "../config/rateLimi
 import * as Sentry from "@sentry/node";
 import { verifyToken } from "../config/jwt.js";
 
+/** Roles permitted to access admin operations. */
+export const ADMIN_ROLES = ['admin', 'super_admin'];
+
 export const requireAdmin = (req, res, next) => {
-  if (req.user?.role !== 'admin') {
+  if (!ADMIN_ROLES.includes(req.user?.role)) {
     return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
+/** Restricts a route to super_admin only (for elevated operations). */
+export const requireSuperAdmin = (req, res, next) => {
+  if (req.user?.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Super admin access required' });
   }
   next();
 };
