@@ -3,6 +3,7 @@ import { Horizon } from "stellar-sdk";
 import db from "../config/database.js";
 import redis from "../config/redis.js";
 import WebhookService, { WEBHOOK_EVENTS } from "./WebhookService.js";
+import SocketService from "./SocketService.js";
 import logger from "../utils/logger.js";
 
 const DEFAULT_HORIZON_URL = "https://horizon-testnet.stellar.org";
@@ -200,6 +201,22 @@ export class StellarStreamService {
           },
           stream.userId,
         );
+
+        // Emit WebSocket balance update to the recipient user
+        SocketService.emitBalanceUpdate(stream.userId, {
+          event: 'balance_updated',
+          data: {
+            transaction: {
+              id: transaction.id,
+              type: 'credit',
+              amount: payment.amount,
+              asset: payment.asset_type === "native" ? "XLM" : payment.asset_code,
+              status: 'completed',
+              txHash: payment.transaction_hash,
+            },
+            timestamp: new Date().toISOString(),
+          },
+        });
       }
     } catch (error) {
       // Cursor is intentionally not saved here. Horizon will replay the event

@@ -76,6 +76,27 @@ class SocketService {
       this.io.to(`user:${userId}`).emit(event, data);
     }
   }
+
+  // Emit balance update to a specific user
+  emitBalanceUpdate(userId, balanceData) {
+    this.emitToUser(userId, 'balance_updated', balanceData);
+  }
+
+  // Emit balance update to a user when a transaction is confirmed
+  notifyBalanceChanged(userId, transactionData) {
+    if (!this.io) return;
+
+    const { balance, ...txData } = transactionData;
+
+    this.io.to(`user:${userId}`).emit('balance_updated', {
+      event: 'balance_updated',
+      data: {
+        balance: balance || null,
+        transaction: txData,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
 }
 
 export default new SocketService();

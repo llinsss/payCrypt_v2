@@ -79,6 +79,12 @@ class DashboardView extends StackedView<DashboardViewModel> {
 
                     const SizedBox(height: 24),
 
+                    // Upcoming Scheduled Payments Reminder
+                    if (viewModel.hasUpcomingPayments)
+                      _buildUpcomingPaymentsReminder(viewModel),
+
+                    const SizedBox(height: 24),
+
                     // Asset Balance Section
                     _buildAssetBalanceSection(viewModel),
 
@@ -1112,8 +1118,67 @@ class DashboardView extends StackedView<DashboardViewModel> {
     );
   }
 
-// Update your builder method to include the filter before the transactions table
-// Replace the _buildRecentTransactionsSection call with:
+  Widget _buildUpcomingPaymentsReminder(DashboardViewModel viewModel) {
+    final nextPayment = viewModel.upcomingPayments.first;
+    return GestureDetector(
+      onTap: () {
+        // Navigate to scheduled payments view
+        viewModel.navigateToScheduledPayments();
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [Color(0xFF1A1833), Color(0xFF1C1530)],
+          ),
+          border: Border.all(color: const Color(0xFF674AA6).withOpacity(0.4)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF674AA6).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.schedule_send, color: Color(0xFF674AA6), size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Upcoming Payment',
+                    style: GoogleFonts.instrumentSans(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                      color: const Color(0xFF867EA5),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${nextPayment.formattedAmount} to @${nextPayment.recipientTag} — ${nextPayment.formattedNextRun}',
+                    style: GoogleFonts.instrumentSans(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: const Color(0xFF867EA5), size: 20),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildTransactionsWithFilter(DashboardViewModel viewModel) {
     return Column(

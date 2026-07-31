@@ -1,6 +1,7 @@
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/services/auth_service.dart';
+import 'package:Tagg/services/language_service.dart';
 import 'package:Tagg/services/theme_service.dart';
 import 'package:Tagg/services/user_service.dart';
 import 'package:stacked/stacked.dart';
@@ -12,6 +13,7 @@ class SettingsViewModel extends BaseViewModel {
   final _dialogService = locator<DialogService>();
   final _themeService = locator<ThemeService>();
   final _userService = locator<UserService>();
+  final _languageService = locator<LanguageService>();
 
   ThemeMode _currentTheme = ThemeMode.system;
   ThemeMode get currentTheme => _currentTheme;
@@ -19,11 +21,17 @@ class SettingsViewModel extends BaseViewModel {
   String _preferredCurrency = 'USD';
   String get preferredCurrency => _preferredCurrency;
 
+  String _currentLanguage = 'en';
+  String get currentLanguage => _currentLanguage;
+  String get currentLanguageName => LanguageService.localeNames[_currentLanguage] ?? 'English';
+  Map<String, String> get availableLanguages => LanguageService.localeNames;
+
   @override
   void init() {
     super.init();
     _currentTheme = _themeService.themeMode;
     _loadPreferredCurrency();
+    _loadLanguage();
   }
 
   Future<void> _loadPreferredCurrency() async {
@@ -31,28 +39,14 @@ class SettingsViewModel extends BaseViewModel {
     notifyListeners();
   }
 
-  bool _pushEnabled = true;
-  bool get pushEnabled => _pushEnabled;
-
-  bool _emailEnabled = false;
-  bool get emailEnabled => _emailEnabled;
-
-  bool _inAppEnabled = true;
-  bool get inAppEnabled => _inAppEnabled;
-
-  void togglePushNotifications(bool value) {
-    _pushEnabled = value;
-    notifyListeners();
-    // In a real app, save this to SharedPreferences or backend here
-  }
-
-  void toggleEmailNotifications(bool value) {
-    _emailEnabled = value;
+  Future<void> _loadLanguage() async {
+    _currentLanguage = await _languageService.getSavedLocaleCode();
     notifyListeners();
   }
 
-  void toggleInAppNotifications(bool value) {
-    _inAppEnabled = value;
+  Future<void> setLanguage(String localeCode) async {
+    _currentLanguage = localeCode;
+    await _languageService.setLocale(localeCode);
     notifyListeners();
   }
 

@@ -33,7 +33,10 @@ import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
-import 'package:Tagg/services/support_ticket_service.dart';
+import 'package:Tagg/services/scheduled_payment_service.dart';
+import 'package:Tagg/services/websocket_service.dart';
+import 'package:Tagg/services/language_service.dart';
+import 'package:Tagg/ui/views/scheduled_payments/scheduled_payments_view.dart';
 // @stacked-import
 
 @StackedApp(
@@ -61,6 +64,7 @@ import 'package:Tagg/services/support_ticket_service.dart';
     MaterialRoute(page: NotificationsView),
     MaterialRoute(page: BatchPaymentView),
     MaterialRoute(page: WithdrawalStatusView),
+    MaterialRoute(page: ScheduledPaymentsView),
 // @stacked-route
   ],
   dependencies: [
@@ -75,7 +79,9 @@ import 'package:Tagg/services/support_ticket_service.dart';
     LazySingleton(classType: TransactionService),
     LazySingleton(classType: ChainsService),
     LazySingleton(classType: ExchangeRateService),
-    LazySingleton(classType: SupportTicketService),
+    LazySingleton(classType: ScheduledPaymentService),
+    LazySingleton(classType: WebSocketService),
+    LazySingleton(classType: LanguageService),
 // @stacked-service
   ],
   bottomsheets: [

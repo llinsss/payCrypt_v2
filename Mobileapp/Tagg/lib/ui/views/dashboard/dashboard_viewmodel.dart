@@ -1,19 +1,25 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/models/dashboard_summary.dart';
+import 'package:Tagg/models/scheduled_payment_model.dart';
 import 'package:Tagg/models/transaction_model.dart';
 import 'package:Tagg/models/user_token_balance.dart';
 import 'package:Tagg/models/wallet_data.dart';
 import 'package:Tagg/models/chains_models.dart';
+import 'package:Tagg/services/language_service.dart';
+import 'package:Tagg/services/scheduled_payment_service.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
 import 'package:Tagg/services/connectivity_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
+import 'package:Tagg/services/websocket_service.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
+import 'package:Tagg/app/app.router.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -32,12 +38,19 @@ class DashboardViewModel extends BaseViewModel {
   final _transactionService = locator<TransactionService>();
   final _chainsService = locator<ChainsService>();
   final _exchangeRateService = locator<ExchangeRateService>();
+  final _websocketService = locator<WebSocketService>();
+  final _navigationService = locator<NavigationService>();
+  final _scheduledPaymentService = locator<ScheduledPaymentService>();
+  final _languageService = locator<LanguageService>();
+
+  StreamSubscription? _balanceUpdateSubscription;
 
   // Dashboard Data - matching web version structure
   DashboardSummary? _dashboardSummary;
   WalletData? _walletData;
   List<UserTokenBalance> _tokenBalances = [];
   List<Chain> _chains = [];
+  List<ScheduledPayment> _upcomingPayments = [];
 
   // Computed balances
   double _totalBalance = 0.00; // Total balance in USD (from dashboard summary)
@@ -56,6 +69,8 @@ class DashboardViewModel extends BaseViewModel {
   WalletData? get walletData => _walletData;
   List<UserTokenBalance> get tokenBalances => _tokenBalances;
   List<Chain> get chains => _chains;
+  List<ScheduledPayment> get upcomingPayments => _upcomingPayments;
+  bool get hasUpcomingPayments => _upcomingPayments.isNotEmpty;
 
   double get totalBalance => _totalBalance;
   double get nairaBalance => _nairaBalance;
@@ -78,10 +93,25 @@ class DashboardViewModel extends BaseViewModel {
       if (!_isOffline) {
         // Retry when connectivity restores
         _loadDashboardData();
+        _websocketService.connect();
       }
       notifyListeners();
     });
     _loadDashboardData();
+    _setupWebSocketListener();
+  }
+
+  void _setupWebSocketListener() {
+    _balanceUpdateSubscription = _websocketService.onBalanceUpdate.listen((data) {
+      print('🔔 WebSocket balance update received');
+      _loadDashboardData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _balanceUpdateSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadDashboardData() async {
@@ -115,6 +145,15 @@ class DashboardViewModel extends BaseViewModel {
         offset: offset,
       );
       print('✅ Transactions loaded: ${_transactions.length} transactions');
+
+      // Load upcoming scheduled payments
+      try {
+        _upcomingPayments = await _scheduledPaymentService.getUpcomingPayments();
+        print('✅ Upcoming payments loaded: ${_upcomingPayments.length}');
+      } catch (e) {
+        print('⚠️ Could not load upcoming payments: $e');
+        _upcomingPayments = [];
+      }
 
       // Calculate balances with live exchange rate
       await _calculateBalances();
@@ -501,6 +540,11 @@ class DashboardViewModel extends BaseViewModel {
     }
 
     _isLoadingMore = false;
+  }
+
+  /// Navigate to scheduled payments view
+  void navigateToScheduledPayments() {
+    _navigationService.navigateToScheduledPaymentsView();
   }
 
   /// Reset transaction pagination
