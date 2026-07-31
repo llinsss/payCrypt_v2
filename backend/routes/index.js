@@ -27,6 +27,7 @@ import keyRoutes from "./keys.js";
 import tagRoutes from "./tagRoutes.js";
 import withdrawalRoutes from "./withdrawals.js";
 import swapRoutes from "./swapRoutes.js";
+import accountRoutes from "./account.js"; // #460 NDPR compliance
 import { versionHeaders, CURRENT_VERSION, DEPRECATIONS } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -60,6 +61,7 @@ const registerRoutes = (router) => {
   router.use("/tags", tagRoutes);
   router.use("/withdrawals", withdrawalRoutes);
   router.use("/swap", swapRoutes);
+  router.use("/account", accountRoutes); // #460 NDPR: data export & account deletion
 };
 
 /**
