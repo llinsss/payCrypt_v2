@@ -17,6 +17,7 @@ import '../services/auth_service.dart';
 import '../services/chains_service.dart';
 import '../services/notification_service.dart';
 import '../services/push_notification_service.dart';
+import '../services/support_ticket_service.dart';
 import '../services/transaction_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/user_service.dart';

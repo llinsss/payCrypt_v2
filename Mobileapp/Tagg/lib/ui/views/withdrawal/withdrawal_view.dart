@@ -43,6 +43,8 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
                     // Conditionally display recipient widget based on selected method
                     _buildConditionalRecipientWidget(viewModel),
                     const SizedBox(height: 24),
+                    _buildNotesField(viewModel),
+                    const SizedBox(height: 24),
                     _buildFeesBreakdown(viewModel),
                     const SizedBox(height: 24),
                     _buildOverviewCard(),
@@ -477,6 +479,118 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
     );
   }
 
+  Widget _buildTransactionNotes(WithdrawalViewModel viewModel) {
+    return Container(
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Notes Label
+          Container(
+            height: 20,
+            child: Row(
+              children: [
+                Text(
+                  'Transaction Notes (Optional)',
+                  style: GoogleFonts.instrumentSans(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    height: 1.25,
+                    color: Color(0xFFE2E2E2),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Notes input
+          Container(
+            width: double.infinity,
+            height: 60,
+            decoration: BoxDecoration(
+              color: const Color(0xFF120F21),
+              border: Border.all(
+                color: const Color(0xFF262140),
+                width: 2,
+              ),
+              borderRadius: BorderRadius.circular(48),
+            ),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: TextField(
+              controller: viewModel.notesController,
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+                color: Colors.white,
+              ),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: "Enter notes for this transaction",
+                hintStyle: GoogleFonts.instrumentSans(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                  color: const Color(0xFF867EA5),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          // Metadata Label
+          Container(
+            height: 20,
+            child: Row(
+              children: [
+                Text(
+                  'Metadata (Optional JSON)',
+                  style: GoogleFonts.instrumentSans(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    height: 1.25,
+                    color: Color(0xFFE2E2E2),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Metadata input
+          Container(
+            width: double.infinity,
+            height: 60,
+            decoration: BoxDecoration(
+              color: const Color(0xFF120F21),
+              border: Border.all(
+                color: const Color(0xFF262140),
+                width: 2,
+              ),
+              borderRadius: BorderRadius.circular(48),
+            ),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: TextField(
+              controller: viewModel.metadataController,
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+                color: Colors.white,
+              ),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: "Enter metadata",
+                hintStyle: GoogleFonts.instrumentSans(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                  color: const Color(0xFF867EA5),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFeesBreakdown(WithdrawalViewModel viewModel) {
     return Container(
       width: double.infinity,
@@ -769,6 +883,74 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
     );
   }
 
+  /// Optional notes / memo field (issue #476)
+  Widget _buildNotesField(WithdrawalViewModel viewModel) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Add a Note (optional)',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            Semantics(
+              label: 'Character count for note',
+              child: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: viewModel.notesController,
+                builder: (_, value, __) => Text(
+                  '${value.text.length}/${WithdrawalViewModel.maxNotesLength}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF867EA5),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Semantics(
+          label: 'Add a note to this transaction',
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: const Color(0xFF120F21),
+              border: Border.all(color: const Color(0xFF262140), width: 2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: TextField(
+              controller: viewModel.notesController,
+              maxLength: WithdrawalViewModel.maxNotesLength,
+              maxLines: 2,
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 14,
+                color: Colors.white,
+              ),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                counterText: '',
+                hintText: 'e.g. Rent, Groceries, Salary…',
+                hintStyle: GoogleFonts.instrumentSans(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  color: const Color(0xFF867EA5),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRecipientTag(WithdrawalViewModel viewModel) {
     return Container(
       width: double.infinity,
@@ -867,7 +1049,9 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
             decoration: BoxDecoration(
               color: const Color(0xFF120F21),
               border: Border.all(
-                color: const Color(0xFF262140),
+                color: viewModel.addressError != null
+                    ? const Color(0xFFEF4444)
+                    : const Color(0xFF262140),
                 width: 2,
               ),
               borderRadius: BorderRadius.circular(48),
@@ -876,6 +1060,7 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: TextField(
               controller: viewModel.walletAddressController,
+              onChanged: viewModel.onWalletAddressChanged,
               style: GoogleFonts.instrumentSans(
                 fontWeight: FontWeight.w500,
                 fontSize: 16,
@@ -892,6 +1077,22 @@ class WithdrawalView extends StackedView<WithdrawalViewModel> {
               ),
             ),
           ),
+
+          // Inline chain-specific validation error (issue #447)
+          if (viewModel.addressError != null) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                viewModel.addressError!,
+                style: GoogleFonts.instrumentSans(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                  color: const Color(0xFFEF4444),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

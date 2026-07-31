@@ -32,6 +32,7 @@ import 'package:Tagg/ui/views/settings/settings_view.dart' as _i11;
 import 'package:Tagg/ui/views/signin/signin_view.dart' as _i4;
 import 'package:Tagg/ui/views/signup/signup_view.dart' as _i5;
 import 'package:Tagg/ui/views/startup/startup_view.dart' as _i3;
+import 'package:Tagg/ui/views/onboarding/onboarding_view.dart' as _i23;
 import 'package:Tagg/ui/views/swap/swap_view.dart' as _i8;
 import 'package:Tagg/ui/views/withdrawal/withdrawal_view.dart' as _i12;
 
@@ -39,6 +40,8 @@ class Routes {
   static const homeView = '/home-view';
 
   static const startupView = '/startup-view';
+
+  static const onboardingView = '/onboarding-view';
 
   static const signinView = '/signin-view';
 
@@ -79,6 +82,7 @@ class Routes {
   static const all = <String>{
     homeView,
     startupView,
+    onboardingView,
     signinView,
     signupView,
     dashboardView,
@@ -109,6 +113,10 @@ class StackedRouter extends _i1.RouterBase {
     _i1.RouteDef(
       Routes.startupView,
       page: _i3.StartupView,
+    ),
+    _i1.RouteDef(
+      Routes.onboardingView,
+      page: _i23.OnboardingView,
     ),
     _i1.RouteDef(
       Routes.homeView,
@@ -205,6 +213,12 @@ class StackedRouter extends _i1.RouterBase {
         settings: data,
       );
     },
+    _i23.OnboardingView: (data) {
+      return _i20.MaterialPageRoute<dynamic>(
+        builder: (context) => const _i23.OnboardingView(),
+        settings: data,
+      );
+    },
     _i4.SigninView: (data) {
       return _i20.MaterialPageRoute<dynamic>(
         builder: (context) => const _i4.SigninView(),
@@ -290,8 +304,14 @@ class StackedRouter extends _i1.RouterBase {
       );
     },
     _i18.ContactSupportView: (data) {
+      final args = data.getArgs<ContactSupportViewArguments>(
+        orElse: () => const ContactSupportViewArguments(),
+      );
       return _i20.MaterialPageRoute<dynamic>(
-        builder: (context) => const _i18.ContactSupportView(),
+        builder: (context) => _i18.ContactSupportView(
+          key: args.key,
+          prefillTransactionId: args.prefillTransactionId,
+        ),
         settings: data,
       );
     },
@@ -345,6 +365,20 @@ extension NavigatorStateExtension on _i21.NavigationService {
         transition,
   ]) async {
     return navigateTo<dynamic>(Routes.startupView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        transition: transition);
+  }
+
+  Future<dynamic> navigateToOnboardingView([
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  ]) async {
+    return navigateTo<dynamic>(Routes.onboardingView,
         id: routerId,
         preventDuplicates: preventDuplicates,
         parameters: parameters,
@@ -613,6 +647,20 @@ extension NavigatorStateExtension on _i21.NavigationService {
         transition,
   ]) async {
     return replaceWith<dynamic>(Routes.startupView,
+        id: routerId,
+        preventDuplicates: preventDuplicates,
+        parameters: parameters,
+        transition: transition);
+  }
+
+  Future<dynamic> replaceWithOnboardingView([
+    int? routerId,
+    bool preventDuplicates = true,
+    Map<String, String>? parameters,
+    Widget Function(BuildContext, Animation<double>, Animation<double>, Widget)?
+        transition,
+  ]) async {
+    return replaceWith<dynamic>(Routes.onboardingView,
         id: routerId,
         preventDuplicates: preventDuplicates,
         parameters: parameters,

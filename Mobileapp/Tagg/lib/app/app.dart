@@ -2,6 +2,7 @@ import 'package:Tagg/ui/bottom_sheets/notice/notice_sheet.dart';
 import 'package:Tagg/ui/dialogs/info_alert/info_alert_dialog.dart';
 import 'package:Tagg/ui/views/home/home_view.dart';
 import 'package:Tagg/ui/views/startup/startup_view.dart';
+import 'package:Tagg/ui/views/onboarding/onboarding_view.dart';
 import 'package:stacked/stacked_annotations.dart';
 import 'package:stacked_services/stacked_services.dart';
 import 'package:Tagg/ui/views/signin/signin_view.dart';
@@ -28,6 +29,7 @@ import 'package:Tagg/ui/views/contact_support/contact_support_view.dart';
 import 'package:Tagg/ui/views/notifications/notifications_view.dart';
 import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart';
 import 'package:Tagg/ui/views/withdrawal_status/withdrawal_status_view.dart';
+import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
@@ -41,6 +43,7 @@ import 'package:Tagg/ui/views/scheduled_payments/scheduled_payments_view.dart';
   routes: [
     MaterialRoute(page: HomeView),
     MaterialRoute(page: StartupView),
+    MaterialRoute(page: OnboardingView),
     MaterialRoute(page: HomeView),
     MaterialRoute(page: SigninView),
     MaterialRoute(page: SignupView),

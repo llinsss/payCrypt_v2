@@ -9,7 +9,7 @@ export interface AuthUser {
   created_at: string;
   updated_at: string;
   last_login: string;
-  role: "user" | "admin";
+  role: "user" | "admin" | "super_admin";
 }
 
 export interface AuthContextType {

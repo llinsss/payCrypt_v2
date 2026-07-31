@@ -62,8 +62,20 @@ class SettingsViewModel extends BaseViewModel {
     _navigationService.navigateToChangePasswordView();
   }
 
+  bool _isBiometricEnabled = false;
+  bool get isBiometricEnabled => _isBiometricEnabled;
+
+  void toggleBiometricUnlock(bool value) {
+    _isBiometricEnabled = value;
+    notifyListeners();
+  }
+
   void onNotificationTap() {
     _navigationService.navigateToNotificationsView();
+  }
+
+  void onContactSupportTap() {
+    _navigationService.navigateToContactSupportView();
   }
 
   Future<void> logout() async {

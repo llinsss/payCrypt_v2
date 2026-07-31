@@ -1,5 +1,6 @@
 import 'package:Tagg/ui/common/app_assets.dart';
 import 'package:Tagg/ui/common/offline_banner.dart';
+import 'package:Tagg/ui/common/coach_marks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -41,6 +42,13 @@ class DashboardView extends StackedView<DashboardViewModel> {
     DashboardViewModel viewModel,
     Widget? child,
   ) {
+    // Show the first-visit coach marks once, after the first frame.
+    if (!viewModel.coachMarksChecked) {
+      viewModel.coachMarksChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowDashboardCoachMarks(context),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFF090715),
       body: SafeArea(
@@ -965,6 +973,54 @@ class DashboardView extends StackedView<DashboardViewModel> {
               fontSize: 16,
               height: 1.25, // 20px / 16px
               color: const Color(0xFFE2E2E2),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Search bar (issue #456)
+          Semantics(
+            label: 'Search transactions',
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF130F22),
+                border: Border.all(color: const Color(0xFF262140)),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 14),
+                  const Icon(Icons.search, color: Color(0xFF867EA5), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      onChanged: viewModel.onSearchChanged,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Search by @tag, reference, amount…',
+                        hintStyle: const TextStyle(
+                            color: Color(0xFF867EA5), fontSize: 13),
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        suffixIcon: viewModel.searchQuery.isNotEmpty
+                            ? Semantics(
+                                label: 'Clear search',
+                                button: true,
+                                child: GestureDetector(
+                                  onTap: () => viewModel.clearSearchFilters(),
+                                  child: const Icon(Icons.close,
+                                      color: Color(0xFF867EA5), size: 16),
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
             ),
           ),
 

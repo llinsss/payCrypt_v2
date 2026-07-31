@@ -12,6 +12,10 @@ import {
   RefreshCcw,
   Send,
   PlusCircle,
+  ShieldCheck,
+  AlertTriangle,
+  Search,
+  Activity,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import PayCryptLogo from "./Logo";
@@ -43,6 +47,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   const adminMenuItems = [
     { to: "/admin/overview", label: "Overview", icon: BarChart3 },
     { to: "/admin/users", label: "Users", icon: Users },
+    { to: "/admin/kyc", label: "KYC Review", icon: ShieldCheck },
+    { to: "/admin/disputes", label: "Disputes", icon: AlertTriangle },
+    { to: "/admin/transactions", label: "Transactions", icon: Search },
+    { to: "/admin/health", label: "System Health", icon: Activity },
     { to: "/admin/payouts", label: "Payouts", icon: DollarSign },
     { to: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   ];
