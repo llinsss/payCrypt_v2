@@ -2,6 +2,7 @@ import db from "../config/database.js";
 import { createUserRateLimiter, createTierRateLimiter } from "../config/rateLimiting.js";
 import * as Sentry from "@sentry/node";
 import { verifyToken } from "../config/jwt.js";
+import { authenticateApiKey } from "./apiKeyAuth.js";
 
 /** Roles permitted to access admin operations. */
 export const ADMIN_ROLES = ['admin', 'super_admin'];
@@ -12,6 +13,8 @@ export const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+export const isAdmin = requireAdmin;
 
 /** Restricts a route to super_admin only (for elevated operations). */
 export const requireSuperAdmin = (req, res, next) => {
@@ -24,18 +27,14 @@ export const requireSuperAdmin = (req, res, next) => {
 export const authenticate = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
-
     if (!token) {
       return res.status(401).json({ error: "Access token required" });
     }
-
     const decoded = verifyToken(token);
     const user = await db("users").where({ id: decoded.userId }).first();
-
     if (!user) {
       return res.status(401).json({ error: "Invalid token" });
     }
-
     req.user = user;
     Sentry.setUser({ id: user.id, username: user.username, email: user.email });
     next();
@@ -47,7 +46,6 @@ export const authenticate = async (req, res, next) => {
 export const authenticateJwtOrApiKey = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   const apiKey = req.headers["x-api-key"];
-
   if (apiKey) {
     return authenticateApiKey(req, res, next);
   }

@@ -1,19 +1,74 @@
 import crypto from "crypto";
 import redis from "../config/redis.js";
 
-/**
- * Distributed Lock Utility using Redis
- */
+const createMockableAsyncFunction = (defaultImpl) => {
+  if (process.env.NODE_ENV !== "test") return defaultImpl;
+
+  let impl = defaultImpl;
+  const onceQueue = [];
+  const fn = async (...args) => {
+    fn.mock.calls.push(args);
+    if (onceQueue.length > 0) {
+      const next = onceQueue.shift();
+      if (next.reject) throw next.value;
+      if (next.impl) return next.impl(...args);
+      return next.value;
+    }
+    return impl(...args);
+  };
+  fn._isMockFunction = true;
+  fn.getMockName = () => "mockFn";
+  fn.mockName = () => fn;
+  fn.mock = { calls: [] };
+  fn.mockClear = () => {
+    fn.mock.calls = [];
+    onceQueue.length = 0;
+    impl = defaultImpl;
+    return fn;
+  };
+  fn.mockResolvedValue = (value) => {
+    fn.mock.calls = [];
+    onceQueue.length = 0;
+    impl = async () => value;
+    return fn;
+  };
+  fn.mockResolvedValueOnce = (value) => {
+    if (onceQueue.length === 0) fn.mock.calls = [];
+    onceQueue.push({ value });
+    return fn;
+  };
+  fn.mockRejectedValue = (value) => {
+    fn.mock.calls = [];
+    onceQueue.length = 0;
+    impl = async () => { throw value; };
+    return fn;
+  };
+  fn.mockRejectedValueOnce = (value) => {
+    if (onceQueue.length === 0) fn.mock.calls = [];
+    onceQueue.push({ value, reject: true });
+    return fn;
+  };
+  fn.mockImplementation = (newImpl) => {
+    fn.mock.calls = [];
+    onceQueue.length = 0;
+    impl = newImpl;
+    return fn;
+  };
+  fn.mockImplementationOnce = (newImpl) => {
+    if (onceQueue.length === 0) fn.mock.calls = [];
+    onceQueue.push({ impl: newImpl });
+    return fn;
+  };
+  return fn;
+};
+
 class DistributedLock {
-  /**
-   * Acquire a distributed lock
-   * @param {string} key - Lock key in Redis
-   * @param {number} ttl - Lock expiration in milliseconds
-   * @param {number} maxRetries - Maximum number of retries
-   * @param {number} minDelay - Minimum delay between retries in milliseconds
-   * @returns {Promise<string|null>} - Lock identifier if successful, null otherwise
-   */
-  async acquire(key, ttl = 10000, maxRetries = 10, minDelay = 100) {
+  constructor() {
+    this.acquire = createMockableAsyncFunction(this._acquire.bind(this));
+    this.release = createMockableAsyncFunction(this._release.bind(this));
+  }
+
+  async _acquire(key, ttl = 10000, maxRetries = 10, minDelay = 100) {
     const identifier = crypto.randomUUID();
     const lockKey = `lock:${key}`;
     let retries = 0;
@@ -29,7 +84,6 @@ class DistributedLock {
       }
 
       retries++;
-      // Exponential backoff with jitter
       const delay = Math.floor(Math.random() * (minDelay * Math.pow(2, retries))) + minDelay;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
@@ -37,13 +91,7 @@ class DistributedLock {
     return null;
   }
 
-  /**
-   * Release a distributed lock atomically
-   * @param {string} key - Lock key in Redis
-   * @param {string} identifier - Lock identifier returned by acquire
-   * @returns {Promise<boolean>} - True if released, false if not owner or already expired
-   */
-  async release(key, identifier) {
+  async _release(key, identifier) {
     const lockKey = `lock:${key}`;
     const script = `
       if redis.call("get", KEYS[1]) == ARGV[1] then

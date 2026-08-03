@@ -59,6 +59,8 @@ class AuthService {
     }
   }
 
+  bool isAuthenticated() => _apiService.isAuthenticated;
+
   Future<void> logout() async {
     await _webSocketService.disconnect();
     await _apiService.clearToken();

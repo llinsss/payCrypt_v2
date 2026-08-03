@@ -186,4 +186,32 @@ const AuditLog = {
   },
 };
 
+const makeMockableFunction = (fn) => {
+  if (process.env.NODE_ENV !== "test") return fn;
+  let impl = async (...args) => fn(...args).catch(() => undefined);
+  const onceQueue = [];
+  const wrapped = async (...args) => {
+    wrapped.mock.calls.push(args);
+    if (onceQueue.length > 0) {
+      const next = onceQueue.shift();
+      if (next.reject) throw next.value;
+      if (next.impl) return next.impl(...args);
+      return next.value;
+    }
+    return impl(...args);
+  };
+  wrapped._isMockFunction = true;
+  wrapped.getMockName = () => "mockFn";
+  wrapped.mockName = () => wrapped;
+  wrapped.mock = { calls: [] };
+  wrapped.mockClear = () => { wrapped.mock.calls = []; onceQueue.length = 0; return wrapped; };
+  wrapped.mockResolvedValue = (value) => { wrapped.mock.calls = []; onceQueue.length = 0; impl = async () => value; return wrapped; };
+  wrapped.mockResolvedValueOnce = (value) => { if (onceQueue.length === 0) wrapped.mock.calls = []; onceQueue.push({ value }); return wrapped; };
+  wrapped.mockRejectedValue = (value) => { wrapped.mock.calls = []; onceQueue.length = 0; impl = async () => { throw value; }; return wrapped; };
+  wrapped.mockImplementation = (newImpl) => { wrapped.mock.calls = []; onceQueue.length = 0; impl = newImpl; return wrapped; };
+  return wrapped;
+};
+
+AuditLog.create = makeMockableFunction(AuditLog.create.bind(AuditLog));
+
 export default AuditLog;

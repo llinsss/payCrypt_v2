@@ -27,15 +27,8 @@ function getExportStoragePath() {
 async function buildDownloadUrl(exportId, userId) {
   const baseUrl = process.env.API_BASE_URL || process.env.FRONTEND_URL || `http://localhost:${process.env.PORT || 3000}`;
   const apiBase = baseUrl.replace(/\/$/, "");
-  const token = signToken(
-    { exportId, userId },
   const jti = randomUUID();
-  const token = jwt.sign(
-    { exportId, userId, jti },
-    process.env.JWT_SECRET,
-    { expiresIn: DOWNLOAD_TOKEN_EXPIRY }
-  );
-  // Persist jti so serveDownload can validate it (one-time use)
+  const token = signToken({ exportId, userId, jti }, { expiresIn: DOWNLOAD_TOKEN_EXPIRY });
   await db("export_exports").where({ id: exportId }).update({ download_jti: jti });
   return `${apiBase}/api/transactions/export/download?token=${encodeURIComponent(token)}`;
 }
@@ -53,7 +46,7 @@ export default {
     if (transactions.length > EXPORT_THRESHOLD) {
       const { exportQueue } = await import("../queues/exportQueue.js");
       if (exportQueue) {
-        const user = await User.query().where({ id: userId }).first();
+        const user = await User.findById(userId);
         await exportQueue.add("export", {
           userId,
           format: fmt,
@@ -108,11 +101,8 @@ export default {
   async serveDownload(token) {
     try {
       const decoded = verifyToken(token);
-      const { exportId, userId } = decoded;
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const { exportId, userId, jti } = decoded;
 
-      // Require jti claim — tokens issued before this fix lack it
       if (!jti) {
         return { statusCode: 400, error: "Invalid download token." };
       }
@@ -129,16 +119,12 @@ export default {
         return { statusCode: 410, error: "Export has expired." };
       }
 
-      // JTI validation — null means already used (one-time download)
       if (exportRecord.download_jti === null || exportRecord.download_jti !== jti) {
         return { statusCode: 410, error: "Download link has already been used." };
       }
 
-      const filePath = exportRecord.file_path;
-
-      // Path-traversal guard: restrict to the known export storage directory
       const storageDir = path.resolve(getExportStoragePath());
-      const resolvedPath = path.resolve(filePath);
+      const resolvedPath = path.resolve(exportRecord.file_path);
       if (!resolvedPath.startsWith(storageDir + path.sep)) {
         return { statusCode: 403, error: "Access denied." };
       }
@@ -147,7 +133,6 @@ export default {
         return { statusCode: 404, error: "Export file not found." };
       }
 
-      // Invalidate the JTI so this link cannot be reused
       await db("export_exports").where({ id: exportId }).update({ download_jti: null });
 
       const ext = path.extname(resolvedPath);
@@ -207,7 +192,7 @@ export default {
 
     const user = await User.findById(userId);
     if (user?.email) {
-      const downloadUrl = buildDownloadUrl(exportRecord.id, userId);
+      const downloadUrl = await buildDownloadUrl(exportRecord.id, userId);
       await sendTemplatedEmail(
         user.email,
         "transaction_export_ready",
@@ -217,7 +202,7 @@ export default {
           recordCount: transactions.length,
           format: format.toUpperCase(),
           expiresAt: expiresAt.toISOString().split("T")[0],
-        }
+        },
       );
     }
 

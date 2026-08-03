@@ -25,12 +25,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/widgets.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class DashboardViewModel extends BaseViewModel {
   final ScrollController transactionScrollController = ScrollController();
 
   /// Guard so the first-visit coach marks are only triggered once per mount.
   bool coachMarksChecked = false;
+
   final _dialogService = locator<DialogService>();
   final _snackbarService = locator<SnackbarService>();
   final _userService = locator<UserService>();
@@ -38,11 +40,11 @@ class DashboardViewModel extends BaseViewModel {
   final _transactionService = locator<TransactionService>();
   final _chainsService = locator<ChainsService>();
   final _exchangeRateService = locator<ExchangeRateService>();
+  final _connectivityService = locator<ConnectivityService>();
   final _websocketService = locator<WebSocketService>();
   final _navigationService = locator<NavigationService>();
   final _scheduledPaymentService = locator<ScheduledPaymentService>();
   final _languageService = locator<LanguageService>();
-
   StreamSubscription? _balanceUpdateSubscription;
 
   // Dashboard Data - matching web version structure
@@ -63,6 +65,7 @@ class DashboardViewModel extends BaseViewModel {
   // UI State
   int _selectedTabIndex = 0;
   int selectedFilterIndex = 0;
+  bool _isOffline = false;
 
   // Getters
   DashboardSummary? get dashboardSummary => _dashboardSummary;
@@ -71,7 +74,6 @@ class DashboardViewModel extends BaseViewModel {
   List<Chain> get chains => _chains;
   List<ScheduledPayment> get upcomingPayments => _upcomingPayments;
   bool get hasUpcomingPayments => _upcomingPayments.isNotEmpty;
-
   double get totalBalance => _totalBalance;
   double get nairaBalance => _nairaBalance;
   double get availableBalance => _availableBalance;
@@ -81,9 +83,7 @@ class DashboardViewModel extends BaseViewModel {
   double get totalWithdrawals => _dashboardSummary?.totalWithdrawal ?? 0.0;
   double get portfolioGrowth => _dashboardSummary?.portfolioGrowth ?? 0.0;
   double get ngnRate => _ngnRate;
-
   int get selectedTabIndex => _selectedTabIndex;
-
   bool get isOffline => _isOffline;
   bool get hasData => _dashboardSummary != null;
 
@@ -116,7 +116,6 @@ class DashboardViewModel extends BaseViewModel {
 
   Future<void> _loadDashboardData() async {
     setBusy(true);
-
     try {
       // Load chains first
       print('🔗 Loading chains...');
@@ -157,7 +156,6 @@ class DashboardViewModel extends BaseViewModel {
 
       // Calculate balances with live exchange rate
       await _calculateBalances();
-
       notifyListeners();
     } catch (e, stackTrace) {
       print('❌ Error loading dashboard data: $e');
@@ -228,10 +226,12 @@ class DashboardViewModel extends BaseViewModel {
     if (currency == 'NGN') {
       return formatCurrencyToNGN(amount);
     }
+
     final formatter = NumberFormat.currency(
       symbol: '',
       decimalDigits: 2,
     );
+
     return formatter.format(amount);
   }
 
@@ -289,6 +289,7 @@ class DashboardViewModel extends BaseViewModel {
       _showError('You are offline. Please connect to the internet.');
       return;
     }
+
     setBusy(true);
 
     try {
@@ -349,7 +350,6 @@ class DashboardViewModel extends BaseViewModel {
       message: 'Refreshing dashboard...',
       duration: const Duration(seconds: 1),
     );
-
     await _loadDashboardData();
   }
 
@@ -478,6 +478,7 @@ class DashboardViewModel extends BaseViewModel {
       final receiptBytes = await _transactionService.getTransactionReceipt(transaction.id);
       final file = await _saveReceiptToFile(receiptBytes, transaction.id);
       await Share.shareXFiles([XFile(file.path)], subject: 'Transaction Receipt');
+
       _snackbarService.showSnackbar(
         message: 'Receipt ready to share',
         duration: const Duration(seconds: 2),
@@ -509,7 +510,6 @@ class DashboardViewModel extends BaseViewModel {
   /// Load more transactions for infinite scroll
   Future<void> loadMoreTransactions() async {
     if (_isLoadingMore || !_hasMore) return;
-
     _isLoadingMore = true;
     notifyListeners();
 
@@ -525,7 +525,6 @@ class DashboardViewModel extends BaseViewModel {
       } else {
         _transactions.addAll(nextTransactions);
         _currentPage++;
-
         // Check if there are more transactions
         if (nextTransactions.length < _pageSize) {
           _hasMore = false;

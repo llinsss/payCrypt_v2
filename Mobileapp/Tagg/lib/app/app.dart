@@ -33,12 +33,18 @@ import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
+import 'package:Tagg/services/connectivity_service.dart';
+import 'package:Tagg/services/swap_service.dart';
+import 'package:Tagg/services/batch_payment_service.dart';
+import 'package:Tagg/services/biometric_service.dart';
+import 'package:Tagg/services/deep_link_service.dart';
+import 'package:Tagg/services/notification_service.dart';
+import 'package:Tagg/services/push_notification_service.dart';
 import 'package:Tagg/services/scheduled_payment_service.dart';
 import 'package:Tagg/services/websocket_service.dart';
 import 'package:Tagg/services/language_service.dart';
 import 'package:Tagg/ui/views/scheduled_payments/scheduled_payments_view.dart';
 // @stacked-import
-
 @StackedApp(
   routes: [
     MaterialRoute(page: HomeView),
@@ -62,6 +68,7 @@ import 'package:Tagg/ui/views/scheduled_payments/scheduled_payments_view.dart';
     MaterialRoute(page: ChangePasswordView),
     MaterialRoute(page: ContactSupportView),
     MaterialRoute(page: NotificationsView),
+    MaterialRoute(page: TransactionDetailView),
     MaterialRoute(page: BatchPaymentView),
     MaterialRoute(page: WithdrawalStatusView),
     MaterialRoute(page: ScheduledPaymentsView),
@@ -78,7 +85,14 @@ import 'package:Tagg/ui/views/scheduled_payments/scheduled_payments_view.dart';
     LazySingleton(classType: WalletService),
     LazySingleton(classType: TransactionService),
     LazySingleton(classType: ChainsService),
+    LazySingleton(classType: ConnectivityService),
+    LazySingleton(classType: SwapService),
     LazySingleton(classType: ExchangeRateService),
+    LazySingleton(classType: BatchPaymentService),
+    LazySingleton(classType: BiometricService),
+    LazySingleton(classType: DeepLinkService),
+    LazySingleton(classType: NotificationService),
+    LazySingleton(classType: PushNotificationService),
     LazySingleton(classType: ScheduledPaymentService),
     LazySingleton(classType: WebSocketService),
     LazySingleton(classType: LanguageService),

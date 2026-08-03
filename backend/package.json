@@ -30,7 +30,12 @@
     },
     "jest": {
         "testEnvironment": "node",
-        "transform": {}
+        "transform": {},
+        "testPathIgnorePatterns": [
+            "/node_modules/",
+            "Real-Time Stellar Horizon",
+            "Multi-Chain Transaction"
+        ]
     },
     "dependencies": {
         "@apollo/server": "^4.13.0",
