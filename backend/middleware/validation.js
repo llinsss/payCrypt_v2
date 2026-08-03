@@ -42,6 +42,8 @@ export const validate = (schema) => {
 
     if (error) {
       return res.status(400).json({
+        error: true,
+        message: "Validation failed",
         errors: formatErrors(error),
       });
     }
@@ -65,6 +67,8 @@ export const validateQuery = (schema) => {
 
     if (error) {
       return res.status(400).json({
+        error: true,
+        message: "Validation failed",
         errors: formatErrors(error),
       });
     }
@@ -88,6 +92,8 @@ export const validateParams = (schema) => {
 
     if (error) {
       return res.status(400).json({
+        error: true,
+        message: "Validation failed",
         errors: formatErrors(error),
       });
     }

@@ -37,7 +37,7 @@ class DeepLinkService {
   /// Get initial deep link if app was launched via deep link
   Future<DeepLinkData?> getInitialDeepLink() async {
     try {
-      final deepLink = await _appLinks.getInitialLink();
+      final deepLink = await _appLinks.getInitialAppLink();
       if (deepLink != null) {
         return _parseDeepLink(deepLink);
       }

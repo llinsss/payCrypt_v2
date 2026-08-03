@@ -15,6 +15,8 @@ export const WEBHOOK_EVENTS = {
   PAYMENT_REFUNDED: "payment.refunded",
   WALLET_CREDITED: "wallet.credited",
   WALLET_DEBITED: "wallet.debited",
+  SWAP_COMPLETED: "swap.completed",
+  SWAP_FAILED: "swap.failed",
   KYC_APPROVED: "kyc.approved",
   KYC_REJECTED: "kyc.rejected",
   TRANSACTION_STATUS_CHANGED: "transaction.status_changed",

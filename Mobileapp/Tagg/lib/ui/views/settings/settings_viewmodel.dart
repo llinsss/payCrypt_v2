@@ -1,9 +1,11 @@
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/services/auth_service.dart';
+import 'package:Tagg/services/biometric_service.dart';
 import 'package:Tagg/services/language_service.dart';
 import 'package:Tagg/services/theme_service.dart';
 import 'package:Tagg/services/user_service.dart';
+import 'package:flutter/material.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 
@@ -12,26 +14,35 @@ class SettingsViewModel extends BaseViewModel {
   final _authService = locator<AuthService>();
   final _dialogService = locator<DialogService>();
   final _themeService = locator<ThemeService>();
+  final _biometricService = locator<BiometricService>();
   final _userService = locator<UserService>();
   final _languageService = locator<LanguageService>();
 
   ThemeMode _currentTheme = ThemeMode.system;
-  ThemeMode get currentTheme => _currentTheme;
-
+  bool _isBiometricEnabled = false;
   String _preferredCurrency = 'USD';
-  String get preferredCurrency => _preferredCurrency;
-
   String _currentLanguage = 'en';
+
+  ThemeMode get currentTheme => _currentTheme;
+  bool get isBiometricEnabled => _isBiometricEnabled;
+  String get preferredCurrency => _preferredCurrency;
   String get currentLanguage => _currentLanguage;
-  String get currentLanguageName => LanguageService.localeNames[_currentLanguage] ?? 'English';
+  String get currentLanguageName =>
+      LanguageService.localeNames[_currentLanguage] ?? 'English';
   Map<String, String> get availableLanguages => LanguageService.localeNames;
 
   @override
   void init() {
     super.init();
     _currentTheme = _themeService.themeMode;
+    _loadBiometricStatus();
     _loadPreferredCurrency();
     _loadLanguage();
+  }
+
+  Future<void> _loadBiometricStatus() async {
+    _isBiometricEnabled = await _biometricService.isBiometricUnlockEnabled();
+    notifyListeners();
   }
 
   Future<void> _loadPreferredCurrency() async {
@@ -62,14 +73,6 @@ class SettingsViewModel extends BaseViewModel {
     _navigationService.navigateToChangePasswordView();
   }
 
-  bool _isBiometricEnabled = false;
-  bool get isBiometricEnabled => _isBiometricEnabled;
-
-  void toggleBiometricUnlock(bool value) {
-    _isBiometricEnabled = value;
-    notifyListeners();
-  }
-
   void onNotificationTap() {
     _navigationService.navigateToNotificationsView();
   }
@@ -90,6 +93,16 @@ class SettingsViewModel extends BaseViewModel {
       await _authService.logout();
       _navigationService.replaceWithSigninView();
     }
+  }
+
+  Future<void> toggleBiometricUnlock(bool enabled) async {
+    _isBiometricEnabled = enabled;
+    if (enabled) {
+      await _biometricService.enableBiometricUnlock();
+    } else {
+      await _biometricService.disableBiometricUnlock();
+    }
+    notifyListeners();
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {

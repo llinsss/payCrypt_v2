@@ -50,7 +50,7 @@ function mockResponse() {
 
 describe("Withdrawal Service", () => {
   afterEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   describe("bank withdrawal", () => {
@@ -260,6 +260,7 @@ describe("Withdrawal Service", () => {
   describe("withdrawal validation", () => {
     it("should require sufficient balance", async () => {
       mockBalanceDebit.mockRejectedValue(new Error("Insufficient balance"));
+      mockWithdrawalCreate.mockRejectedValue(new Error("Insufficient balance"));
 
       await expect(Withdrawal.default.create({
         user_id: 1,

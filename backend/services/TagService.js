@@ -1,7 +1,5 @@
-import knex from 'knex';
-import config from '../knexfile.js';
+import db from '../config/database.js';
 import redis from '../config/redis.js';
-const db = knex(config);
 
 class TagService {
     async createTag(tag, stellarAddress) {
