@@ -17,11 +17,16 @@ import '../services/auth_service.dart';
 import '../services/chains_service.dart';
 import '../services/notification_service.dart';
 import '../services/push_notification_service.dart';
+import '../services/support_ticket_service.dart';
 import '../services/transaction_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/user_service.dart';
 import '../services/wallet_service.dart';
 import '../services/theme_service.dart';
+import '../services/exchange_rate_service.dart';
+import '../services/scheduled_payment_service.dart';
+import '../services/websocket_service.dart';
+import '../services/language_service.dart';
 
 final locator = StackedLocator.instance;
 
@@ -45,4 +50,8 @@ Future<void> setupLocator({
   locator.registerLazySingleton(() => TransactionService());
   locator.registerLazySingleton(() => ChainsService());
   locator.registerLazySingleton(() => ThemeService());
+  locator.registerLazySingleton(() => ExchangeRateService());
+  locator.registerLazySingleton(() => ScheduledPaymentService());
+  locator.registerLazySingleton(() => WebSocketService());
+  locator.registerLazySingleton(() => LanguageService());
 }

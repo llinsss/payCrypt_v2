@@ -8,6 +8,7 @@ import {
   getKycStatus,
   approveKyc,
   rejectKyc,
+  getKycs,
 } from "../controllers/kycController.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.js";
@@ -151,6 +152,9 @@ router.get("/", authenticate, getKycByUser);
  *         description: Unauthorized
  */
 router.get("/status", authenticate, getKycStatus);
+
+// Admin KYC review queue — lists all submissions (admin & super_admin).
+router.get("/admin/all", authenticate, requireAdmin, getKycs);
 
 /**
  * @swagger

@@ -52,4 +52,8 @@ class ApiConstants {
   // Batch payment endpoints
   static const String batchPayments = '/transactions/batch';
   static String batchPaymentById(int id) => '/transactions/batch/$id';
+
+  // Scheduled payment endpoints
+  static const String scheduledPayments = '/scheduled-payments';
+  static String scheduledPaymentById(int id) => '/scheduled-payments/$id';
 }

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Block commits that introduce string-interpolated raw SQL.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+#
+# See CONTRIBUTING.md → "Safe Knex Query Patterns".
+set -e
+
+if [ -d backend ]; then
+  node backend/scripts/check-raw-sql.js
+fi
