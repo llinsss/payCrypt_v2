@@ -5,6 +5,7 @@ import redis from "../config/redis.js";
 import * as contract from "../contracts/index.js";
 import { ethers } from "ethers";
 import ExchangeRateService from "../services/exchange-rate-api.js";
+import { validateAddress } from "../utils/validateAddress.js";
 
 const CACHE_TTL_LONG = 60 * 24 * 30;
 const CACHE_TTL_SHORT = 60 * 24;
@@ -65,6 +66,13 @@ export const send_to_tag = async (req, res, next) => {
 export const send_to_wallet = async (req, res, next) => {
   try {
     const { chain, sender_tag, receiver_address, amount } = req.body;
+
+    // Reject wrong-chain / malformed addresses before submitting any on-chain tx.
+    const addressCheck = validateAddress(receiver_address, chain);
+    if (!addressCheck.valid) {
+      return failure(res, addressCheck.error, null, 400);
+    }
+
     const data = await contract.send_via_wallet({
       chain,
       sender_tag,

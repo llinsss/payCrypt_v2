@@ -2,6 +2,7 @@ import 'package:Tagg/ui/bottom_sheets/notice/notice_sheet.dart';
 import 'package:Tagg/ui/dialogs/info_alert/info_alert_dialog.dart';
 import 'package:Tagg/ui/views/home/home_view.dart';
 import 'package:Tagg/ui/views/startup/startup_view.dart';
+import 'package:Tagg/ui/views/onboarding/onboarding_view.dart';
 import 'package:stacked/stacked_annotations.dart';
 import 'package:stacked_services/stacked_services.dart';
 import 'package:Tagg/ui/views/signin/signin_view.dart';
@@ -39,12 +40,16 @@ import 'package:Tagg/services/biometric_service.dart';
 import 'package:Tagg/services/deep_link_service.dart';
 import 'package:Tagg/services/notification_service.dart';
 import 'package:Tagg/services/push_notification_service.dart';
+import 'package:Tagg/services/scheduled_payment_service.dart';
+import 'package:Tagg/services/websocket_service.dart';
+import 'package:Tagg/services/language_service.dart';
+import 'package:Tagg/ui/views/scheduled_payments/scheduled_payments_view.dart';
 // @stacked-import
-
 @StackedApp(
   routes: [
     MaterialRoute(page: HomeView),
     MaterialRoute(page: StartupView),
+    MaterialRoute(page: OnboardingView),
     MaterialRoute(page: HomeView),
     MaterialRoute(page: SigninView),
     MaterialRoute(page: SignupView),
@@ -66,6 +71,7 @@ import 'package:Tagg/services/push_notification_service.dart';
     MaterialRoute(page: TransactionDetailView),
     MaterialRoute(page: BatchPaymentView),
     MaterialRoute(page: WithdrawalStatusView),
+    MaterialRoute(page: ScheduledPaymentsView),
 // @stacked-route
   ],
   dependencies: [
@@ -87,6 +93,9 @@ import 'package:Tagg/services/push_notification_service.dart';
     LazySingleton(classType: DeepLinkService),
     LazySingleton(classType: NotificationService),
     LazySingleton(classType: PushNotificationService),
+    LazySingleton(classType: ScheduledPaymentService),
+    LazySingleton(classType: WebSocketService),
+    LazySingleton(classType: LanguageService),
 // @stacked-service
   ],
   bottomsheets: [

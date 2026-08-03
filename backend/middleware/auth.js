@@ -4,8 +4,11 @@ import * as Sentry from "@sentry/node";
 import { verifyToken } from "../config/jwt.js";
 import { authenticateApiKey } from "./apiKeyAuth.js";
 
+/** Roles permitted to access admin operations. */
+export const ADMIN_ROLES = ['admin', 'super_admin'];
+
 export const requireAdmin = (req, res, next) => {
-  if (req.user?.role !== 'admin') {
+  if (!ADMIN_ROLES.includes(req.user?.role)) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();
@@ -13,21 +16,25 @@ export const requireAdmin = (req, res, next) => {
 
 export const isAdmin = requireAdmin;
 
+/** Restricts a route to super_admin only (for elevated operations). */
+export const requireSuperAdmin = (req, res, next) => {
+  if (req.user?.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Super admin access required' });
+  }
+  next();
+};
+
 export const authenticate = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
-
     if (!token) {
       return res.status(401).json({ error: "Access token required" });
     }
-
     const decoded = verifyToken(token);
     const user = await db("users").where({ id: decoded.userId }).first();
-
     if (!user) {
       return res.status(401).json({ error: "Invalid token" });
     }
-
     req.user = user;
     Sentry.setUser({ id: user.id, username: user.username, email: user.email });
     next();
@@ -39,7 +46,6 @@ export const authenticate = async (req, res, next) => {
 export const authenticateJwtOrApiKey = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   const apiKey = req.headers["x-api-key"];
-
   if (apiKey) {
     return authenticateApiKey(req, res, next);
   }

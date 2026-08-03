@@ -1,11 +1,13 @@
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/models/auth_models.dart';
 import 'package:Tagg/services/api_service.dart';
+import 'package:Tagg/services/websocket_service.dart';
 import 'package:Tagg/ui/common/api_constants.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
   final ApiService _apiService = locator<ApiService>();
+  final WebSocketService _webSocketService = locator<WebSocketService>();
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
   );
@@ -60,6 +62,7 @@ class AuthService {
   bool isAuthenticated() => _apiService.isAuthenticated;
 
   Future<void> logout() async {
+    await _webSocketService.disconnect();
     await _apiService.clearToken();
     await _googleSignIn.signOut();
   }

@@ -2,6 +2,7 @@ import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/services/auth_service.dart';
 import 'package:Tagg/services/biometric_service.dart';
+import 'package:Tagg/services/language_service.dart';
 import 'package:Tagg/services/theme_service.dart';
 import 'package:Tagg/services/user_service.dart';
 import 'package:flutter/material.dart';
@@ -15,45 +16,48 @@ class SettingsViewModel extends BaseViewModel {
   final _themeService = locator<ThemeService>();
   final _biometricService = locator<BiometricService>();
   final _userService = locator<UserService>();
+  final _languageService = locator<LanguageService>();
 
   ThemeMode _currentTheme = ThemeMode.system;
   bool _isBiometricEnabled = false;
   String _preferredCurrency = 'USD';
+  String _currentLanguage = 'en';
 
   ThemeMode get currentTheme => _currentTheme;
   bool get isBiometricEnabled => _isBiometricEnabled;
   String get preferredCurrency => _preferredCurrency;
+  String get currentLanguage => _currentLanguage;
+  String get currentLanguageName =>
+      LanguageService.localeNames[_currentLanguage] ?? 'English';
+  Map<String, String> get availableLanguages => LanguageService.localeNames;
 
-  Future<void> init() async {
+  @override
+  void init() {
+    super.init();
     _currentTheme = _themeService.themeMode;
-    _isBiometricEnabled =
-        await _biometricService.isBiometricUnlockEnabled();
+    _loadBiometricStatus();
+    _loadPreferredCurrency();
+    _loadLanguage();
+  }
+
+  Future<void> _loadBiometricStatus() async {
+    _isBiometricEnabled = await _biometricService.isBiometricUnlockEnabled();
+    notifyListeners();
+  }
+
+  Future<void> _loadPreferredCurrency() async {
     _preferredCurrency = await _userService.getPreferredCurrency();
     notifyListeners();
   }
 
-  bool _pushEnabled = true;
-  bool get pushEnabled => _pushEnabled;
-
-  bool _emailEnabled = false;
-  bool get emailEnabled => _emailEnabled;
-
-  bool _inAppEnabled = true;
-  bool get inAppEnabled => _inAppEnabled;
-
-  void togglePushNotifications(bool value) {
-    _pushEnabled = value;
-    notifyListeners();
-    // In a real app, save this to SharedPreferences or backend here
-  }
-
-  void toggleEmailNotifications(bool value) {
-    _emailEnabled = value;
+  Future<void> _loadLanguage() async {
+    _currentLanguage = await _languageService.getSavedLocaleCode();
     notifyListeners();
   }
 
-  void toggleInAppNotifications(bool value) {
-    _inAppEnabled = value;
+  Future<void> setLanguage(String localeCode) async {
+    _currentLanguage = localeCode;
+    await _languageService.setLocale(localeCode);
     notifyListeners();
   }
 
@@ -69,16 +73,12 @@ class SettingsViewModel extends BaseViewModel {
     _navigationService.navigateToChangePasswordView();
   }
 
-  bool _isBiometricEnabled = false;
-  bool get isBiometricEnabled => _isBiometricEnabled;
-
-  void toggleBiometricUnlock(bool value) {
-    _isBiometricEnabled = value;
-    notifyListeners();
-  }
-
   void onNotificationTap() {
     _navigationService.navigateToNotificationsView();
+  }
+
+  void onContactSupportTap() {
+    _navigationService.navigateToContactSupportView();
   }
 
   Future<void> logout() async {
@@ -97,13 +97,11 @@ class SettingsViewModel extends BaseViewModel {
 
   Future<void> toggleBiometricUnlock(bool enabled) async {
     _isBiometricEnabled = enabled;
-
     if (enabled) {
       await _biometricService.enableBiometricUnlock();
     } else {
       await _biometricService.disableBiometricUnlock();
     }
-
     notifyListeners();
   }
 

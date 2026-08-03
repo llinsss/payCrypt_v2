@@ -71,20 +71,21 @@ class WalletService {
     required String amount,
     required String receiverTag,
     String? notes,
-    String? metadata,
   }) async {
     try {
-      final request = WithdrawToTagRequest(
+      final requestBody = WithdrawToTagRequest(
         balanceId: balanceId,
         amount: amount,
         receiverTag: receiverTag,
-        notes: notes,
-        metadata: metadata,
-      );
+      ).toJson();
+
+      if (notes != null && notes.trim().isNotEmpty) {
+        requestBody['notes'] = notes.trim();
+      }
 
       final response = await _apiService.post(
         ApiConstants.sendToTag,
-        request.toJson(),
+        requestBody,
       );
 
       return WithdrawalResponse.fromJson(response);
