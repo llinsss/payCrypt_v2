@@ -247,8 +247,13 @@ const swaggerOptions = {
       title: "Tagg@d API",
       version: "1.0.0",
       description:
-        "API documentation for the Tagg@d backend. Routes are available under /api (current version alias), " +
-        "/api/v2 (current), and /api/v1 (deprecated — see GET /api/versions for sunset details).",
+        "API documentation for the Tagg@d backend — a crypto payment platform for Africa. " +
+        "Routes are available under /api (current version alias), " +
+        "/api/v2 (current), and /api/v1 (deprecated — see GET /api/versions for sunset details).\n\n" +
+        "**Authentication:** Most endpoints require a JWT Bearer token obtained via `POST /api/auth/login`. " +
+        "Alternatively, API keys can be used for third-party integrations (see `POST /api/api-keys`).\n\n" +
+        "**Getting Started:** See the [Getting Started guide](https://taggedpay.xyz/docs/api/getting-started) for a complete walkthrough: " +
+        "register → get JWT → create wallet → send payment.",
     },
     servers: [
       {
@@ -263,6 +268,10 @@ const swaggerOptions = {
         url: `http://localhost:${process.env.PORT || 5002}`,
         description: "Development Server (unversioned root)",
       },
+      {
+        url: "https://taggedpay.xyz/api/v2",
+        description: "Production (v2)",
+      },
     ],
     components: {
       securitySchemes: {
@@ -270,6 +279,15 @@ const swaggerOptions = {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
+          description:
+            "JWT token obtained from POST /api/auth/login. Send as `Authorization: Bearer <token>`.",
+        },
+        apiKeyAuth: {
+          type: "apiKey",
+          in: "header",
+          name: "x-api-key",
+          description:
+            "API key for third-party integrations. Send as `x-api-key: <key>`. Create via POST /api/api-keys.",
         },
       },
     },
@@ -279,6 +297,23 @@ const swaggerOptions = {
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 
+// ===== PUBLIC API SPEC ENDPOINT (unauthenticated, rate-limited) =====
+// Expose the full OpenAPI 3.0 spec as JSON for third-party developers,
+// Postman collection generation, and static doc site builds.
+app.get(
+  "/api/docs-json",
+  rateLimit({ endpointName: "docs-json", windowMs: 60 * 60 * 1000, max: 100 }),
+  (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      process.env.CORS_ORIGIN || "*",
+    );
+    res.status(200).json(swaggerDocs);
+  },
+);
+
+// ===== SWAGGER UI (protected with basic auth) =====
 if (!process.env.SWAGGER_ADMIN_USER || !process.env.SWAGGER_ADMIN_PASS) {
   throw new Error(
     "SWAGGER_ADMIN_USER and SWAGGER_ADMIN_PASS env vars must be set",
