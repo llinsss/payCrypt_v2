@@ -87,10 +87,29 @@ npm test    # Runs multi-chain-transaction-backend tests
 ```
 
 ## CI Execution
-CI should run test suites independently and report results separately:
+CI runs test suites independently and reports results separately via `.github/workflows/backend-tests.yml`:
 
 1. **Unit Tests** (always): `npm run test:unit`
-2. **Integration Tests** (when DB available): `npm run test:integration`
-3. **Nested Projects** (optional): Separate CI jobs if dependencies installed
+   - No database required
+   - Runs on all PRs
+   - Must pass to merge
 
-See `.github/workflows/` for automation and reporting configuration.
+2. **Integration Tests** (when DB available): `npm run test:integration`
+   - PostgreSQL required
+   - Runs with services (postgres, redis)
+   - May be skipped if DATABASE_URL unavailable
+
+3. **Nested Projects** (optional): Separate CI job
+   - Stellar Horizon backend tests (if dependencies available)
+   - Multi-Chain Transaction backend tests (if dependencies available)
+   - Failures do not block main PR (separate projects)
+
+See `.github/workflows/backend-tests.yml` for workflow configuration and `.github/workflows/README.md` for detailed setup.
+
+## Test Baseline and Failure Classification
+
+See `backend/docs/TEST_BASELINE.md` for:
+- Green baseline expectations (passing counts, failure classifications)
+- Detailed failure remediation status
+- Quarantine process for unavoidable failures
+- How failures are tracked and scheduled for removal

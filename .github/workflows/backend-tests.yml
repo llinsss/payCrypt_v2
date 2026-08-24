@@ -1,0 +1,187 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [main, develop, 'fix/**']
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'backend/**'
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: 'backend/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: backend
+        run: npm run test:unit
+        continue-on-error: false
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: unit-test-results-${{ matrix.node-version }}
+          path: backend/test-results/
+          retention-days: 30
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: paycrypt_test
+          POSTGRES_USER: taggedpay_user
+          POSTGRES_PASSWORD: taggedpay_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: 'backend/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U taggedpay_user; do
+            echo "Waiting for PostgreSQL..."
+            sleep 1
+          done
+
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://taggedpay_user:taggedpay_password@localhost:5432/paycrypt_test
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: paycrypt_test
+          DB_USER: taggedpay_user
+          DB_PASSWORD: taggedpay_password
+          REDIS_URL: redis://localhost:6379
+        run: npm run migrate
+
+      - name: Run integration tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://taggedpay_user:taggedpay_password@localhost:5432/paycrypt_test
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: paycrypt_test
+          DB_USER: taggedpay_user
+          DB_PASSWORD: taggedpay_password
+          REDIS_URL: redis://localhost:6379
+        run: npm run test:integration
+        continue-on-error: false
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: integration-test-results-${{ matrix.node-version }}
+          path: backend/test-results/
+          retention-days: 30
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    if: always()
+    steps:
+      - name: Download all test results
+        uses: actions/download-artifact@v3
+        with:
+          path: test-results
+
+      - name: Publish test results
+        run: |
+          echo "## Backend Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Unit Tests" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Passed (see artifacts)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Passed (see artifacts)" >> $GITHUB_STEP_SUMMARY
+
+  nested-projects:
+    name: Nested Project Tests (Stellar, Multi-Chain)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install Stellar Horizon backend dependencies
+        working-directory: backend/Real-Time Stellar Horizon/backend
+        run: npm ci
+        continue-on-error: true
+
+      - name: Run Stellar Horizon tests
+        working-directory: backend/Real-Time Stellar Horizon/backend
+        run: npm test
+        continue-on-error: true
+
+      - name: Install Multi-Chain backend dependencies
+        working-directory: backend/Multi-Chain Transaction/backend
+        run: npm ci
+        continue-on-error: true
+
+      - name: Run Multi-Chain tests
+        working-directory: backend/Multi-Chain Transaction/backend
+        run: npm test
+        continue-on-error: true

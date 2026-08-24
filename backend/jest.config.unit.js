@@ -16,4 +16,18 @@ export default {
   setupFilesAfterEnv: ["<rootDir>/tests/setup.unit.js"],
   testMatch: ["**/*.test.js", "!**/*.integration.test.js"],
   forceExit: true,
+  reporters: [
+    "default",
+    [
+      "jest-junit",
+      {
+        outputDirectory: "<rootDir>/test-results/unit",
+        outputName: "results.xml",
+        classNameTemplate: "{classname}",
+        titleTemplate: "{title}",
+        ancestorSeparator: " › ",
+        usePathAsClassName: true,
+      },
+    ],
+  ],
 };
