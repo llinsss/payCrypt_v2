@@ -1,6 +1,15 @@
 import redis, { IDEMPOTENCY_PREFIX } from '../config/redis.js';
 import logger from '../utils/logger.js';
 
+/**
+ * Build a full Redis key for idempotency storage
+ * @param {string} key - The idempotency key
+ * @returns {string} - Full prefixed key
+ */
+export function buildIdempotencyKey(key) {
+    return `${IDEMPOTENCY_PREFIX}${key}`;
+}
+
 class IdempotencyService {
     /**
      * Get an idempotency record from Redis
@@ -8,7 +17,7 @@ class IdempotencyService {
      * @returns {Promise<Object|null>} - The cached response, or null if absent/unreachable
      */
     async getRecord(key) {
-        const fullKey = `${IDEMPOTENCY_PREFIX}${key}`;
+        const fullKey = buildIdempotencyKey(key);
         try {
             const data = await redis.get(fullKey);
             return data ? JSON.parse(data) : null;
@@ -25,7 +34,7 @@ class IdempotencyService {
      * @param {number} [ttl=86400] - TTL in seconds (default 24h)
      */
     async saveResponse(key, response, ttl = parseInt(process.env.IDEMPOTENCY_TTL) || 86400) {
-        const fullKey = `${IDEMPOTENCY_PREFIX}${key}`;
+        const fullKey = buildIdempotencyKey(key);
         try {
             await redis.set(fullKey, JSON.stringify({
                 status: 'completed',
@@ -46,7 +55,7 @@ class IdempotencyService {
      * @returns {Promise<boolean>} - True if lock was acquired (or Redis is unreachable), false if already locked
      */
     async setLock(key, lockTtl = 60) {
-        const fullKey = `${IDEMPOTENCY_PREFIX}${key}`;
+        const fullKey = buildIdempotencyKey(key);
         try {
             // NX: Set only if it doesn't exist
             const result = await redis.set(fullKey, JSON.stringify({
@@ -68,7 +77,7 @@ class IdempotencyService {
      * @param {string} key - The idempotency key
      */
     async deleteRecord(key) {
-        const fullKey = `${IDEMPOTENCY_PREFIX}${key}`;
+        const fullKey = buildIdempotencyKey(key);
         try {
             await redis.del(fullKey);
         } catch (error) {
