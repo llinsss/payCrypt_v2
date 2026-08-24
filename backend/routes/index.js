@@ -30,6 +30,7 @@ import swapRoutes from "./swapRoutes.js";
 import accountRoutes from "./account.js"; // #460 NDPR compliance
 import supportTicketRoutes from "./supportTickets.js";
 import indexerAdminRoutes from "./indexerAdmin.js";
+import referralRoutes from "./referrals.js";
 import { versionHeaders, CURRENT_VERSION, DEPRECATIONS } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -66,6 +67,7 @@ const registerRoutes = (router) => {
   router.use("/swap", swapRoutes);
   router.use("/account", accountRoutes); // #460 NDPR: data export & account deletion
   router.use("/support-tickets", supportTicketRoutes);
+  router.use("/referrals", referralRoutes);
 };
 
 /**
