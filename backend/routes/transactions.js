@@ -386,4 +386,51 @@ router.get("/payment/limits", getPaymentLimits);
  */
 router.get("/tag/:tag/history", authenticateJwtOrApiKey, userRateLimiter, requireApiKeyScope(["transactions:read"]), getPaymentHistory);
 
+/**
+ * @swagger
+ * /api/transactions/escrow/create:
+ *   post:
+ *     summary: Create a dispute-protected escrow for a payment
+ *     tags: [Transactions]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - recipientTag
+ *               - amount
+ *               - token
+ *               - lockPeriodDays
+ *               - senderTag
+ *             properties:
+ *               recipientTag:
+ *                 type: string
+ *                 example: "bob"
+ *               amount:
+ *                 type: number
+ *                 example: 100
+ *               token:
+ *                 type: string
+ *                 example: "USDC"
+ *               lockPeriodDays:
+ *                 type: integer
+ *                 example: 3
+ *               senderTag:
+ *                 type: string
+ *                 example: "alice"
+ *     responses:
+ *       201:
+ *         description: Escrow created successfully
+ *       400:
+ *         description: Invalid request
+ *       401:
+ *         description: Unauthorized
+ */
+// Escrow endpoints would be added here with proper controller imports
+// router.post("/escrow/create", authenticateJwtOrApiKey, createEscrow);
+
 export default router;
