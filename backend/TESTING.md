@@ -26,28 +26,71 @@ Jest is configured to discover tests only within `backend/tests/` to ensure test
 
 ## Running Tests
 
-### Main Backend Suite
+### Unit Tests (No Database Required)
+Unit tests run in isolation with mocked database layer. No PostgreSQL or Redis required.
+
 ```bash
 cd backend
-npm test              # Run main backend tests
-npm run test:db      # Database setup verification
-npm run test:all     # Run all main backend tests (not recommended — see #491)
+npm run test:unit    # Run unit tests only (fast, no DB needed)
 ```
 
-### Nested Project Suites
+**When to use:** Local development, quick validation, CI lint/unit phase.
+
+**Test Files:** Any `*.test.js` file excluding `*.integration.test.js`.
+
+### Integration Tests (PostgreSQL Required)
+Integration tests require a live PostgreSQL connection to validate database interactions.
+
+```bash
+cd backend
+
+# Start PostgreSQL (if not already running)
+docker-compose up -d postgres
+
+# Set up environment
+export DATABASE_URL="postgres://taggedpay_user:taggedpay_password@localhost:5432/paycrypt_test"
+
+# Run integration tests
+npm run test:integration
+```
+
+**When to use:** Pre-commit validation, before merge, CI merge-gate phase.
+
+**Test Files:** Files matching `*.integration.test.js`.
+
+**Prerequisites:**
+- PostgreSQL running and accessible at DATABASE_URL
+- See setup.integration.js for required environment validation
+
+### All Tests (Legacy)
+```bash
+cd backend
+npm test              # Runs current test script (see #492 for migration)
+npm run test:all     # Runs all tests in tests/ directory
+```
+
+### Database Utilities
+```bash
+npm run test:db           # Verify database connectivity
+npm run test:migrations   # Test migration up/down in isolation
+```
+
+## Nested Project Suites
 Each nested project maintains its own test execution:
+
 ```bash
 cd backend/Real-Time\ Stellar\ Horizon/backend
-npm test
+npm test    # Runs stellar-horizon-backend tests
 
 cd backend/Multi-Chain\ Transaction/backend
-npm test
+npm test    # Runs multi-chain-transaction-backend tests
 ```
 
 ## CI Execution
-CI should run each test suite independently and report results separately to clearly identify which suite has failures:
-1. Main backend suite
-2. Stellar Horizon suite (optional, skipped if dependencies unavailable)
-3. Multi-Chain Transaction suite (optional, skipped if dependencies unavailable)
+CI should run test suites independently and report results separately:
 
-See `.github/workflows/` for CI automation and reporting configuration.
+1. **Unit Tests** (always): `npm run test:unit`
+2. **Integration Tests** (when DB available): `npm run test:integration`
+3. **Nested Projects** (optional): Separate CI jobs if dependencies installed
+
+See `.github/workflows/` for automation and reporting configuration.
