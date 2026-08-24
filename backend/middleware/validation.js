@@ -1,5 +1,6 @@
 import Joi from "joi";
 import sanitizeHtml from "sanitize-html";
+import { PASSWORD_POLICY } from "../validators/passwordPolicy.js";
 
 /**
  * Sanitize string values to prevent XSS
@@ -139,17 +140,19 @@ export const emailSchema = Joi.object({
 });
 
 /**
- * Custom validator for password
+ * Custom validator for password (uses canonical password policy)
  */
 export const passwordSchema = Joi.object({
   password: Joi.string()
-    .min(8)
-    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .min(PASSWORD_POLICY.MIN_LENGTH)
+    .max(PASSWORD_POLICY.MAX_LENGTH)
+    .regex(PASSWORD_POLICY.FULL_REGEX)
     .required()
     .messages({
+      "string.min": `Password must be at least ${PASSWORD_POLICY.MIN_LENGTH} characters long`,
+      "string.max": `Password must be at most ${PASSWORD_POLICY.MAX_LENGTH} characters long`,
       "string.pattern.base":
-        "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character",
-      "string.min": "Password must be at least 8 characters long",
+        `Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character (${PASSWORD_POLICY.SPECIAL_CHARS})`,
       "any.required": "Password is required",
     }),
 });
