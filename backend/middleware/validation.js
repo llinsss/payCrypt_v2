@@ -21,17 +21,38 @@ const sanitizeValue = (value) => {
 };
 
 /**
- * Format Joi validation errors into a consistent array of { field, message } objects.
+ * Map Joi error types to machine-readable error codes.
+ */
+const getErrorCode = (detail) => {
+  if (detail.type.includes("required")) return "FIELD_REQUIRED";
+  if (detail.type.includes("empty")) return "FIELD_EMPTY";
+  if (detail.type === "any.invalid") return "INVALID_VALUE";
+  if (detail.type === "string.email") return "INVALID_EMAIL";
+  if (detail.type === "string.pattern.base") return "INVALID_FORMAT";
+  if (detail.type === "string.min") return "VALUE_TOO_SHORT";
+  if (detail.type === "string.max") return "VALUE_TOO_LONG";
+  if (detail.type === "number.min") return "VALUE_BELOW_MINIMUM";
+  if (detail.type === "number.max") return "VALUE_ABOVE_MAXIMUM";
+  if (detail.type === "array.min") return "ARRAY_TOO_SHORT";
+  if (detail.type === "array.max") return "ARRAY_TOO_LONG";
+  return "VALIDATION_ERROR";
+};
+
+/**
+ * Format Joi validation errors into standardized { field, code, message } array.
+ * Never echoes back sensitive values (passwords, tokens, secrets).
  */
 const formatErrors = (joiError) =>
   joiError.details.map((d) => ({
     field: d.context?.key ?? d.path.join("."),
-    message: d.message.replace(/['"]/g, ""),
+    code: getErrorCode(d),
+    message: d.message.replace(/['"]/g, "").replace(/\[.*?\]/g, ""),
   }));
 
 /**
  * Validate request body against a Joi schema.
  * Returns all validation errors at once (abortEarly: false).
+ * Response: { error, message, errors: [{ field, code, message }, ...] }
  */
 export const validate = (schema) => {
   return (req, res, next) => {
@@ -42,13 +63,12 @@ export const validate = (schema) => {
 
     if (error) {
       return res.status(400).json({
-        error: true,
-        message: "Validation failed",
+        error: "VALIDATION_ERROR",
+        message: "Request validation failed",
         errors: formatErrors(error),
       });
     }
 
-    // Sanitize the validated data
     req.body = sanitizeValue(value);
     next();
   };
@@ -57,6 +77,7 @@ export const validate = (schema) => {
 /**
  * Validate query parameters against a Joi schema.
  * Returns all validation errors at once (abortEarly: false).
+ * Response: { error, message, errors: [{ field, code, message }, ...] }
  */
 export const validateQuery = (schema) => {
   return (req, res, next) => {
@@ -67,13 +88,12 @@ export const validateQuery = (schema) => {
 
     if (error) {
       return res.status(400).json({
-        error: true,
-        message: "Validation failed",
+        error: "VALIDATION_ERROR",
+        message: "Query validation failed",
         errors: formatErrors(error),
       });
     }
 
-    // Sanitize the validated data
     req.query = sanitizeValue(value);
     next();
   };
@@ -82,6 +102,7 @@ export const validateQuery = (schema) => {
 /**
  * Validate URL parameters against a Joi schema.
  * Returns all validation errors at once (abortEarly: false).
+ * Response: { error, message, errors: [{ field, code, message }, ...] }
  */
 export const validateParams = (schema) => {
   return (req, res, next) => {
@@ -92,13 +113,12 @@ export const validateParams = (schema) => {
 
     if (error) {
       return res.status(400).json({
-        error: true,
-        message: "Validation failed",
+        error: "VALIDATION_ERROR",
+        message: "Parameter validation failed",
         errors: formatErrors(error),
       });
     }
 
-    // Sanitize the validated data
     req.params = sanitizeValue(value);
     next();
   };
