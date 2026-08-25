@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'crypto';
 import CircuitBreakerService from './CircuitBreakerService.js';
 
 class MonnifyService {
@@ -81,18 +82,43 @@ class MonnifyService {
   }
 
   /**
-   * Verify Monnify webhook signature
-   * @param {string} signature
-   * @param {Object} body
-   * @returns {boolean}
+   * Verify a Monnify webhook signature.
+   *
+   * Monnify signs the exact raw request body with HMAC-SHA512 using the
+   * merchant secret key, so verification must run against the raw bytes
+   * received (via req.rawBody, captured by the express.json `verify` hook —
+   * see middleware/payloadLimits.js) rather than a re-serialized JSON object,
+   * whose key ordering/whitespace can differ from what was signed.
+   *
+   * @param {string} signature - value of the `monnify-signature` header
+   * @param {Buffer|string} rawBody - the raw request body
+   * @returns {boolean} true only when the computed HMAC matches the signature
    */
-  verifyWebhookSignature(signature, body) {
-    const crypto = require('crypto');
-    const hash = crypto
+  verifyWebhookSignature(signature, rawBody) {
+    if (!signature || !this.secretKey || rawBody == null) {
+      return false;
+    }
+
+    const payload = Buffer.isBuffer(rawBody)
+      ? rawBody
+      : Buffer.from(
+          typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody),
+        );
+
+    const expected = crypto
       .createHmac('sha512', this.secretKey)
-      .update(JSON.stringify(body))
+      .update(payload)
       .digest('hex');
-    return hash === signature;
+
+    const expectedBuf = Buffer.from(expected, 'utf8');
+    const signatureBuf = Buffer.from(String(signature), 'utf8');
+
+    // Length check guards timingSafeEqual, which throws on unequal-length input.
+    if (expectedBuf.length !== signatureBuf.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(expectedBuf, signatureBuf);
   }
 }
 
