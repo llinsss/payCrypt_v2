@@ -150,52 +150,65 @@ class DashboardView extends StackedView<DashboardViewModel> {
                 Row(
                   children: [
                     // Notification Button
-                    Container(
-                      width: 39,
-                      height: 39,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF130F22),
-                        border: Border.all(color: const Color(0xFF262140)),
-                        borderRadius: BorderRadius.circular(48),
-                      ),
-                      child: const Icon(
-                        Icons.notifications_outlined,
-                        color: Color(0xFFE2E2E2),
-                        size: 16,
-                      ),
-                    ),
-
-                    const SizedBox(width: 14),
-
-                    Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF130F22),
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(48),
-                        ),
-                        child: Image.asset(
-                          AppAssets.profile,
-                        )),
-
-                    const SizedBox(width: 14),
-
-                    // Menu Button
-                    GestureDetector(
-                      onTap: viewModel.openMenu,
+                    Semantics(
+                      label: 'View notifications',
+                      button: true,
                       child: Container(
-                        width: 40,
-                        height: 40,
+                        width: 48,
+                        height: 48,
                         decoration: BoxDecoration(
                           color: const Color(0xFF130F22),
                           border: Border.all(color: const Color(0xFF262140)),
                           borderRadius: BorderRadius.circular(48),
                         ),
                         child: const Icon(
-                          Icons.menu,
+                          Icons.notifications_outlined,
                           color: Color(0xFFE2E2E2),
-                          size: 16,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // Profile Button
+                    Semantics(
+                      label: 'View profile',
+                      button: true,
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF130F22),
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(48),
+                        ),
+                        child: Image.asset(AppAssets.profile),
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // Menu Button
+                    Semantics(
+                      label: 'Open menu',
+                      button: true,
+                      onTap: viewModel.openMenu,
+                      child: GestureDetector(
+                        onTap: viewModel.openMenu,
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF130F22),
+                            border: Border.all(color: const Color(0xFF262140)),
+                            borderRadius: BorderRadius.circular(48),
+                          ),
+                          child: const Icon(
+                            Icons.menu,
+                            color: Color(0xFFE2E2E2),
+                            size: 20,
+                          ),
                         ),
                       ),
                     ),
