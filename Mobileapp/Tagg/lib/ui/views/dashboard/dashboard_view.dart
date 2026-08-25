@@ -4,6 +4,7 @@ import 'package:Tagg/ui/common/coach_marks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:stacked/stacked.dart';
 
 import 'dashboard_viewmodel.dart';
@@ -1026,41 +1027,130 @@ class DashboardView extends StackedView<DashboardViewModel> {
 
           const SizedBox(height: 12),
 
-          // Filter buttons
-          Container(
-            height: 49,
-            decoration: BoxDecoration(
-              color: const Color(0xFF130F22),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildFilterButton(
-                  text: 'All',
-                  isSelected: viewModel.selectedFilterIndex == 0,
-                  onTap: () => viewModel.selectFilter(0),
-                  isFirst: true,
-                  isLast: false,
+          // Filter buttons + Advanced filter + Clear button
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 49,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF130F22),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  padding: const EdgeInsets.all(4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildFilterButton(
+                        text: 'All',
+                        isSelected: viewModel.selectedFilterIndex == 0,
+                        onTap: () => viewModel.selectFilter(0),
+                        isFirst: true,
+                        isLast: false,
+                      ),
+                      _buildFilterButton(
+                        text: 'Credit',
+                        isSelected: viewModel.selectedFilterIndex == 1,
+                        onTap: () => viewModel.selectFilter(1),
+                        isFirst: false,
+                        isLast: false,
+                      ),
+                      _buildFilterButton(
+                        text: 'Debit',
+                        isSelected: viewModel.selectedFilterIndex == 2,
+                        onTap: () => viewModel.selectFilter(2),
+                        isFirst: false,
+                        isLast: true,
+                      ),
+                    ],
+                  ),
                 ),
-                _buildFilterButton(
-                  text: 'Credit',
-                  isSelected: viewModel.selectedFilterIndex == 1,
-                  onTap: () => viewModel.selectFilter(1),
-                  isFirst: false,
-                  isLast: false,
+              ),
+              const SizedBox(width: 8),
+              // Advanced filter button
+              Semantics(
+                label: 'Open advanced filters',
+                button: true,
+                child: GestureDetector(
+                  onTap: () => _showFilterBottomSheet(context, viewModel),
+                  child: Container(
+                    height: 44,
+                    width: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF130F22),
+                      border: Border.all(color: const Color(0xFF262140)),
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: const Icon(Icons.tuning, color: Color(0xFF867EA5), size: 20),
+                  ),
                 ),
-                _buildFilterButton(
-                  text: 'Debit',
-                  isSelected: viewModel.selectedFilterIndex == 2,
-                  onTap: () => viewModel.selectFilter(2),
-                  isFirst: false,
-                  isLast: true,
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
+
+          // Active filter chips
+          if (viewModel.hasActiveFilters) ...[
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  if (viewModel.searchQuery.isNotEmpty)
+                    _buildFilterChip('Search: ${viewModel.searchQuery}', () {
+                      // Clear search via onSearchChanged
+                      viewModel.onSearchChanged('');
+                    }),
+                  if (viewModel.statusFilter != null)
+                    _buildFilterChip('Status: ${viewModel.statusFilter}', () {
+                      viewModel.setStatusFilter(null);
+                    }),
+                  if (viewModel.typeFilter != null)
+                    _buildFilterChip('Type: ${viewModel.typeFilter}', () {
+                      viewModel.setTypeFilter(null);
+                    }),
+                  if (viewModel.dateRangeStart != null)
+                    _buildFilterChip(
+                      'From: ${DateFormat('MMM d').format(viewModel.dateRangeStart!)}',
+                      () => viewModel.setDateRange(null, viewModel.dateRangeEnd),
+                    ),
+                  if (viewModel.dateRangeEnd != null)
+                    _buildFilterChip(
+                      'To: ${DateFormat('MMM d').format(viewModel.dateRangeEnd!)}',
+                      () => viewModel.setDateRange(viewModel.dateRangeStart, null),
+                    ),
+                  for (final token in viewModel.selectedTokens)
+                    _buildFilterChip('$token', () {
+                      viewModel.toggleTokenFilter(token);
+                    }),
+                  for (final chain in viewModel.selectedChains)
+                    _buildFilterChip('$chain', () {
+                      viewModel.toggleChainFilter(chain);
+                    }),
+                  const SizedBox(width: 8),
+                  // Clear all button
+                  GestureDetector(
+                    onTap: () => viewModel.clearSearchFilters(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF130F22),
+                        border: Border.all(color: const Color(0xFF674AA6)),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        'Clear all',
+                        style: GoogleFonts.instrumentSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF674AA6),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1188,6 +1278,222 @@ class DashboardView extends StackedView<DashboardViewModel> {
         const SizedBox(height: 24),
         _buildRecentTransactionsSection(viewModel),
       ],
+    );
+  }
+
+  Widget _buildFilterChip(String label, VoidCallback onRemove) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: onRemove,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF130F22),
+            border: Border.all(color: const Color(0xFF674AA6)),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.instrumentSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF674AA6),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.close, color: Color(0xFF674AA6), size: 14),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFilterBottomSheet(BuildContext context, DashboardViewModel viewModel) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF130F22),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Advanced Filters',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Status filter
+            Text(
+              'Status',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: ['completed', 'pending', 'failed'].map((status) {
+                final isSelected = viewModel.statusFilter == status;
+                return FilterChip(
+                  label: Text(status),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    viewModel.setStatusFilter(selected ? status : null);
+                  },
+                  backgroundColor: const Color(0xFF181027),
+                  selectedColor: const Color(0xFF674AA6),
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : const Color(0xFF867EA5),
+                    fontSize: 12,
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+
+            // Type filter
+            Text(
+              'Type',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: ['credit', 'debit'].map((type) {
+                final isSelected = viewModel.typeFilter == type;
+                return FilterChip(
+                  label: Text(type),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    viewModel.setTypeFilter(selected ? type : null);
+                  },
+                  backgroundColor: const Color(0xFF181027),
+                  selectedColor: const Color(0xFF674AA6),
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : const Color(0xFF867EA5),
+                    fontSize: 12,
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+
+            // Date range filter
+            Text(
+              'Date Range',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildDatePickerField(
+                    'From',
+                    viewModel.dateRangeStart,
+                    (date) => viewModel.setDateRange(date, viewModel.dateRangeEnd),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildDatePickerField(
+                    'To',
+                    viewModel.dateRangeEnd,
+                    (date) => viewModel.setDateRange(viewModel.dateRangeStart, date),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Close button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF674AA6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text(
+                  'Done',
+                  style: GoogleFonts.instrumentSans(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDatePickerField(String label, DateTime? value, Function(DateTime?) onDateSelected) {
+    return GestureDetector(
+      onTap: () async {
+        final selected = await showDatePicker(
+          context: context,
+          initialDate: value ?? DateTime.now(),
+          firstDate: DateTime(2020),
+          lastDate: DateTime.now(),
+        );
+        if (selected != null) {
+          onDateSelected(selected);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF181027),
+          border: Border.all(color: const Color(0xFF262140)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF867EA5)),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value != null ? DateFormat('MMM d, yyyy').format(value) : 'Select date',
+              style: GoogleFonts.instrumentSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: value != null ? const Color(0xFFE2E2E2) : const Color(0xFF867EA5),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
