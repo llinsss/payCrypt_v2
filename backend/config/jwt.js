@@ -34,7 +34,26 @@ const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "tagged-api";
  */
 export const signToken = (payload, options = {}) => {
   const defaultOptions = {
-    expiresIn: "24h",
+    expiresIn: "15m",
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+  };
+
+  return jwt.sign(payload, JWT_SECRET, {
+    ...defaultOptions,
+    ...options,
+  });
+};
+
+/**
+ * Sign a refresh token with longer expiry
+ * @param {Object} payload - Token payload (userId, etc.)
+ * @param {Object} options - Additional JWT options
+ * @returns {string} Signed JWT token
+ */
+export const signRefreshToken = (payload, options = {}) => {
+  const defaultOptions = {
+    expiresIn: "30d",
     issuer: JWT_ISSUER,
     audience: JWT_AUDIENCE,
   };
@@ -80,6 +99,7 @@ export const verifyTokenCallback = (token, callback) => {
 
 export default {
   signToken,
+  signRefreshToken,
   verifyToken,
   verifyTokenCallback,
   JWT_SECRET, // Export for legacy code that needs direct access

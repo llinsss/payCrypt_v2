@@ -1,5 +1,5 @@
 import express from "express";
-import { register, login, setup2FA, enable2FA, verify2FA, googleLogin } from "../controllers/authController.js";
+import { register, login, setup2FA, enable2FA, verify2FA, googleLogin, refresh, logout } from "../controllers/authController.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
@@ -290,5 +290,68 @@ router.post("/2fa/enable", authenticate, validate(authSchemas.twoFactorToken), a
  *         description: Unauthorized
  */
 router.post("/2fa/verify", authenticate, strictAuthRateLimit("twoFactorVerify"), validate(authSchemas.twoFactorToken), auditLog("auth"), verify2FA);
+
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Refresh access token using refresh token
+ *     description: Exchange a refresh token for a new access token and refresh token pair. Enforces single-use; replays trigger full session revocation.
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *       401:
+ *         description: Invalid or expired refresh token
+ */
+router.post("/refresh", rateLimit({ endpointName: "auth-refresh", windowMs: 15 * 60 * 1000, max: 30 }), validate(authSchemas.refreshToken), auditLog("auth"), refresh);
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Logout and revoke current refresh token
+ *     description: Invalidate the current refresh token so it can no longer mint new pairs.
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 description: Optional refresh token to revoke
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ *       401:
+ *         description: Unauthorized
+ */
+router.post("/logout", authenticate, auditLog("auth"), logout);
 
 export default router;
