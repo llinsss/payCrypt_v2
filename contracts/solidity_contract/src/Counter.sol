@@ -2,15 +2,13 @@
 pragma solidity ^0.8.19;
 
 import {ReentrancyGuard} from "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
-interface IERC20 {
-    function totalSupply() external view returns (uint256);
-    function balanceOf(address account) external view returns (uint256);
-    function transfer(address to, uint256 amount) external returns (bool);
-    function allowance(address owner, address spender) external view returns (uint256);
-    function approve(address spender, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-}
+// Use OpenZeppelin's SafeERC20 for all token transfers so non-standard tokens
+// (those that return false, revert, or return no value) revert the operation
+// instead of silently appearing to succeed.
+using SafeERC20 for IERC20;
 
 /// @title Wallet - A minimal smart wallet contract
 contract Wallet {
@@ -58,8 +56,7 @@ contract Wallet {
         IERC20 erc20 = IERC20(token);
         require(erc20.balanceOf(address(this)) >= amount, "Insufficient token balance");
 
-        bool sent = erc20.transfer(recipient, amount);
-        require(sent, "Token transfer failed");
+        erc20.safeTransfer(recipient, amount);
 
         return true;
     }
@@ -161,8 +158,7 @@ contract TagRouter is ReentrancyGuard {
         IERC20 erc20 = IERC20(token);
         require(erc20.allowance(msg.sender, address(this)) >= amount, "Insufficient allowance");
 
-        bool success = erc20.transferFrom(msg.sender, userWallet, amount);
-        require(success, "Token transfer failed");
+        erc20.safeTransferFrom(msg.sender, userWallet, amount);
 
         emit DepositReceived(tag, msg.sender, amount);
     }
@@ -231,7 +227,7 @@ contract TagRouter is ReentrancyGuard {
         IERC20 erc20 = IERC20(token);
         require(erc20.balanceOf(address(this)) >= amountToSend, "Insufficient token liquidity");
 
-        IERC20(token).transfer(walletAddr, amountToSend);
+        IERC20(token).safeTransfer(walletAddr, amountToSend);
 
         emit SwappedFromWallet(walletAddr, token, _amountEth, amountToSend, _tag);
     }

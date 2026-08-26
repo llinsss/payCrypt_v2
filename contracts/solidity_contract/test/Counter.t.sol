@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {TagRouter, Wallet} from "../src/Counter.sol";
 import {USDC, USDT} from "../src/MockUsdc.sol";
+import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 contract TagRouterTest is Test {
     TagRouter public tagrouter;
@@ -323,5 +324,49 @@ contract TagRouterTest is Test {
         vm.expectRevert("Not authorized");
         w.withdrawETH(payable(user2), 1 ether);
         vm.stopPrank();
+    }
+}
+
+contract NonStandardToken is IERC20 {
+    function totalSupply() external view returns (uint256) { return 0; }
+    function balanceOf(address) external view returns (uint256) { return type(uint256).max; }
+    function transfer(address, uint256) external pure returns (bool) { return false; }
+    function allowance(address, address) external view returns (uint256) { return type(uint256).max; }
+    function approve(address, uint256) external pure returns (bool) { return false; }
+    function transferFrom(address, address, uint256) external pure returns (bool) { return false; }
+}
+
+/// @notice Regression tests for the unchecked-ERC20-transfer fix (#512).
+contract SafeERC20Test is Test {
+    TagRouter public tagrouter;
+    NonStandardToken public bad;
+
+    function setUp() public {
+        tagrouter = new TagRouter();
+        bad = new NonStandardToken();
+    }
+
+    // swapEthForToken transfers the token from the router to the user wallet. A
+    // non-standard token that returns `false` from `transfer` must revert the
+    // swap (SafeERC20), instead of the router believing the payment succeeded.
+    function test_swapEthForTokenNonStandardTokenReverts() public {
+        string memory tag = "badSwap";
+        address userWallet = tagrouter.registerTag(tag, user1);
+        vm.deal(userWallet, 1 ether);
+
+        vm.expectRevert();
+        vm.prank(address(tagrouter));
+        tagrouter.swapEthForToken(address(bad), 3500e6, tag, 1 ether);
+    }
+
+    // depositERC20ToTag pulls tokens from the sender via transferFrom. A
+    // non-standard token that returns `false` from `transferFrom` must revert.
+    function test_depositERC20ToTagNonStandardTokenReverts() public {
+        string memory tag = "badDeposit";
+        tagrouter.registerTag(tag, user1);
+
+        vm.expectRevert();
+        vm.prank(user1);
+        tagrouter.depositERC20ToTag(tag, address(bad), 1000e6);
     }
 }
