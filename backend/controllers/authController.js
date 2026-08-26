@@ -5,7 +5,7 @@ import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import BankAccount from "../models/BankAccount.js";
 import { balanceQueue } from "../queues/balance.js";
-import { signToken } from "../config/jwt.js";
+import { issueSession } from "../utils/authCookies.js";
 
 const sanitizeAuthUser = (user) => {
   if (!user) return user;
@@ -23,7 +23,7 @@ const generateBackupCodes = (count = 8) => {
 
 export const register = async (req, res) => {
   try {
-    const { email, tag, address, password, role } = req.body;
+    const { email, tag, address, password } = req.body;
 
     // --- Check email ---
     const existingUserEmail = await User.findByEmail(email);
@@ -45,11 +45,11 @@ export const register = async (req, res) => {
       address,
       password,
       photo,
-      role,
+      role: "user",
     });
 
     // --- Generate JWT ---
-    const token = signToken({ userId: user.id });
+    await issueSession(user.id, res);
     sanitizeAuthUser(user);
 
     // --- Create wallet + bank account immediately ---
@@ -64,7 +64,6 @@ export const register = async (req, res) => {
     // --- Respond immediately ---
     res.status(201).json({
       message: "User registered successfully",
-      token,
       user,
     });
   } catch (error) {
@@ -90,7 +89,7 @@ export const login = async (req, res) => {
     }
 
     // Generate JWT token
-    const token = signToken({ userId: user.id });
+    await issueSession(user.id, res);
 
     const last_login = new Date();
     const update_user = await User.update(user.id, {
@@ -101,7 +100,6 @@ export const login = async (req, res) => {
 
     res.json({
       message: "Login successful",
-      token,
       user: { ...user, last_login },
     });
   } catch (error) {

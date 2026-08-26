@@ -17,7 +17,7 @@ export interface RegisterRequest {
 
 export interface AuthResponse {
   message: string;
-  token: string;
+  token?: string;
   user: {
     id: string;
     email: string;
@@ -42,11 +42,6 @@ export const authApi = {
         credentials
       )) as AuthResponse;
 
-      // Store token in localStorage
-      if (response.token) {
-        localStorage.setItem("auth_token", response.token);
-      }
-
       return response;
     } catch (error) {
       console.error("Login failed:", error);
@@ -62,12 +57,6 @@ export const authApi = {
         userData
       )) as AuthResponse;
 
-      console.log(response);
-      // Store token in localStorage
-      if (response.token) {
-        localStorage.setItem("auth_token", response.token);
-      }
-
       return response;
     } catch (error) {
       console.error("Registration failed:", error);
@@ -76,8 +65,8 @@ export const authApi = {
   },
 
   // Logout user
-  logout(): void {
-    localStorage.removeItem("auth_token");
+  async logout(): Promise<void> {
+    await apiClient.post("/auth/logout");
   },
 
   // Get current user (if we add a /me endpoint later)
@@ -95,13 +84,7 @@ export const authApi = {
 
   // Check if user is authenticated
   isAuthenticated(): boolean {
-    const token = localStorage.getItem("auth_token");
-    return !!token;
-  },
-
-  // Get stored token
-  getToken(): string | null {
-    return localStorage.getItem("auth_token");
+    return false;
   },
 };
 

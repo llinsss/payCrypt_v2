@@ -36,12 +36,12 @@ const requireNumber = (value: unknown, contract: string, path: string): number =
 export const parseAuthResponse = (value: unknown) => {
   const contract = "auth response";
   const response = requireRecord(value, contract);
-  requireString(response.token, contract, "$.token");
+  if (response.token !== undefined) requireString(response.token, contract, "$.token");
   requireString(response.message, contract, "$.message");
   parseUser(response.user, contract, "$.user");
   return value as {
     message: string;
-    token: string;
+    token?: string;
     user: Record<string, unknown>;
   };
 };

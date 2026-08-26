@@ -5,8 +5,21 @@ import { validate } from "../middleware/validation.js";
 import { auditLog } from "../middleware/audit.js";
 import { authSchemas } from "../schemas/auth.js";
 import { rateLimit } from "../middleware/rateLimiter.js";
+import { clearAuthCookies, revokeSession, rotateSession, setCsrfCookie } from "../utils/authCookies.js";
 
 const router = express.Router();
+
+router.get("/csrf", (req, res) => res.json({ csrfToken: setCsrfCookie(res) }));
+router.post("/refresh", async (req, res) => {
+	const userId = await rotateSession(req.cookies?.["__Host-refresh"], res);
+	if (!userId) return res.status(401).json({ error: "Invalid refresh session" });
+	res.json({ message: "Session refreshed" });
+});
+router.post("/logout", async (req, res) => {
+	await revokeSession(req.cookies?.["__Host-refresh"]);
+	clearAuthCookies(res);
+	res.status(204).end();
+});
 
 /**
  * @swagger
