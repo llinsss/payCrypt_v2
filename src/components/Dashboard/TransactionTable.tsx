@@ -48,9 +48,9 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
 
       {/* Mobile Card Layout */}
       <div className="block lg:hidden">
-        <div className="divide-y divide-gray-200">
+        <ul aria-label="Recent transactions" className="divide-y divide-gray-200">
           {transactions.map((tx) => (
-            <div key={tx.id} className="p-4 hover:bg-gray-50 transition-colors">
+            <li key={tx.id} className="p-4 hover:bg-gray-50 transition-colors">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-3">
                   {getTypeIcon(tx.type)}
@@ -68,53 +68,58 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
               </div>
 
               <div className="space-y-1">
-                <div className="flex justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <span className="text-sm text-gray-500">Amount:</span>
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-gray-900">
+                  <div className="min-w-0 text-right">
+                    <div className="break-words text-sm font-medium text-gray-900">
                       {formatCrypto(Number(tx.amount), tx.token_symbol)}
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="break-words text-xs text-gray-500">
                       {formatCurrency(Number(tx.usd_value))}
                     </div>
                   </div>
                 </div>
 
                 {showUserColumn && (
-                  <div className="flex justify-between">
+                  <div className="flex items-start justify-between gap-4">
                     <span className="text-sm text-gray-500">User:</span>
-                    <span className="text-sm text-blue-600 font-medium">
+                    <span className="min-w-0 break-all text-right text-sm text-blue-600 font-medium">
                       @{tx.user_tag}
                     </span>
                   </div>
                 )}
 
-                <div className="flex justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <span className="text-sm text-gray-500">Sender:</span>
-                  <span className="text-sm text-gray-900 capitalize">
+                  <span className="min-w-0 break-all text-right text-sm text-gray-900 capitalize">
                     {tx.from_address}
                   </span>
                 </div>
 
-                <div className="flex justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <span className="text-sm text-gray-500">Recipient:</span>
-                  <span className="text-sm text-gray-900 capitalize">
+                  <span className="min-w-0 break-all text-right text-sm text-gray-900 capitalize">
                     {tx.to_address}
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center">
+                <div className="flex items-center justify-between gap-4">
                   <span className="text-sm text-gray-500">Date:</span>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-500">
+                  <div className="flex min-w-0 items-center justify-end gap-2">
+                    <time
+                      dateTime={tx.timestamp}
+                      className="text-right text-sm text-gray-500"
+                    >
                       {new Date(tx.timestamp).toLocaleDateString()}
-                    </span>
+                    </time>
                     {tx.tx_hash && (
                       <a
                         href={`https://sepolia.voyager.online/tx/${tx.tx_hash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 transition-colors"
+                        aria-label={`View transaction ${tx.tx_hash}`}
+                        title="View transaction"
+                        className="shrink-0 text-blue-600 hover:text-blue-800 transition-colors"
                       >
                         <ExternalLink className="w-4 h-4" />
                       </a>
@@ -122,9 +127,9 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                   </div>
                 </div>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
 
       {/* Desktop Table Layout */}
@@ -216,6 +221,8 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                       href={`https://sepolia.voyager.online/tx/${tx.tx_hash}`}
                       target="_blank"
                       rel="noopener noreferrer"
+                      aria-label={`View transaction ${tx.tx_hash}`}
+                      title="View transaction"
                       className="text-blue-600 hover:text-blue-800 transition-colors"
                     >
                       <ExternalLink className="w-4 h-4" />
