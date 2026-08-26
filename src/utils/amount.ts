@@ -1,4 +1,5 @@
 import { apiClient } from "./api";
+import { parseAmountResponse } from "./apiContracts";
 
 export const formatCurrency = (amount: number, currency = "USD") => {
   return new Intl.NumberFormat("en-US", {
@@ -26,7 +27,6 @@ export const formatCurrencyToNGN = (amount: number, currency = "NGN") => {
 };
 
 export const getCryptoUSDValue = async (amount: number, token?: string) => {
-  const response = await apiClient.post("/usd-equivalent", { token, amount });
-  console.log(response);
-  return response as unknown as string;
+  const response = await apiClient.post<unknown>("/usd-equivalent", { token, amount });
+  return parseAmountResponse(response);
 };

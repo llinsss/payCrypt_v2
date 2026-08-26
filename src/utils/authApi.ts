@@ -1,5 +1,6 @@
 import { apiClient } from "./api";
 import { AuthUser } from "../types/auth";
+import { parseAuthResponse, parseProfileResponse } from "./apiContracts";
 
 // Auth API interfaces
 export interface LoginRequest {
@@ -36,10 +37,10 @@ export const authApi = {
   // Login user
   async login(credentials: LoginRequest): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<AuthResponse>(
+      const response = parseAuthResponse(await apiClient.post<unknown>(
         "/auth/login",
         credentials
-      );
+      )) as AuthResponse;
 
       // Store token in localStorage
       if (response.token) {
@@ -56,10 +57,10 @@ export const authApi = {
   // Register new user
   async register(userData: RegisterRequest): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<AuthResponse>(
+      const response = parseAuthResponse(await apiClient.post<unknown>(
         "/auth/register",
         userData
-      );
+      )) as AuthResponse;
 
       console.log(response);
       // Store token in localStorage
@@ -82,10 +83,10 @@ export const authApi = {
   // Get current user (if we add a /me endpoint later)
   async getCurrentUser(): Promise<AuthUser> {
     try {
-      const response = await apiClient.get<{ user: AuthUser }>(
+      const response = await apiClient.get<unknown>(
         "/users/profile"
       );
-      return response.user;
+      return parseProfileResponse(response) as AuthUser;
     } catch (error) {
       console.error("Failed to get current user:", error);
       throw error;
