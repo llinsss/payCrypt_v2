@@ -11,6 +11,9 @@ import Sidebar from "./components/Layout/Sidebar";
 import Header from "./components/Layout/Header";
 import LoadingSpinner from "./components/LoadingSpinner";
 
+// Error boundaries (#524)
+import { ErrorBoundary, RouteErrorBoundary } from "./components/ErrorBoundary";
+
 import { apiClient } from "./utils/api";
 
 // ── Lazy-loaded route-level views ────────────────────────────────────────────
@@ -89,7 +92,7 @@ function RouteLoader() {
   );
 }
 
-// Private app layout with auth guard
+// ── Private app layout with auth guard ──────────────────────────────────────
 const PrivateLayout: React.FC = () => {
   const { user, isLoading } = useAuth();
   const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
@@ -150,9 +153,16 @@ const PrivateLayout: React.FC = () => {
             </div>
           )}
           <div className="p-4 lg:p-6">
-            <Suspense fallback={<RouteLoader />}>
-              <Outlet />
-            </Suspense>
+            {/*
+             * Route-level error boundary (#524):
+             * A render failure inside any lazy-loaded view renders a safe
+             * fallback for that route only — the sidebar/header remain usable.
+             */}
+            <RouteErrorBoundary name="main-outlet">
+              <Suspense fallback={<RouteLoader />}>
+                <Outlet />
+              </Suspense>
+            </RouteErrorBoundary>
           </div>
         </main>
       </div>
@@ -160,7 +170,7 @@ const PrivateLayout: React.FC = () => {
   );
 };
 
-// Guard for admin-only sections — admin and super_admin roles.
+// ── Guard for admin-only sections ────────────────────────────────────────────
 const AdminGuard: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
@@ -170,6 +180,7 @@ const AdminGuard: React.FC = () => {
   return <Outlet />;
 };
 
+// ── App routes ───────────────────────────────────────────────────────────────
 function AppRoutes() {
   return (
     <Routes>
@@ -178,9 +189,12 @@ function AppRoutes() {
         path="/auth"
         element={
           <PublicRoute>
-            <Suspense fallback={<RouteLoader />}>
-              <AuthPage />
-            </Suspense>
+            {/* Route-level boundary for the auth page (#524) */}
+            <RouteErrorBoundary name="auth">
+              <Suspense fallback={<RouteLoader />}>
+                <AuthPage />
+              </Suspense>
+            </RouteErrorBoundary>
           </PublicRoute>
         }
       />
@@ -288,15 +302,64 @@ function AppRoutes() {
         />
         <Route path="test/api" element={<ApiTest />} />
 
-        {/* Admin-only routes */}
+        {/* Admin-only routes — wrapped in their own boundary (#524) */}
         <Route path="admin" element={<AdminGuard />}>
-          <Route path="overview" element={<AdminDashboard />} />
-          <Route path="users" element={<AdminUsers />} />
-          <Route path="kyc" element={<AdminKyc />} />
-          <Route path="disputes" element={<AdminDisputes />} />
-          <Route path="transactions" element={<AdminTransactions />} />
-          <Route path="health" element={<AdminHealth />} />
-          <Route path="payouts" element={<AdminPayouts />} />
+          <Route
+            path="overview"
+            element={
+              <RouteErrorBoundary name="admin-overview">
+                <AdminDashboard />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="users"
+            element={
+              <RouteErrorBoundary name="admin-users">
+                <AdminUsers />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="kyc"
+            element={
+              <RouteErrorBoundary name="admin-kyc">
+                <AdminKyc />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="disputes"
+            element={
+              <RouteErrorBoundary name="admin-disputes">
+                <AdminDisputes />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="transactions"
+            element={
+              <RouteErrorBoundary name="admin-transactions">
+                <AdminTransactions />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="health"
+            element={
+              <RouteErrorBoundary name="admin-health">
+                <AdminHealth />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="payouts"
+            element={
+              <RouteErrorBoundary name="admin-payouts">
+                <AdminPayouts />
+              </RouteErrorBoundary>
+            }
+          />
           <Route
             path="analytics"
             element={
@@ -314,11 +377,16 @@ function AppRoutes() {
   );
 }
 
+// ── Root component ───────────────────────────────────────────────────────────
+// Top-level error boundary (#524): catches any error that escapes route-level
+// boundaries (e.g. a broken AuthProvider) and prevents a completely blank page.
 function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <ErrorBoundary name="app-root">
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
