@@ -234,10 +234,16 @@ function DefaultErrorFallback({
           Something went wrong
         </h2>
 
-        <p className="mb-6 text-sm text-gray-500">
+        <p className="mb-2 text-sm text-gray-500">
           An unexpected error occurred on this page. Your funds and account are
           safe. You can try again or return to the dashboard.
         </p>
+
+        {error.message && (
+          <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-xs font-mono text-red-700 break-all">
+            {error.message}
+          </p>
+        )}
 
         {/* Actions */}
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
