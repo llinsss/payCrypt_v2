@@ -2,6 +2,7 @@ import {
     checkAllDependencies,
     getConnectionPoolStats,
 } from "../utils/dbHealth.js";
+import stellarStreamService from "../services/StellarStreamService.js";
 
 /**
  * GET /api/health
@@ -45,6 +46,10 @@ export const getHealth = async (req, res) => {
             message: dependencies.stellar.message,
             details: dependencies.stellar.details || undefined,
         };
+
+        // SSE stream state is separate from Horizon reachability: Horizon may
+        // answer HTTP health checks while its event stream is reconnecting.
+        health.checks.stellarStream = stellarStreamService.getStatus();
 
         // Determine overall status
         if (!dependencies.healthy) {

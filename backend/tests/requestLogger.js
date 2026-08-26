@@ -339,7 +339,7 @@ describe("requestLogger middleware", () => {
     expect(String(requestCall[1].body)).toMatch(/BODY_TOO_LARGE/);
   });
 
-  it("includes userId from req.user when authenticated", () => {
+  it("includes userId from req.user when authenticated", async () => {
     const req = makeReq({ user: { id: 42 } });
     const res = makeRes();
 

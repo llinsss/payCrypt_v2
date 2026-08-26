@@ -1,6 +1,5 @@
-import knex from 'knex';
-import config from '../knexfile.js';
-const db = knex(config);
+import db from '../config/database.js';
+import redis from '../config/redis.js';
 
 class TagService {
     async createTag(tag, stellarAddress) {
@@ -12,13 +11,14 @@ class TagService {
             throw new Error('Tag already exists');
         }
 
-        // Insert new tag
+        // Insert new tag with pending status
         const [id] = await db('stellar_tags').insert({
             tag: formattedTag,
-            stellar_address: stellarAddress
+            stellar_address: stellarAddress,
+            status: 'pending'
         }).returning('id'); // PG requires returning for ID
 
-        return { id, tag: formattedTag, stellarAddress };
+        return { id, tag: formattedTag, stellarAddress, status: 'pending' };
     }
 
     async checkAvailability(tag) {
@@ -71,8 +71,39 @@ class TagService {
 
     async resolveTag(tag) {
         const formattedTag = tag.toLowerCase();
-        const mapping = await db('stellar_tags').where({ tag: formattedTag }).first();
+        // Only resolve active tags for payments
+        const mapping = await db('stellar_tags').where({ tag: formattedTag, status: 'active' }).first();
         return mapping;
+    }
+
+    async confirmTag(tag) {
+        const formattedTag = tag.toLowerCase();
+
+        const result = await db('stellar_tags')
+            .where({ tag: formattedTag })
+            .update({
+                status: 'active',
+                confirmed_at: db.fn.now(),
+                updated_at: db.fn.now()
+            })
+            .returning('*');
+
+        return result[0];
+    }
+
+    async failTag(tag, reason) {
+        const formattedTag = tag.toLowerCase();
+
+        const result = await db('stellar_tags')
+            .where({ tag: formattedTag })
+            .update({
+                status: 'failed',
+                failure_reason: reason,
+                updated_at: db.fn.now()
+            })
+            .returning('*');
+
+        return result[0];
     }
 
     async transferTag(tag, newStellarAddress) {
@@ -93,6 +124,50 @@ class TagService {
             });
 
         return { tag: formattedTag, stellarAddress: newStellarAddress };
+    }
+
+    async searchTags(query) {
+        const formattedQuery = query.toLowerCase().trim();
+
+        if (!formattedQuery || formattedQuery.length < 1) {
+            return [];
+        }
+
+        const cacheKey = `tag_search:${formattedQuery}`;
+        const cacheTTL = 300; // 5 minutes
+
+        try {
+            // Try to get from cache
+            const cached = await redis.get(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        } catch (cacheError) {
+            console.warn('Redis cache read error:', cacheError.message);
+            // Continue with database query if cache fails
+        }
+
+        // Query database for matching tags
+        const results = await db('stellar_tags')
+            .where('tag', 'like', `${formattedQuery}%`)
+            .limit(10)
+            .select('id', 'tag', 'stellar_address', 'created_at');
+
+        const formatted = results.map(r => ({
+            id: r.id,
+            tag: r.tag,
+            stellarAddress: r.stellar_address,
+            createdAt: r.created_at
+        }));
+
+        // Store in cache
+        try {
+            await redis.setEx(cacheKey, cacheTTL, JSON.stringify(formatted));
+        } catch (cacheError) {
+            console.warn('Redis cache write error:', cacheError.message);
+        }
+
+        return formatted;
     }
 }
 

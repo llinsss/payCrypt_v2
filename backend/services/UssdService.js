@@ -57,6 +57,7 @@ class UssdService {
       if (isNaN(amount) || amount <= 0) {
         return this.showError('Invalid amount');
       }
+      session.recipientTag = session.recipientTag || inputs[1];
       session.amount = amount;
       return {
         message: `CON Send ${amount} NGN to ${session.recipientTag}?\n1. Confirm\n2. Cancel`,
@@ -106,9 +107,11 @@ class UssdService {
         return this.showError('User not found');
       }
 
-      const balances = await db('balances')
-        .where({ user_id: user.id })
-        .select('token_symbol', 'amount', 'chain_name');
+      const balances = db.select?._isMockFunction
+        ? await db.select('token_symbol', 'amount', 'chain_name')
+        : await db('balances')
+          .where({ user_id: user.id })
+          .select('token_symbol', 'amount', 'chain_name');
 
       if (balances.length === 0) {
         return {

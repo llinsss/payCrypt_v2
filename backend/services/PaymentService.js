@@ -10,6 +10,8 @@ import AuditLog from '../models/AuditLog.js';
 import db from '../config/database.js';
 import { publish } from '../config/redis.js';
 import KeyVaultService from './KeyVaultService.js';
+import NotificationService from './NotificationService.js';
+import SocketService from './SocketService.js';
 
 // Payment limits and configuration
 const PAYMENT_CONFIG = {
@@ -543,6 +545,44 @@ class PaymentService {
           timestamp: submitResult.createdAt || new Date().toISOString()
         }, trx);
         await trx.commit();
+
+        // Emit WebSocket balance update to both sender and recipient
+        const recipient = await User.findByTag(recipientTag);
+        if (recipient) {
+          SocketService.emitBalanceUpdate(recipient.id, {
+            event: 'balance_updated',
+            data: {
+              transaction: {
+                id: transactionRecord.id,
+                type: 'credit',
+                amount: validatedAmount,
+                asset,
+                senderTag,
+                recipientTag,
+                status: 'completed',
+                txHash: submitResult.hash,
+              },
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+        SocketService.emitBalanceUpdate(userId, {
+          event: 'balance_updated',
+          data: {
+            transaction: {
+              id: transactionRecord.id,
+              type: 'debit',
+              amount: validatedAmount,
+              asset,
+              senderTag,
+              recipientTag,
+              fee: feeInfo.fee,
+              status: 'completed',
+              txHash: submitResult.hash,
+            },
+            timestamp: new Date().toISOString(),
+          },
+        });
       } catch (dbError) {
         await trx.rollback();
         // Stellar succeeded but DB failed - attempt compensation (insert recovery record)
@@ -571,6 +611,10 @@ class PaymentService {
       }
 
       this.logger.log(`Payment completed successfully: ${transactionRecord.id}`);
+
+      this._sendPaymentNotifications(transactionRecord, { senderTag, recipientTag, amount: validatedAmount, asset }).catch(err =>
+        this.logger.error(`Payment notification error: ${err.message}`)
+      );
 
       return {
         success: true,
@@ -828,6 +872,26 @@ class PaymentService {
       baseFeePercentage: PAYMENT_CONFIG.BASE_FEE_PERCENTAGE * 100,
       minFee: PAYMENT_CONFIG.MIN_FEE
     };
+  }
+
+  async _sendPaymentNotifications(transaction, { senderTag, recipientTag, amount, asset }) {
+    const recipient = await User.findByTag(recipientTag);
+    if (recipient) {
+      await NotificationService.sendToUser(recipient.id,
+        "Payment Received",
+        `You received ${amount} ${asset} from @${senderTag}`,
+        { type: "payment_notifications", transaction_id: String(transaction.id) }
+      );
+    }
+
+    const sender = await User.findByTag(senderTag);
+    if (sender && sender.id !== transaction.user_id) {
+      await NotificationService.sendToUser(sender.id,
+        "Payment Sent",
+        `You sent ${amount} ${asset} to @${recipientTag}`,
+        { type: "payment_notifications", transaction_id: String(transaction.id) }
+      );
+    }
   }
 }
 

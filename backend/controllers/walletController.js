@@ -9,6 +9,7 @@ import {
 } from "../models/index.js";
 import { from18Decimals, to18Decimals } from "../utils/amount.js";
 import secureRandomString from "../utils/random-string.js";
+import { validateAddress } from "../utils/validateAddress.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import { ethers } from "ethers";
@@ -241,6 +242,13 @@ export const send_to_wallet = async (req, res) => {
     const chain = contract.chains[token.symbol];
     const sender_address = balance.address;
     const sender_tag = user.tag;
+
+    // Enforce chain-specific address format BEFORE any on-chain tx or DB record
+    // is created — sending to a wrong-chain address permanently loses funds.
+    const addressCheck = validateAddress(receiver_address, chain);
+    if (!addressCheck.valid) {
+      return res.status(400).json({ error: addressCheck.error });
+    }
 
     // Acquire lock for sender
     const lockIdentifier = await LockService.acquireUserLock(user.id);

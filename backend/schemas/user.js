@@ -30,6 +30,10 @@ export const editProfileSchema = Joi.object({
     }),
 
     full_name: Joi.string().min(2).max(200).allow("", null).optional(),
+
+    preferredCurrency: Joi.string().valid("USD", "EUR", "GBP", "NGN").optional().messages({
+        "any.only": "Preferred currency must be one of USD, EUR, GBP, or NGN",
+    }),
 })
     .min(1)
     .messages({
