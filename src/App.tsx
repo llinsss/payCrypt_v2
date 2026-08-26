@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -6,36 +6,88 @@ import PublicRoute from "./components/PublicRoute";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { Toaster } from "react-hot-toast";
 
-// Layout
+// Layout — loaded eagerly (always visible)
 import Sidebar from "./components/Layout/Sidebar";
 import Header from "./components/Layout/Header";
+import LoadingSpinner from "./components/LoadingSpinner";
 
-// Public pages
-import AuthPage from "./components/Auth/AuthPage";
-
-// User pages
-import UserDashboard from "./components/Dashboard/UserDashboard";
-import BalancesView from "./components/Balances/BalancesView";
-import DepositsView from "./components/Deposits/DepositsView";
-import QRCodeGenerator from "./components/QRCode/QRCodeGenerator";
-import WithdrawView from "./components/Withdraw/WithdrawView";
-import SwapView from "./components/Swap/SwapView";
-import BillsView from "./components/Bills/BillsView";
-import SplitPaymentView from "./components/Split/SplitPaymentView";
-import MultiCurrencyView from "./components/MultiCurrency/MultiCurrencyView";
-import SettingsView from "./components/Settings/SettingsView";
-
-// Admin pages
-import AdminDashboard from "./components/Admin/AdminDashboard";
-import AdminUsers from "./components/Admin/AdminUsers";
-import AdminPayouts from "./components/Admin/AdminPayouts";
-import AdminKyc from "./components/Admin/AdminKyc";
-import AdminDisputes from "./components/Admin/AdminDisputes";
-import AdminTransactions from "./components/Admin/AdminTransactions";
-import AdminHealth from "./components/Admin/AdminHealth";
-import KYCForm from "./components/KYC/KYCForm";
-import ApiTest from "./components/Test/ApiTest";
 import { apiClient } from "./utils/api";
+
+// ── Lazy-loaded route-level views ────────────────────────────────────────────
+// Public
+const AuthPage = React.lazy(
+  () => import("./components/Auth/AuthPage")
+);
+
+// User routes
+const UserDashboard = React.lazy(
+  () => import("./components/Dashboard/UserDashboard")
+);
+const BalancesView = React.lazy(
+  () => import("./components/Balances/BalancesView")
+);
+const DepositsView = React.lazy(
+  () => import("./components/Deposits/DepositsView")
+);
+const QRCodeGenerator = React.lazy(
+  () => import("./components/QRCode/QRCodeGenerator")
+);
+const WithdrawView = React.lazy(
+  () => import("./components/Withdraw/WithdrawView")
+);
+const SwapView = React.lazy(
+  () => import("./components/Swap/SwapView")
+);
+const BillsView = React.lazy(
+  () => import("./components/Bills/BillsView")
+);
+const SplitPaymentView = React.lazy(
+  () => import("./components/Split/SplitPaymentView")
+);
+const MultiCurrencyView = React.lazy(
+  () => import("./components/MultiCurrency/MultiCurrencyView")
+);
+const SettingsView = React.lazy(
+  () => import("./components/Settings/SettingsView")
+);
+const KYCForm = React.lazy(
+  () => import("./components/KYC/KYCForm")
+);
+const ApiTest = React.lazy(
+  () => import("./components/Test/ApiTest")
+);
+
+// Admin routes — their own chunk so non-admin users never load them
+const AdminDashboard = React.lazy(
+  () => import("./components/Admin/AdminDashboard")
+);
+const AdminUsers = React.lazy(
+  () => import("./components/Admin/AdminUsers")
+);
+const AdminPayouts = React.lazy(
+  () => import("./components/Admin/AdminPayouts")
+);
+const AdminKyc = React.lazy(
+  () => import("./components/Admin/AdminKyc")
+);
+const AdminDisputes = React.lazy(
+  () => import("./components/Admin/AdminDisputes")
+);
+const AdminTransactions = React.lazy(
+  () => import("./components/Admin/AdminTransactions")
+);
+const AdminHealth = React.lazy(
+  () => import("./components/Admin/AdminHealth")
+);
+
+// ── Shared suspense fallback ─────────────────────────────────────────────────
+function RouteLoader() {
+  return (
+    <div className="min-h-[60vh] grid place-items-center">
+      <LoadingSpinner />
+    </div>
+  );
+}
 
 // Private app layout with auth guard
 const PrivateLayout: React.FC = () => {
@@ -98,7 +150,9 @@ const PrivateLayout: React.FC = () => {
             </div>
           )}
           <div className="p-4 lg:p-6">
-            <Outlet />
+            <Suspense fallback={<RouteLoader />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
@@ -124,7 +178,9 @@ function AppRoutes() {
         path="/auth"
         element={
           <PublicRoute>
-            <AuthPage />
+            <Suspense fallback={<RouteLoader />}>
+              <AuthPage />
+            </Suspense>
           </PublicRoute>
         }
       />
