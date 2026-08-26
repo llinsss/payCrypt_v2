@@ -12,6 +12,7 @@ import basicAuth from "express-basic-auth";
 import mongoSanitize from "express-mongo-sanitize";
 
 import indexRoutes from "./routes/index.js";
+import { getDeploymentStatus } from "./services/deploymentValidator.js";
 import generalRoutes from "./routes/general.js";
 import bullBoardRouter from "./bullboard.js";
 import swaggerJsdoc from "swagger-jsdoc";
@@ -167,10 +168,21 @@ app.get("/", (req, res) => {
 });
 
 // Health check endpoint (no rate limiting)
-app.get("/health", (req, res) => {
+app.get("/health", async (req, res) => {
+  const timestamp = new Date().toISOString();
+  let deploymentChecks = {};
+  try {
+    deploymentChecks = await getDeploymentStatus();
+  } catch (err) {
+    deploymentChecks = { error: err.message };
+  }
+
   res.status(200).json({
     status: "ok",
-    timestamp: new Date().toISOString(),
+    timestamp,
+    checks: {
+      deployments: deploymentChecks,
+    },
   });
 });
 

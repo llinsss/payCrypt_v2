@@ -3,6 +3,7 @@ dotenv.config();
 
 import http from "http";
 import { validateEnv } from "./config/env.validation.js";
+import { validateStartup } from "./services/deploymentValidator.js";
 
 let validatedEnv;
 try {
@@ -83,6 +84,21 @@ const isProduction = process.env.NODE_ENV === "production";
   SocketService.init(httpServer);
 
   await initApollo(app, null, httpServer);
+
+  // Validate deployments before listening. In production, fail startup on missing deployments.
+  try {
+    const deployResult = await validateStartup({ failOnMissing: isProduction });
+    if (!deployResult.ok) {
+      console.warn("One or more deployments are missing or mismatched:", deployResult.missing.map((m) => m.chain));
+      if (isProduction) {
+        console.error("Exiting: missing deployments in production environment");
+        process.exit(1);
+      }
+    }
+  } catch (err) {
+    console.error("Deployment validation failed:", err.message);
+    if (isProduction) process.exit(1);
+  }
 
   httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT} (with WebSockets)`);
