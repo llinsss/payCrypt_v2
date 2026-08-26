@@ -36,9 +36,7 @@
             "<rootDir>/tests/setup/testEnv.setup.js"
         ],
         "testPathIgnorePatterns": [
-            "/node_modules/",
-            "Real-Time Stellar Horizon",
-            "Multi-Chain Transaction"
+            "/node_modules/"
         ]
     },
     "dependencies": {

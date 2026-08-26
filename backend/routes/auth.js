@@ -20,7 +20,15 @@ const router = express.Router();
  * /api/auth/register:
  *   post:
  *     summary: Register a new user
- *     description: Create a new Tagg@d account. Requires email and password. Returns a JWT token on success.
+ *     description: |
+ *       Create a new Tagg@d account. Requires email and password. Returns a JWT token on success.
+ *
+ *       Password requirements (all must be met):
+ *       - Minimum 8 characters, maximum 128 characters
+ *       - At least one lowercase letter (a-z)
+ *       - At least one uppercase letter (A-Z)
+ *       - At least one digit (0-9)
+ *       - At least one special character: @$!%*?&#
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -40,7 +48,9 @@ const router = express.Router();
  *                 type: string
  *                 format: password
  *                 minLength: 8
+ *                 maxLength: 128
  *                 example: "StrongP@ssw0rd!"
+ *                 description: "Must contain uppercase, lowercase, digit, and special character"
  *               firstName:
  *                 type: string
  *                 example: "John"

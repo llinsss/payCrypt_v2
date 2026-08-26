@@ -210,19 +210,7 @@ export default {
   },
 
   async cleanupExpiredExports() {
-    const expired = await db("export_exports").where("expires_at", "<", new Date()).select("id", "file_path");
-    let deleted = 0;
-    for (const row of expired) {
-      try {
-        if (fs.existsSync(row.file_path)) {
-          fs.unlinkSync(row.file_path);
-        }
-      } catch {
-        /* ignore */
-      }
-      await db("export_exports").where({ id: row.id }).del();
-      deleted++;
-    }
-    return deleted;
+    const { default: ExportCleanupService } = await import("./ExportCleanupService.js");
+    return await ExportCleanupService.cleanupExpiredExports();
   },
 };
