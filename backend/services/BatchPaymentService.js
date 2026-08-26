@@ -43,7 +43,12 @@ class BatchPaymentService {
   }) {
     const normalizedAsset = asset || "XLM";
     const normalizedAssetIssuer = normalizedAsset === "XLM" ? null : assetIssuer;
-    const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const totalAmount = payments.reduce(
+      (sum, payment) => PaymentService.formatStroops(
+        PaymentService.parseAmountToStroops(sum) + PaymentService.parseAmountToStroops(payment.amount || '0'),
+      ),
+      '0',
+    );
     const BATCH_QUEUE_THRESHOLD = 20;
 
     if (payments.length > BATCH_QUEUE_THRESHOLD) {
@@ -189,8 +194,11 @@ class BatchPaymentService {
           throw new Error("Recipient account does not exist on Stellar network");
         }
 
-        const amount = Number(payment.amount);
+        const amount = PaymentService.formatStroops(PaymentService.parseAmountToStroops(payment.amount));
         const feeInfo = PaymentService.calculateFee(amount, asset);
+        const totalCost = PaymentService.formatStroops(
+          PaymentService.parseAmountToStroops(amount) + BigInt(feeInfo.feeStroops),
+        );
 
         validItems.push({
           index,
@@ -199,8 +207,8 @@ class BatchPaymentService {
           amount,
           notes: payment.notes || null,
           feeInfo,
-          usdValue: amount * (token.price || 0),
-          totalCost: amount + feeInfo.fee,
+          usdValue: Number(amount) * (token.price || 0),
+          totalCost,
         });
       } catch (error) {
         failures.push(this.buildFailedResult(index, payment, error.message));
@@ -211,9 +219,24 @@ class BatchPaymentService {
       senderAddress,
       validItems,
       failures,
-      totalCost: validItems.reduce((sum, item) => sum + item.totalCost, 0),
-      totalFees: validItems.reduce((sum, item) => sum + item.feeInfo.fee, 0),
-      totalAmount: validItems.reduce((sum, item) => sum + item.amount, 0),
+      totalCost: validItems.reduce(
+        (sum, item) => PaymentService.formatStroops(
+          PaymentService.parseAmountToStroops(sum) + PaymentService.parseAmountToStroops(item.totalCost),
+        ),
+        '0',
+      ),
+      totalFees: validItems.reduce(
+        (sum, item) => PaymentService.formatStroops(
+          PaymentService.parseAmountToStroops(sum) + BigInt(item.feeInfo.feeStroops),
+        ),
+        '0',
+      ),
+      totalAmount: validItems.reduce(
+        (sum, item) => PaymentService.formatStroops(
+          PaymentService.parseAmountToStroops(sum) + PaymentService.parseAmountToStroops(item.amount),
+        ),
+        '0',
+      ),
       token,
     };
   }
@@ -242,7 +265,7 @@ class BatchPaymentService {
     }
 
     const balance = await PaymentService.getBalance(senderAddress, asset, assetIssuer);
-    if (balance < totalCost) {
+    if (PaymentService.parseAmountToStroops(balance) < PaymentService.parseAmountToStroops(totalCost)) {
       throw new BatchProcessingError(
         `Insufficient funds. Balance: ${balance} ${asset}, required: ${totalCost} ${asset}`,
         {
@@ -467,7 +490,8 @@ class BatchPaymentService {
     const limit = pLimit(10);
     const tasks = validItems.map((item) => {
       return limit(async () => {
-        if (remainingBalance < item.totalCost) {
+        const remainingBalanceStroops = PaymentService.parseAmountToStroops(remainingBalance);
+        if (remainingBalanceStroops < PaymentService.parseAmountToStroops(item.totalCost)) {
           results[item.index] = this.buildFailedResult(
             item.index,
             item,
@@ -516,7 +540,9 @@ class BatchPaymentService {
             txHash: paymentResult.txHash,
           };
 
-          remainingBalance -= item.totalCost;
+          remainingBalance = PaymentService.formatStroops(
+            remainingBalanceStroops - PaymentService.parseAmountToStroops(item.totalCost),
+          );
           successfulItems += 1;
         } catch (error) {
           results[item.index] = this.buildFailedResult(item.index, item, error.message);
