@@ -1,3 +1,23 @@
+/**
+ * ════════════════════════════════════════════════════════════════════════════════
+ * CANONICAL RATE-LIMITING MODULE
+ *
+ * This module is the single source of rate-limit policy. All routes, services,
+ * and middleware import rate limiters and constants from this module only.
+ *
+ * Routes that import from here:
+ *   - balances.js → balanceQueryLimiter, TIER_LIMITS
+ *   - apiKeys.js → strictLimiter
+ *   - batchPayments.js → paymentLimiter
+ *   - transactionSearch.js → createUserRateLimiter
+ *   - scheduledPayments.js → paymentLimiter
+ *
+ * DO NOT create duplicate rate-limiting modules. If adding a new limiter or
+ * constant, add it to this module and update backend/tests/rateLimitingModuleContract.test.js
+ * to verify the export is tested. See RATE_LIMITING_ARCHITECTURE.md for details.
+ * ════════════════════════════════════════════════════════════════════════════════
+ */
+
 import redis from "./redis.js";
 
 export const RATE_LIMIT_TIERS = {
