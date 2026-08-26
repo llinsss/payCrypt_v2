@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 import { CSRF_COOKIE } from "../utils/authCookies.js";
 
 export const parseCookies = (req, _res, next) => {
@@ -14,6 +15,9 @@ export const csrfProtection = (req, res, next) => {
   if (req.get("Authorization") || req.get("X-API-Key")) return next();
   const cookieToken = req.cookies?.[CSRF_COOKIE];
   const headerToken = req.get("X-CSRF-Token");
-  if (!cookieToken || !headerToken || cookieToken.length !== headerToken.length || cookieToken !== headerToken) return res.status(403).json({ error: "CSRF validation failed" });
+  if (!cookieToken || !headerToken) return res.status(403).json({ error: "CSRF validation failed" });
+  const cookieBuffer = Buffer.from(cookieToken);
+  const headerBuffer = Buffer.from(headerToken);
+  if (cookieBuffer.length !== headerBuffer.length || !timingSafeEqual(cookieBuffer, headerBuffer)) return res.status(403).json({ error: "CSRF validation failed" });
   next();
 };

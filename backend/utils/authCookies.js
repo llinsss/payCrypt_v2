@@ -8,7 +8,8 @@ export const CSRF_COOKIE = "XSRF-TOKEN";
 const ACCESS_TTL_SECONDS = 15 * 60;
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-const cookieOptions = (maxAge) => ({ httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge });
+const secureCookies = process.env.NODE_ENV === "production" || process.env.COOKIE_SECURE === "true";
+const cookieOptions = (maxAge) => ({ httpOnly: true, secure: secureCookies, sameSite: "lax", path: "/", maxAge });
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 
 export const issueSession = async (userId, res) => {
@@ -24,7 +25,9 @@ export const rotateSession = async (refreshToken, res) => {
   if (!refreshToken) return null;
   const session = await db("auth_sessions").where({ refresh_token_hash: hash(refreshToken) }).whereNull("revoked_at").where("expires_at", ">", new Date()).first();
   if (!session) return null;
-  await db("auth_sessions").where({ id: session.id }).update({ revoked_at: new Date(), last_used_at: new Date() });
+  const now = new Date();
+  const claimed = await db("auth_sessions").where({ id: session.id }).whereNull("revoked_at").update({ revoked_at: now, last_used_at: now });
+  if (claimed !== 1) return null;
   await issueSession(session.user_id, res);
   return session.user_id;
 };
@@ -36,11 +39,11 @@ export const revokeSession = async (refreshToken) => {
 export const clearAuthCookies = (res) => {
   res.clearCookie(ACCESS_COOKIE, cookieOptions(0));
   res.clearCookie(REFRESH_COOKIE, cookieOptions(0));
-  res.clearCookie(CSRF_COOKIE, { secure: true, sameSite: "lax", path: "/" });
+  res.clearCookie(CSRF_COOKIE, { secure: secureCookies, sameSite: "lax", path: "/" });
 };
 
 export const setCsrfCookie = (res) => {
   const token = randomBytes(32).toString("hex");
-  res.cookie(CSRF_COOKIE, token, { secure: true, sameSite: "lax", path: "/", maxAge: REFRESH_TTL_MS });
+  res.cookie(CSRF_COOKIE, token, { secure: secureCookies, sameSite: "lax", path: "/", maxAge: REFRESH_TTL_MS });
   return token;
 };

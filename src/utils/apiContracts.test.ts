@@ -20,13 +20,9 @@ describe("frontend API response contracts", () => {
     );
   });
 
-  it("reports the contract and failing path for malformed auth data", () => {
-    expect(() => parseAuthResponse({ ...authSuccess, token: null })).toThrow(ApiContractError);
-    try {
-      parseAuthResponse({ ...authSuccess, token: null });
-    } catch (error) {
-      expect(error).toMatchObject({ contract: "auth response", path: "$.token" });
-    }
+  it("accepts cookie-session auth responses without a browser-readable token", () => {
+    const { token: _legacyToken, ...cookieSessionResponse } = authSuccess;
+    expect(parseAuthResponse(cookieSessionResponse)).toEqual(cookieSessionResponse);
   });
 
   it("rejects malformed payment data without treating an error envelope as success", () => {
