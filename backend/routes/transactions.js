@@ -14,6 +14,7 @@ import {
   getPaymentHistory,
   updateTransactionNote,
   searchTransactions,
+  estimateTransactionGas,
 } from "../controllers/transactionController.js";
 import {
   authenticateJwtOrApiKey,
@@ -385,5 +386,101 @@ router.get("/payment/limits", getPaymentLimits);
  *         description: Unauthorized
  */
 router.get("/tag/:tag/history", authenticateJwtOrApiKey, userRateLimiter, requireApiKeyScope(["transactions:read"]), getPaymentHistory);
+
+/**
+ * @swagger
+ * /api/transactions/escrow/create:
+ *   post:
+ *     summary: Create a dispute-protected escrow for a payment
+ *     tags: [Transactions]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - recipientTag
+ *               - amount
+ *               - token
+ *               - lockPeriodDays
+ *               - senderTag
+ *             properties:
+ *               recipientTag:
+ *                 type: string
+ *                 example: "bob"
+ *               amount:
+ *                 type: number
+ *                 example: 100
+ *               token:
+ *                 type: string
+ *                 example: "USDC"
+ *               lockPeriodDays:
+ *                 type: integer
+ *                 example: 3
+ *               senderTag:
+ *                 type: string
+ *                 example: "alice"
+ *     responses:
+ *       201:
+ *         description: Escrow created successfully
+ *       400:
+ *         description: Invalid request
+ *       401:
+ *         description: Unauthorized
+ */
+// Escrow endpoints would be added here with proper controller imports
+// router.post("/escrow/create", authenticateJwtOrApiKey, createEscrow);
+
+/**
+ * @swagger
+ * /api/v1/transactions/estimate-gas:
+ *   post:
+ *     summary: Estimate gas costs for an EVM transaction
+ *     tags: [Transactions]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - chain
+ *               - recipientTag
+ *               - amount
+ *               - token
+ *               - userBalance
+ *             properties:
+ *               chain:
+ *                 type: string
+ *                 enum: ["ethereum", "base", "lisk", "u2u"]
+ *                 example: "base"
+ *               recipientTag:
+ *                 type: string
+ *                 example: "bob"
+ *               amount:
+ *                 type: string
+ *                 example: "100"
+ *               token:
+ *                 type: string
+ *                 example: "USDC"
+ *               userBalance:
+ *                 type: string
+ *                 example: "1000000000000000000"
+ *     responses:
+ *       200:
+ *         description: Gas estimation preview
+ *       400:
+ *         description: Invalid request or unsupported chain
+ *       502:
+ *         description: RPC provider error
+ *       503:
+ *         description: Service temporarily unavailable
+ */
+router.post("/estimate-gas", authenticateJwtOrApiKey, rateLimit({ endpointName: "api" }), estimateTransactionGas);
 
 export default router;

@@ -39,7 +39,7 @@ const generateBackupCodes = (count = 8) => {
 
 export const register = async (req, res) => {
   try {
-    const { email, tag, address, password, role } = req.body;
+    const { email, tag, address, password, role, referralCode } = req.body;
 
     // --- Check email ---
     const existingUserEmail = await User.findByEmail(email);
@@ -53,6 +53,18 @@ export const register = async (req, res) => {
       return res.status(400).json({ error: "User tag already exists" });
     }
 
+    // --- Validate referral code if provided ---
+    let referredBy = null;
+    if (referralCode) {
+      referredBy = await ReferralService.validateReferralCode(referralCode);
+      if (!referredBy) {
+        console.warn(`Invalid referral code: ${referralCode}`);
+      }
+    }
+
+    // --- Generate referral code ---
+    const newReferralCode = await ReferralService.generateReferralCode();
+
     // --- Create user ---
     const photo = `https://api.dicebear.com/9.x/initials/svg?seed=${tag}`;
     const user = await User.create({
@@ -62,6 +74,8 @@ export const register = async (req, res) => {
       password,
       photo,
       role,
+      referral_code: newReferralCode,
+      referred_by: referredBy,
     });
 
     // --- Generate token pair ---

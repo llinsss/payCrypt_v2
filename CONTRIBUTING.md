@@ -179,12 +179,32 @@ payCrypt_v2/
 
 ## Testing
 
-```bash
-# Frontend
-npm run test
+### Backend Testing
 
-# Backend
+Tests are split into unit and integration suites (see `backend/TESTING.md` for details).
+
+**Unit Tests** (no database required — fast)
+```bash
 cd backend
+npm run test:unit
+```
+
+**Integration Tests** (requires PostgreSQL — see CONTRIBUTING.md setup)
+```bash
+cd backend
+export DATABASE_URL="postgres://taggedpay_user:taggedpay_password@localhost:5432/paycrypt_test"
+npm run test:integration
+```
+
+**All Tests** (legacy)
+```bash
+cd backend
+npm run test
+```
+
+### Frontend Testing
+
+```bash
 npm run test
 ```
 

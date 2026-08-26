@@ -1,5 +1,5 @@
 import redis from "../config/redis.js";
-import { TIER_LIMITS } from "../config/rateLimiting.js";
+import { getOperationLimit, RATE_LIMIT_TIERS } from "../config/rateLimiting.js";
 
 const WINDOW_MS = 60 * 1000;
 
@@ -18,8 +18,8 @@ export const userRateLimit = async (req, res, next) => {
     return next();
   }
 
-  const tier = req.user?.tier || "FREE";
-  const max = TIER_LIMITS[tier] || TIER_LIMITS.FREE;
+  const tier = req.user?.tier || RATE_LIMIT_TIERS.FREE;
+  const max = getOperationLimit(tier, "api");
   const key = `ratelimit:user:${userId}:tier`;
 
   try {

@@ -1,7 +1,7 @@
 import redis from "../config/redis.js";
 import User from "../models/User.js";
 import ApiKey from "../models/ApiKey.js";
-import { ENDPOINT_TIER_LIMITS, RATE_LIMIT_TIERS, TIER_LIMITS } from "../config/rateLimiting.js";
+import { RATE_LIMIT_TIERS, TIER_LIMITS, getOperationLimit } from "../config/rateLimiting.js";
 
 const DEFAULT_WINDOW_MS = 60 * 1000;
 
@@ -51,6 +51,14 @@ const tierLimit = (tier = RATE_LIMIT_TIERS.FREE) => {
 };
 
 const RateLimitService = {
+  /**
+   * Consume a token from a rate-limit bucket using token-bucket algorithm.
+   * @param {string} key - Redis key for the bucket
+   * @param {number} capacity - Max tokens in bucket
+   * @param {number} refillRatePerMs - Tokens added per millisecond
+   * @returns {Promise<{allowed: boolean, remaining: number, error?: string}>}
+   * @throws Redis unavailable → returns { allowed: false, remaining: 0, error: "..." }
+   */
   async consume(key, capacity, refillRatePerMs) {
     try {
       const now = Date.now();
@@ -69,26 +77,52 @@ const RateLimitService = {
     }
   },
 
+  /**
+   * Get numeric limit for a specific tier + operation.
+   * Replaces the old getTierLimits pattern with direct operation lookup.
+   * @param {string} tier - Tier name (FREE, PREMIUM, ENTERPRISE)
+   * @param {string} endpointType - Operation name (login, transactions, swap, api, etc.)
+   * @returns {{capacity: number, refillRatePerMs: number}}
+   * @throws Invalid tier or malformed operation limit
+   */
   getTierLimits(tier = RATE_LIMIT_TIERS.FREE, endpointType = "api") {
     const normalized = tier || RATE_LIMIT_TIERS.FREE;
-    const tierConfig = ENDPOINT_TIER_LIMITS[normalized] || ENDPOINT_TIER_LIMITS.FREE;
-    const limit = tierConfig[endpointType] || tierConfig.api || TIER_LIMITS[normalized] || TIER_LIMITS.FREE;
+    const limit = getOperationLimit(normalized, endpointType);
     return {
       capacity: limit,
       refillRatePerMs: limit / (60 * 60 * 1000),
     };
   },
 
+  /**
+   * Fetch a user's tier from the database.
+   * @param {number} userId - User ID
+   * @returns {Promise<string>} Tier name (FREE, PREMIUM, ENTERPRISE) or FREE if not found
+   * @throws Database unavailable
+   */
   async getUserTier(userId) {
     const user = await User.findById(userId);
     return user?.tier || RATE_LIMIT_TIERS.FREE;
   },
 
+  /**
+   * Fetch custom rate limit override for an API key.
+   * @param {number} apiKeyId - API key ID
+   * @returns {Promise<number|null>} Custom limit or null if not set or key not found
+   * @throws Database unavailable
+   */
   async getApiKeyRateLimit(apiKeyId) {
     const apiKey = await ApiKey.findById(apiKeyId);
     return apiKey?.rate_limit ?? null;
   },
 
+  /**
+   * Determine the effective rate limit for a request.
+   * Precedence: API key override > user tier limit.
+   * @param {Object} user - User object with tier property
+   * @param {Object} apiKey - API key object with rate_limit property
+   * @returns {Promise<number>} Numeric limit to apply
+   */
   async getEffectiveRateLimit(user = {}, apiKey = {}) {
     if (apiKey?.rate_limit !== null && apiKey?.rate_limit !== undefined) {
       return apiKey.rate_limit;
@@ -96,6 +130,13 @@ const RateLimitService = {
     return tierLimit(user?.tier || RATE_LIMIT_TIERS.FREE);
   },
 
+  /**
+   * Update a user's tier.
+   * @param {number} userId - User ID
+   * @param {string} tier - New tier (FREE, PREMIUM, ENTERPRISE)
+   * @returns {Promise<Object>} Updated user object
+   * @throws Invalid tier | Database unavailable
+   */
   async setUserTier(userId, tier) {
     assertTier(tier);
     if (typeof User.updateTier === "function") {
@@ -104,6 +145,13 @@ const RateLimitService = {
     return User.update(userId, { tier });
   },
 
+  /**
+   * Set a custom rate limit on an API key, overriding tier defaults.
+   * @param {number} apiKeyId - API key ID
+   * @param {number} rateLimit - New limit (must be >= 0, integer)
+   * @returns {Promise<Object>} Updated API key object
+   * @throws Invalid rateLimit value | Database unavailable
+   */
   async setApiKeyRateLimit(apiKeyId, rateLimit) {
     if (!Number.isInteger(rateLimit) || rateLimit < 0) {
       throw new Error("rate_limit must be a non-negative integer");
@@ -111,18 +159,38 @@ const RateLimitService = {
     return ApiKey.updateRateLimit(apiKeyId, rateLimit);
   },
 
+  /**
+   * Get full rate-limit configuration for admin/diagnostics.
+   * @returns {Promise<{tiers: Object, defaults: Object}>}
+   *   tiers: { TIER_NAME: { limit: number, windowMs: number }, ... }
+   *   defaults: { windowMs: number, limit: number }
+   */
   async getRateLimitSettings() {
     return {
       tiers: Object.fromEntries(
-        Object.entries(TIER_LIMITS).map(([tier, limit]) => [tier, { limit, windowMs: DEFAULT_WINDOW_MS }]),
+        Object.entries(TIER_LIMITS).map(([tier, tierConfig]) => [
+          tier,
+          {
+            operations: tierConfig,
+            windowMs: DEFAULT_WINDOW_MS,
+            baselineLimit: tierConfig.api,
+          },
+        ]),
       ),
       defaults: {
         windowMs: DEFAULT_WINDOW_MS,
-        limit: TIER_LIMITS.FREE,
+        tier: RATE_LIMIT_TIERS.FREE,
+        limit: TIER_LIMITS.FREE.api,
       },
     };
   },
 
+  /**
+   * Get rate-limit status for a specific user.
+   * @param {number} userId - User ID
+   * @returns {Promise<{userId: number, tier: string, limit: number, windowMs: number}>}
+   * @throws Database unavailable
+   */
   async getUserRateLimitStatus(userId) {
     const tier = await this.getUserTier(userId);
     return {

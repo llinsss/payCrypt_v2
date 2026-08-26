@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { amountJoiValidator } from './amountValidation.js';
 
 /**
  * Payment validation schemas for @tag-to-@tag transfers
@@ -21,12 +22,11 @@ export const processPaymentSchema = Joi.object({
       'any.required': 'Recipient tag is required'
     }),
 
-  amount: Joi.number()
-    .positive()
-    .precision(7)
+  amount: Joi.string()
+    .pattern(/^\d+(\.\d+)?$/)
     .required()
     .messages({
-      'number.positive': 'Amount must be greater than 0',
+      'string.pattern.base': 'Amount must be a decimal string (e.g., "1000.50"), not a JSON number',
       'any.required': 'Amount is required'
     }),
 
@@ -75,12 +75,11 @@ const batchPaymentItemSchema = Joi.object({
       'any.required': 'Recipient tag is required'
     }),
 
-  amount: Joi.number()
-    .positive()
-    .precision(7)
+  amount: Joi.string()
+    .pattern(/^\d+(\.\d+)?$/)
     .required()
     .messages({
-      'number.positive': 'Amount must be greater than 0',
+      'string.pattern.base': 'Amount must be a decimal string (e.g., "1000.50"), not a JSON number',
       'any.required': 'Amount is required'
     }),
 
@@ -148,10 +147,10 @@ export const batchPaymentSchema = Joi.object({
 }).unknown(false);
 
 export const paymentLimitsSchema = Joi.object({
-  maxAmount: Joi.number().positive(),
-  minAmount: Joi.number().positive(),
+  maxAmount: Joi.string().pattern(/^\d+(\.\d+)?$/),
+  minAmount: Joi.string().pattern(/^\d+(\.\d+)?$/),
   baseFeePercentage: Joi.number().positive(),
-  minFee: Joi.number().positive()
+  minFee: Joi.string().pattern(/^\d+(\.\d+)?$/)
 });
 
 export const transactionHistoryQuerySchema = Joi.object({
