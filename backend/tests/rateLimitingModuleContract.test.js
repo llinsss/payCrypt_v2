@@ -27,6 +27,8 @@ describe("Rate Limiting Module Contract", () => {
       "strictLimiter",     // used by apiKeys.js
       "paymentLimiter",    // used by batchPayments.js, scheduledPayments.js
       "downloadLimiter",   // pre-built limiter
+      "getRateLimiterState", // for testing and observability (#498)
+      "resetRateLimiterState", // for testing and observability (#498)
     ];
 
     for (const exportName of expectedExports) {
