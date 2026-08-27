@@ -84,15 +84,20 @@ class MonnifyService {
   /**
    * Verify a Monnify webhook signature.
    *
-   * Monnify signs the exact raw request body with HMAC-SHA512 using the
-   * merchant secret key, so verification must run against the raw bytes
-   * received (via req.rawBody, captured by the express.json `verify` hook —
-   * see middleware/payloadLimits.js) rather than a re-serialized JSON object,
-   * whose key ordering/whitespace can differ from what was signed.
+   * Monnify signs the exact raw bytes of the request body with SHA-512 HMAC
+   * using the merchant's secret key, and sends the hex digest in the
+   * `monnify-signature` header. The hash MUST be computed over the raw
+   * request bytes — re-serializing the parsed JSON body (via
+   * `JSON.stringify`) is not guaranteed to reproduce the exact bytes Monnify
+   * signed (key order, whitespace, number formatting can all differ), which
+   * would make a legitimate webhook fail verification. Callers should pass
+   * `req.rawBody` (captured by the raw-body middleware applied to every JSON
+   * route — see middleware/payloadLimits.js) rather than the parsed body.
    *
    * @param {string} signature - value of the `monnify-signature` header
-   * @param {Buffer|string} rawBody - the raw request body
-   * @returns {boolean} true only when the computed HMAC matches the signature
+   * @param {Buffer|string|Object} rawBody - the raw request body (preferred),
+   *   or the parsed body as a fallback if the raw bytes are unavailable
+   * @returns {boolean}
    */
   verifyWebhookSignature(signature, rawBody) {
     if (!signature || !this.secretKey || rawBody == null) {
@@ -110,15 +115,16 @@ class MonnifyService {
       .update(payload)
       .digest('hex');
 
-    const expectedBuf = Buffer.from(expected, 'utf8');
-    const signatureBuf = Buffer.from(String(signature), 'utf8');
+    const expectedBuffer = Buffer.from(expected, 'utf8');
+    const providedBuffer = Buffer.from(String(signature), 'utf8');
 
-    // Length check guards timingSafeEqual, which throws on unequal-length input.
-    if (expectedBuf.length !== signatureBuf.length) {
+    // Lengths must match before timingSafeEqual — it throws on mismatched
+    // buffer lengths rather than returning false.
+    if (expectedBuffer.length !== providedBuffer.length) {
       return false;
     }
 
-    return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+    return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
   }
 }
 

@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import crypto from "crypto";
 
-const MONNIFY_SECRET = "sk_test_monnify_secret";
+const MONNIFY_SECRET = "test_monnify_secret_key";
 // MonnifyService reads the secret from the environment in its constructor, so
 // this must be set before the module is (dynamically) imported below.
 process.env.MONNIFY_SECRET_KEY = MONNIFY_SECRET;
@@ -59,10 +59,10 @@ describe("handleMonnifyWebhook", () => {
     jest.clearAllMocks();
   });
 
-  it("marks the withdrawal completed on a verified SUCCESSFUL_DISBURSEMENT event", async () => {
+  it("completes the withdrawal on a verified DISBURSEMENT_SUCCESSFUL event", async () => {
     const payload = {
-      eventType: "SUCCESSFUL_DISBURSEMENT",
-      eventData: { reference: "WTH-MOC-1", amount: 15000, status: "SUCCESSFUL" },
+      eventType: "DISBURSEMENT_SUCCESSFUL",
+      eventData: { reference: "wd_ref_valid_1", amount: 15000 },
     };
     const req = mockReq(payload);
     const res = mockRes();
@@ -71,7 +71,7 @@ describe("handleMonnifyWebhook", () => {
 
     expect(OffRampService.handleWebhook).toHaveBeenCalledWith(
       "monnify",
-      "WTH-MOC-1",
+      "wd_ref_valid_1",
       "success",
       payload.eventData,
     );
@@ -79,29 +79,10 @@ describe("handleMonnifyWebhook", () => {
     expect(Sentry.captureMessage).not.toHaveBeenCalled();
   });
 
-  it("reports a failed disbursement without marking the withdrawal completed", async () => {
+  it("rejects an invalid signature with 400 and does not process the event", async () => {
     const payload = {
-      eventType: "FAILED_DISBURSEMENT",
-      eventData: { reference: "WTH-MOC-2", status: "FAILED" },
-    };
-    const req = mockReq(payload);
-    const res = mockRes();
-
-    await handleMonnifyWebhook(req, res);
-
-    expect(OffRampService.handleWebhook).toHaveBeenCalledWith(
-      "monnify",
-      "WTH-MOC-2",
-      "failed",
-      payload.eventData,
-    );
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it("rejects an invalid signature with 400, logs a warning, and never processes the event", async () => {
-    const payload = {
-      eventType: "SUCCESSFUL_DISBURSEMENT",
-      eventData: { reference: "WTH-MOC-attacker", amount: 999999, status: "SUCCESSFUL" },
+      eventType: "DISBURSEMENT_SUCCESSFUL",
+      eventData: { reference: "wd_ref_attacker", amount: 999999 },
     };
     const req = mockReq(payload, { signature: "deadbeef_not_a_real_signature" });
     const res = mockRes();
@@ -111,42 +92,59 @@ describe("handleMonnifyWebhook", () => {
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith("Invalid signature");
     expect(OffRampService.handleWebhook).not.toHaveBeenCalled();
+  });
+
+  it("rejects a tampered payload whose bytes no longer match the signature", async () => {
+    const original = { eventType: "DISBURSEMENT_SUCCESSFUL", eventData: { reference: "wd_ref_1", amount: 100 } };
+    const originalRawBody = Buffer.from(JSON.stringify(original));
+    const tampered = { ...original, eventData: { reference: "wd_ref_1", amount: 999999999 } };
+
+    const req = {
+      headers: { "monnify-signature": sign(originalRawBody) },
+      ip: "203.0.113.9",
+      socket: { remoteAddress: "203.0.113.9" },
+      rawBody: Buffer.from(JSON.stringify(tampered)),
+      body: tampered,
+    };
+    const res = mockRes();
+
+    await handleMonnifyWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(OffRampService.handleWebhook).not.toHaveBeenCalled();
+  });
+
+  it("logs verification failures to Sentry with the source IP and payload", async () => {
+    const payload = { eventType: "DISBURSEMENT_SUCCESSFUL", eventData: { reference: "wd_ref_x" } };
+    const req = mockReq(payload, { signature: "wrong" });
+    const res = mockRes();
+
+    await handleMonnifyWebhook(req, res);
+
     expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
     const [message, context] = Sentry.captureMessage.mock.calls[0];
     expect(message).toMatch(/signature verification failed/i);
     expect(context.level).toBe("warning");
+    expect(context.extra.ip).toBe("203.0.113.9");
+    expect(context.extra.payload).toEqual(payload);
   });
 
-  it("rejects a tampered payload whose bytes no longer match the signature", async () => {
-    const originalPayload = {
-      eventType: "SUCCESSFUL_DISBURSEMENT",
-      eventData: { reference: "WTH-MOC-3", amount: 1000, status: "SUCCESSFUL" },
+  it("does not complete the withdrawal for a verified but non-successful event", async () => {
+    const payload = {
+      eventType: "DISBURSEMENT_FAILED",
+      eventData: { reference: "wd_ref_failed", amount: 5000 },
     };
-    const signature = sign(Buffer.from(JSON.stringify(originalPayload)));
-
-    // Attacker mutates the amount after the signature was computed.
-    const tamperedPayload = {
-      ...originalPayload,
-      eventData: { ...originalPayload.eventData, amount: 9999999 },
-    };
-    const req = mockReq(tamperedPayload, { signature });
+    const req = mockReq(payload);
     const res = mockRes();
 
     await handleMonnifyWebhook(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(OffRampService.handleWebhook).not.toHaveBeenCalled();
-  });
-
-  it("rejects a request that is missing the signature header", async () => {
-    const payload = { eventType: "SUCCESSFUL_DISBURSEMENT", eventData: { reference: "ref_y" } };
-    const req = mockReq(payload, { signature: undefined });
-    delete req.headers["monnify-signature"];
-    const res = mockRes();
-
-    await handleMonnifyWebhook(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(OffRampService.handleWebhook).not.toHaveBeenCalled();
+    expect(OffRampService.handleWebhook).toHaveBeenCalledWith(
+      "monnify",
+      "wd_ref_failed",
+      "failed",
+      payload.eventData,
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 });

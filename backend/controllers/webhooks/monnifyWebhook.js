@@ -2,25 +2,22 @@ import * as Sentry from "@sentry/node";
 import MonnifyService from "../../services/MonnifyService.js";
 import OffRampService from "../../services/OffRampService.js";
 
-// Monnify's own "successful disbursement" status/event names, kept as a set
-// so a webhook is only ever treated as success when it is unambiguously one
-// of these — anything else (including unrecognized event types) is ignored
-// rather than assumed safe.
-const SUCCESS_EVENTS = new Set(['SUCCESSFUL_DISBURSEMENT', 'DISBURSEMENT_SUCCESSFUL']);
-const FAILURE_EVENTS = new Set([
-  'FAILED_DISBURSEMENT',
-  'DISBURSEMENT_FAILED',
-  'REVERSED_DISBURSEMENT',
-  'DISBURSEMENT_REVERSED',
-]);
-
+/**
+ * Monnify webhook handler for bank withdrawal (off-ramp) transfer events.
+ *
+ * Security (issue #382): Monnify's webhook is public and unauthenticated
+ * beyond its HMAC signature, so every event MUST be verified before it is
+ * trusted. A withdrawal is only ever marked `completed` here after signature
+ * verification succeeds AND the event type is a successful disbursement —
+ * no other code path is allowed to set that status for Monnify withdrawals.
+ */
 export const handleMonnifyWebhook = async (req, res) => {
   try {
     const signature = req.headers['monnify-signature'];
     // Verify against the exact bytes Monnify signed. `req.rawBody` is
-    // captured by the express.json `verify` hook in middleware/payloadLimits.js;
-    // fall back to re-serializing the parsed body only if the raw buffer is
-    // unavailable (e.g. a unit test that constructs `req` directly).
+    // captured for every JSON route by the `verify` hook in
+    // middleware/payloadLimits.js; fall back to re-serializing the parsed
+    // body only if the raw buffer is unavailable (e.g. in older test setups).
     const rawBody = req.rawBody ?? JSON.stringify(req.body ?? {});
 
     if (!MonnifyService.verifyWebhookSignature(signature, rawBody)) {
@@ -40,24 +37,24 @@ export const handleMonnifyWebhook = async (req, res) => {
 
     const body = req.body || {};
     const eventType = body.eventType;
-    // Some Monnify payloads carry the outcome in `eventData.status` rather
-    // than (or in addition to) `eventType`; check both so a differently
-    // shaped-but-genuine payload is not silently dropped.
     const eventData = body.eventData || {};
-    const status = String(eventData.status || eventType || '').toUpperCase();
 
     console.log(`Monnify Webhook Received: ${eventType}`);
 
-    if (!eventData.reference) {
-      console.warn('Monnify Webhook: missing eventData.reference, ignoring');
-      return res.status(200).send('Webhook processed');
-    }
-
-    if (SUCCESS_EVENTS.has(eventType) || status === 'SUCCESSFUL') {
-      // Only a verified `SUCCESSFUL` event ever marks a withdrawal completed.
+    // Monnify's disbursement/transfer webhook uses `DISBURSEMENT_SUCCESSFUL`;
+    // some Monnify event payloads use a bare `SUCCESSFUL` status instead.
+    // Only these verified, successful event types are allowed to complete a
+    // withdrawal.
+    if (eventType === 'DISBURSEMENT_SUCCESSFUL' || eventType === 'SUCCESSFUL') {
       await OffRampService.handleWebhook('monnify', eventData.reference, 'success', eventData);
-    } else if (FAILURE_EVENTS.has(eventType) || status === 'FAILED' || status === 'REVERSED') {
+    } else if (
+      eventType === 'DISBURSEMENT_FAILED' ||
+      eventType === 'DISBURSEMENT_REVERSED' ||
+      eventType === 'FAILED'
+    ) {
       await OffRampService.handleWebhook('monnify', eventData.reference, 'failed', eventData);
+    } else {
+      console.warn(`Monnify Webhook: Unhandled event type "${eventType}", ignoring`);
     }
 
     res.status(200).send('Webhook processed');

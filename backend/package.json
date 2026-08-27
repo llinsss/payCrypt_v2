@@ -33,7 +33,7 @@
         "testEnvironment": "node",
         "transform": {},
         "setupFiles": [
-            "<rootDir>/tests/setup/testEnv.setup.js"
+            "<rootDir>/tests/setupEnv.js"
         ],
         "testPathIgnorePatterns": [
             "/node_modules/"
