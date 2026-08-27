@@ -1,7 +1,16 @@
 import express from 'express';
 import { getCircuitBreakerStats, resetCircuitBreaker } from '../controllers/circuitBreakerController.js';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rateLimiter.js';
+import { auditLog } from '../middleware/audit.js';
 
 const router = express.Router();
+
+// Protect inspection and reset endpoints. Operational state must not be
+// publicly readable, and resetting a breaker must require an authenticated
+// admin (see issue #553).
+router.use(authenticate);
+router.use(requireAdmin);
 
 /**
  * @swagger
@@ -15,9 +24,15 @@ const router = express.Router();
  * /api/circuit-breaker/stats:
  *   get:
  *     summary: Get circuit breaker statistics for all services
- *     description: Returns the current state (open, half-open, closed) and failure counts for each monitored blockchain service.
+ *     description: Returns the current state (open, half-open, closed) and failure counts for each monitored blockchain service. Admin only.
  *     tags: [Circuit Breaker]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  *       200:
  *         description: Circuit breaker statistics
  *         content:
@@ -54,8 +69,10 @@ router.get('/stats', getCircuitBreakerStats);
  * /api/circuit-breaker/reset/{serviceKey}:
  *   post:
  *     summary: Reset a circuit breaker for a specific service
- *     description: Manually reset a circuit breaker from open/half-open state back to closed. Use with caution.
+ *     description: Manually reset a circuit breaker from open/half-open state back to closed. Admin only. Use with caution.
  *     tags: [Circuit Breaker]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: serviceKey
@@ -64,6 +81,12 @@ router.get('/stats', getCircuitBreakerStats);
  *           type: string
  *         description: Service key to reset (e.g., stellar_payment, evm_transfer)
  *     responses:
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
+ *       429:
+ *         description: Too many reset attempts, slow down
  *       200:
  *         description: Circuit breaker reset successfully
  *         content:
@@ -79,6 +102,9 @@ router.get('/stats', getCircuitBreakerStats);
  *       404:
  *         description: Service key not found
  */
-router.post('/reset/:serviceKey', resetCircuitBreaker);
+// Reset is destructive and allows an attacker to defeat outage protection,
+// so it is rate-limited (defaults to a modest per-IP allowance) and every
+// successful reset is written to the audit log.
+router.post('/reset/:serviceKey', rateLimit({ endpointName: 'circuit-breaker-reset', windowMs: 60 * 60 * 1000, max: 10 }), auditLog('circuit_breaker'), resetCircuitBreaker);
 
 export default router;
