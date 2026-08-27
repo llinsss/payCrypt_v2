@@ -213,10 +213,13 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Test route for user verification of Sentry
-app.get("/test-error", (req, res) => {
-  throw new Error("Sentry Test Error manually triggered");
-});
+// Test route for user verification of Sentry. Never expose this deliberately
+// failing endpoint to production traffic.
+if (process.env.NODE_ENV !== "production") {
+  app.get("/test-error", (req, res) => {
+    throw new Error("Sentry Test Error manually triggered");
+  });
+}
 
 import rateLimitRoutes from "./routes/rateLimit.js";
 
