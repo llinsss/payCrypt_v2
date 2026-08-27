@@ -6,7 +6,7 @@ import {
   updateToken,
   deleteToken,
 } from "../controllers/tokenController.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { publicCache } from "../middleware/cacheControl.js";
 const router = express.Router();
 
@@ -31,11 +31,16 @@ const router = express.Router();
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     responses:
  *       201:
  *         description: Token created
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  */
-router.post("/", createToken);
+router.post("/", authenticate, requireAdmin, createToken);
 router.get("/", publicCache(3600), getTokens);
 
 /**
@@ -58,6 +63,7 @@ router.get("/", publicCache(3600), getTokens);
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     parameters:
  *       - in: path
  *         name: id
@@ -67,11 +73,16 @@ router.get("/", publicCache(3600), getTokens);
  *     responses:
  *       200:
  *         description: Token updated
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  *   delete:
  *     summary: Delete token
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     parameters:
  *       - in: path
  *         name: id
@@ -81,9 +92,13 @@ router.get("/", publicCache(3600), getTokens);
  *     responses:
  *       200:
  *         description: Token deleted
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  */
 router.get("/:id", getTokenById);
-router.put("/:id", updateToken);
-router.delete("/:id", deleteToken);
+router.put("/:id", authenticate, requireAdmin, updateToken);
+router.delete("/:id", authenticate, requireAdmin, deleteToken);
 
 export default router;
