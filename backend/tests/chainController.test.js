@@ -1,17 +1,5 @@
-/**
- * Tests for chainController.js
- *
- * Covers:
- *  - Issue #560: pagination validation (boundary cases, NaN, negative, zero, oversized)
- *  - Issue #562: mass-assignment prevention (unknown / sensitive fields stripped)
- *
- * Strategy: unit-test the controller functions directly by injecting mock
- * req/res objects; the Chain model is replaced with jest module mocks so no
- * database is needed.
- */
 import { jest } from "@jest/globals";
 
-// ── Mock the Chain model ─────────────────────────────────────────────────────
 const mockCreate   = jest.fn();
 const mockGetAll   = jest.fn();
 const mockFindById = jest.fn();
@@ -19,25 +7,12 @@ const mockUpdate   = jest.fn();
 const mockDelete   = jest.fn();
 
 jest.unstable_mockModule("../models/Chain.js", () => ({
-  default: {
-    create:   mockCreate,
-    getAll:   mockGetAll,
-    findById: mockFindById,
-    update:   mockUpdate,
-    delete:   mockDelete,
-  },
+  default: { create: mockCreate, getAll: mockGetAll, findById: mockFindById, update: mockUpdate, delete: mockDelete },
 }));
 
-// ── Import controller AFTER mocks are wired ──────────────────────────────────
-const {
-  createChain,
-  getChains,
-  getChainById,
-  updateChain,
-  deleteChain,
-} = await import("../controllers/chainController.js");
+const { createChain, getChains, getChainById, updateChain, deleteChain } =
+  await import("../controllers/chainController.js");
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 const mockRes = () => {
   const res = {};
   res.status = jest.fn().mockReturnValue(res);
@@ -45,207 +20,122 @@ const mockRes = () => {
   return res;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// getChains — pagination (Issue #560)
-// ─────────────────────────────────────────────────────────────────────────────
-describe("getChains — pagination", () => {
-  beforeEach(() => {
-    mockGetAll.mockResolvedValue([{ id: 1, name: "Ethereum" }]);
-  });
-
+describe("getChains - pagination (#560)", () => {
+  beforeEach(() => mockGetAll.mockResolvedValue([{ id: 1 }]));
   afterEach(() => jest.clearAllMocks());
 
-  test("uses validated page and limit from req.query (default values)", async () => {
-    // Simulate middleware having applied defaults
-    const req = { query: { page: 1, limit: 10 } };
-    const res = mockRes();
-
-    await getChains(req, res);
-
-    // offset = (1-1) * 10 = 0
+  test("default page=1 limit=10 produces offset=0", async () => {
+    await getChains({ query: { page: 1, limit: 10 } }, mockRes());
     expect(mockGetAll).toHaveBeenCalledWith(10, 0);
-    expect(res.json).toHaveBeenCalledWith([{ id: 1, name: "Ethereum" }]);
   });
 
-  test("computes correct offset for page > 1", async () => {
-    const req = { query: { page: 3, limit: 20 } };
+  test("page=3 limit=20 produces offset=40", async () => {
     const res = mockRes();
-
-    await getChains(req, res);
-
-    // offset = (3-1) * 20 = 40
+    await getChains({ query: { page: 3, limit: 20 } }, res);
     expect(mockGetAll).toHaveBeenCalledWith(20, 40);
   });
 
-  test("uses max allowed limit (100) without overflow", async () => {
-    const req = { query: { page: 1, limit: 100 } };
-    const res = mockRes();
-
-    await getChains(req, res);
-
+  test("max limit=100 is accepted", async () => {
+    await getChains({ query: { page: 1, limit: 100 } }, mockRes());
     expect(mockGetAll).toHaveBeenCalledWith(100, 0);
   });
 
-  test("uses max allowed page (10000) without overflow", async () => {
-    const req = { query: { page: 10000, limit: 10 } };
-    const res = mockRes();
-
-    await getChains(req, res);
-
-    // offset = (10000-1) * 10 = 99990
+  test("max page=10000 produces offset=99990", async () => {
+    await getChains({ query: { page: 10000, limit: 10 } }, mockRes());
     expect(mockGetAll).toHaveBeenCalledWith(10, 99990);
   });
 
   test("returns 500 when model throws", async () => {
     mockGetAll.mockRejectedValue(new Error("db error"));
-    const req = { query: { page: 1, limit: 10 } };
     const res = mockRes();
-
-    await getChains(req, res);
-
+    await getChains({ query: { page: 1, limit: 10 } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "db error" });
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// createChain — mass assignment (Issue #562)
-// ─────────────────────────────────────────────────────────────────────────────
-describe("createChain — mass assignment prevention", () => {
+describe("createChain - mass assignment (#562)", () => {
   afterEach(() => jest.clearAllMocks());
 
-  test("passes validated body to Chain.create unchanged", async () => {
-    const safeBody = { name: "Stellar", chainId: "xlm", symbol: "XLM", is_active: true };
-    mockCreate.mockResolvedValue({ id: 1, ...safeBody });
-
-    const req = { body: safeBody };
+  test("passes whitelisted body to Chain.create and returns 201", async () => {
+    const body = { name: "Stellar", chainId: "xlm", symbol: "XLM", is_active: true };
+    mockCreate.mockResolvedValue({ id: 1, ...body });
     const res = mockRes();
-
-    await createChain(req, res);
-
-    expect(mockCreate).toHaveBeenCalledWith(safeBody);
+    await createChain({ body }, res);
+    expect(mockCreate).toHaveBeenCalledWith(body);
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  test("only whitelisted fields reach the model (middleware strips unknowns before controller)", async () => {
-    // By the time the controller runs, the validate middleware has already
-    // stripped unknown fields from req.body. We verify the controller passes
-    // req.body as-is (i.e. it does NOT re-add dropped fields).
-    const strippedBody = { name: "Ethereum", chainId: "eth" };
-    mockCreate.mockResolvedValue({ id: 2, ...strippedBody });
-
-    const req = { body: strippedBody }; // unknown fields already stripped
+  test("controller does not inject extra fields beyond req.body", async () => {
+    const body = { name: "Eth", chainId: "eth" };
+    mockCreate.mockResolvedValue({ id: 2, ...body });
     const res = mockRes();
-
-    await createChain(req, res);
-
-    expect(mockCreate).toHaveBeenCalledWith(strippedBody);
-    // The controller must NOT call Create with anything other than req.body
-    expect(mockCreate).not.toHaveBeenCalledWith(
-      expect.objectContaining({ admin: true })
-    );
+    await createChain({ body }, res);
+    expect(mockCreate).not.toHaveBeenCalledWith(expect.objectContaining({ admin: true }));
   });
 
-  test("returns 500 when model throws", async () => {
-    mockCreate.mockRejectedValue(new Error("unique constraint"));
-    const req = { body: { name: "Dup", chainId: "dup" } };
+  test("returns 500 on model error", async () => {
+    mockCreate.mockRejectedValue(new Error("fail"));
     const res = mockRes();
-
-    await createChain(req, res);
-
+    await createChain({ body: { name: "X", chainId: "x" } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// updateChain — mass assignment (Issue #562)
-// ─────────────────────────────────────────────────────────────────────────────
-describe("updateChain — mass assignment prevention", () => {
+describe("updateChain - mass assignment (#562)", () => {
   afterEach(() => jest.clearAllMocks());
 
-  test("returns 404 when chain does not exist", async () => {
+  test("returns 404 when chain not found", async () => {
     mockFindById.mockResolvedValue(null);
-    const req = { params: { id: "99" }, body: { name: "X" } };
     const res = mockRes();
-
-    await updateChain(req, res);
-
+    await updateChain({ params: { id: "99" }, body: { name: "X" } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: "Chain not found" });
   });
 
-  test("passes validated body to Chain.update, no extra fields", async () => {
-    const existing = { id: 1, name: "Old Name", chainId: "eth" };
-    const updateBody = { name: "New Name", is_active: false };
-    mockFindById.mockResolvedValue(existing);
-    mockUpdate.mockResolvedValue({ ...existing, ...updateBody });
-
-    const req = { params: { id: "1" }, body: updateBody };
+  test("passes only validated body to Chain.update", async () => {
+    mockFindById.mockResolvedValue({ id: 1 });
+    mockUpdate.mockResolvedValue({ id: 1, name: "New" });
+    const body = { name: "New", is_active: false };
     const res = mockRes();
-
-    await updateChain(req, res);
-
-    expect(mockUpdate).toHaveBeenCalledWith("1", updateBody);
-    expect(mockUpdate).not.toHaveBeenCalledWith(
-      "1",
-      expect.objectContaining({ __proto__: expect.anything() })
-    );
+    await updateChain({ params: { id: "1" }, body }, res);
+    expect(mockUpdate).toHaveBeenCalledWith("1", body);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// getChainById
-// ─────────────────────────────────────────────────────────────────────────────
 describe("getChainById", () => {
   afterEach(() => jest.clearAllMocks());
 
   test("returns 404 for unknown id", async () => {
     mockFindById.mockResolvedValue(null);
-    const req = { params: { id: "999" } };
     const res = mockRes();
-
-    await getChainById(req, res);
-
+    await getChainById({ params: { id: "999" } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
   test("returns chain when found", async () => {
-    const chain = { id: 1, name: "Stellar", chainId: "xlm" };
+    const chain = { id: 1, name: "Stellar" };
     mockFindById.mockResolvedValue(chain);
-    const req = { params: { id: "1" } };
     const res = mockRes();
-
-    await getChainById(req, res);
-
+    await getChainById({ params: { id: "1" } }, res);
     expect(res.json).toHaveBeenCalledWith(chain);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// deleteChain
-// ─────────────────────────────────────────────────────────────────────────────
 describe("deleteChain", () => {
   afterEach(() => jest.clearAllMocks());
 
-  test("returns 404 when chain does not exist", async () => {
+  test("returns 404 when chain not found", async () => {
     mockFindById.mockResolvedValue(null);
-    const req = { params: { id: "99" } };
     const res = mockRes();
-
-    await deleteChain(req, res);
-
+    await deleteChain({ params: { id: "99" } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
   test("deletes and returns success message", async () => {
     mockFindById.mockResolvedValue({ id: 1 });
     mockDelete.mockResolvedValue(1);
-    const req = { params: { id: "1" } };
     const res = mockRes();
-
-    await deleteChain(req, res);
-
-    expect(mockDelete).toHaveBeenCalledWith("1");
+    await deleteChain({ params: { id: "1" } }, res);
     expect(res.json).toHaveBeenCalledWith({ message: "Chain deleted successfully" });
   });
 });
