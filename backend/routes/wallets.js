@@ -6,6 +6,7 @@ import {
   getWalletByUserId,
   send_to_tag,
   send_to_wallet,
+  getAllowances,
 } from "../controllers/walletController.js";
 import { require2FA } from "../controllers/authController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -270,5 +271,32 @@ router.post("/send-to-wallet", authenticate, require2FA, idempotency, validate(s
 router.get("/:id", authenticate, validateParams(numericIdParamSchema), getWalletById);
 router.put("/:id", authenticate, validateParams(numericIdParamSchema), validate(walletUpdateSchema), auditLog("wallets"), updateWallet);
 router.delete("/:id", authenticate, validateParams(numericIdParamSchema), auditLog("wallets"), deleteWallet);
+
+/**
+ * @swagger
+ * /api/wallets/{address}/allowances:
+ *   get:
+ *     summary: Get ERC-20 token allowances for a wallet
+ *     tags: [Wallets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Wallet address
+ *       - in: query
+ *         name: chain
+ *         schema:
+ *           type: string
+ *           enum: [base, lisk, flow, u2u]
+ *         description: Optional chain filter
+ *     responses:
+ *       200:
+ *         description: Allowance status for tokens
+ */
+router.get("/:address/allowances", authenticate, getAllowances);
 
 export default router;

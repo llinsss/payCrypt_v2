@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import { instrumentRedisClient } from "../observability/sentry.js";
 dotenv.config();
 
-export const IDEMPOTENCY_PREFIX = process.env.IDEMPOTENCY_PREFIX || "idempotency:";
+export const IDEMPOTENCY_PREFIX = process.env.IDEMPOTENCY_PREFIX || "idem:v1:";
 
 const redisDisabled = process.env.REDIS_DISABLED === "true" || process.env.NODE_ENV === "test";
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';

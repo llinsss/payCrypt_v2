@@ -1,0 +1,38 @@
+Gas Report for TagRegistry Smart Contract
+============================================
+
+To generate this report, run:
+  forge test --gas-report
+
+This will output gas costs for all contract functions in the following format:
+
+Function Name                                  Min             Avg             Max    % of limit      Calls
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+TagRegistry:
+  registerTag                                  X,XXX          XX,XXX         XX,XXX      XX%           N
+  resolveTag                                   X,XXX           X,XXX          X,XXX       X%           N
+  getTagProfile                                X,XXX           X,XXX          X,XXX       X%           N
+  isTagTaken                                   X,XXX           X,XXX          X,XXX       X%           N
+  transferTag                                  X,XXX          XX,XXX         XX,XXX      XX%           N
+  updateChainAddress                           X,XXX          XX,XXX         XX,XXX      XX%           N
+  getRegisteredTagsCount                       X,XXX           X,XXX          X,XXX       X%           N
+  getRegisteredTagAt                           X,XXX           X,XXX          X,XXX       X%           N
+
+Deployments:
+  TagRegistry                                  XX,XXX         XX,XXX         XX,XXX      XX%           N
+
+Test Coverage Notes:
+- registerTag: Covers empty tag revert, duplicate tag revert, invalid chain address revert, and successful registration
+- resolveTag: Covers unregistered tag revert and successful resolution with correct address
+- transferTag: Covers authorization checks, same-owner revert, zero-address revert, and successful transfers
+- updateChainAddress: Covers ownership verification, invalid address validation, and address updates
+- Edge cases: Single-character tags, numerical tags, special characters, case sensitivity
+- Fuzz tests: 1000 runs covering various tag lengths and addresses
+- Invariant: Total registered tags never decreases
+
+Gas Optimizations Applied:
+- Direct mapping lookups instead of array iterations for tag existence checks
+- Event emissions for indexing without redundant storage
+- Minimal storage writes per operation
+- Efficient string comparison via keccak256 hashing by Solidity compiler
