@@ -26,16 +26,14 @@
         "test:migrations": "node scripts/test-migrations.js",
         "generate:migration-docs": "node scripts/generate-migration-docs.js",
         "load-test:pool": "node scripts/load-test-pool.js",
-        "test:unit": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --projects ./jest.config.unit.js --forceExit",
-        "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --projects ./jest.config.integration.js --forceExit",
-        "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='tests/(env\\.validation|cacheControl|asyncContext|backup|backupEncryption|backupMetadata|backupAdminController|circuitBreaker|scheduledPayment|batchPayment|sentry|s3Client|redactor|webhookRetry|queueCorrelation|auth\\.service|kyc\\.service|kycController|logging|developmentSeeds|validateWebhookUrl|receiptService|validation\\.test|sql_injection|tag\\.service|transaction_cache|webhooks/paystackWebhook|services/BatchPaymentService|services/KeyVaultService)' --forceExit",
-        "test:all": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit"
+     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='tests/(env\\.validation|cacheControl|asyncContext|backup|backupEncryption|backupMetadata|backupAdminController|circuitBreaker|scheduledPayment|batchPayment|sentry|s3Client|redactor|webhookRetry|queueCorrelation|auth\\.service|kyc\\.service|kycController|logging|developmentSeeds|validateWebhookUrl|receiptService|validation\\.test|sql_injection|tag\\.service|transaction_cache|webhooks/paystackWebhook|webhooks/monnifyWebhook|services/BatchPaymentService|services/KeyVaultService)' --forceExit",
+"test:all": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit"
     },
     "jest": {
         "testEnvironment": "node",
         "transform": {},
-        "roots": [
-            "<rootDir>/tests"
+        "setupFiles": [
+            "<rootDir>/tests/setup/testEnv.setup.js"
         ],
         "testPathIgnorePatterns": [
             "/node_modules/"

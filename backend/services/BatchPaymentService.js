@@ -33,6 +33,18 @@ class BatchProcessingError extends Error {
 }
 
 class BatchPaymentService {
+  /**
+   * Upper bound on concurrently in-flight payments within a non-atomic
+   * batch (issue #506: "parallel execution never exceeds the configured
+   * concurrency"). Configurable via env for load tuning; overridable
+   * directly (`BatchPaymentService.PARALLEL_CONCURRENCY = n`) in tests that
+   * need to assert the bound is actually respected.
+   */
+  static PARALLEL_CONCURRENCY = Math.max(
+    1,
+    parseInt(process.env.BATCH_PAYMENT_CONCURRENCY, 10) || 10,
+  );
+
   async createBatchPayment({
     userId,
     senderTag,
@@ -515,7 +527,7 @@ class BatchPaymentService {
       results: results.filter(Boolean),
     });
 
-    const limit = pLimit(10);
+    const limit = pLimit(BatchPaymentService.PARALLEL_CONCURRENCY);
     const tasks = validItems.map((item) => {
       return limit(async () => {
         // Integrity gate: reject any leaf that no longer matches the committed
@@ -533,6 +545,12 @@ class BatchPaymentService {
           return;
         }
 
+        // Reserve the item's cost against the shared running balance
+        // synchronously (check-and-deduct, no `await` in between) so that
+        // concurrent tasks — bounded by `limit` but still interleaved —
+        // cannot all read the same pre-deduction balance and jointly
+        // overspend it. Any reservation not ultimately used (payment fails)
+        // is refunded below.
         if (remainingBalance < item.totalCost) {
           results[item.index] = this.buildFailedResult(
             item.index,
@@ -543,6 +561,7 @@ class BatchPaymentService {
           processedItems += 1;
           return;
         }
+        remainingBalance -= item.totalCost;
 
         try {
           const paymentResult = await PaymentService.processPayment({
@@ -582,9 +601,11 @@ class BatchPaymentService {
             txHash: paymentResult.txHash,
           };
 
-          remainingBalance -= item.totalCost;
           successfulItems += 1;
         } catch (error) {
+          // The reservation taken above was never spent — return it to the
+          // pool so a later item in the batch can still use it.
+          remainingBalance += item.totalCost;
           results[item.index] = this.buildFailedResult(item.index, item, error.message);
           failedItems += 1;
         }
