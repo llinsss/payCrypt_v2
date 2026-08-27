@@ -13,7 +13,7 @@ interface IERC20 {
 }
 
 /// @title Wallet - A minimal smart wallet contract
-contract Wallet {
+contract Wallet is ReentrancyGuard {
     // Address of the wallet owner
     address public router;
 
@@ -32,7 +32,14 @@ contract Wallet {
     /// @notice Allows the owner to withdraw funds to a specified address
     /// @param recipient The address to which the funds will be sent
     /// @param amount The amount of Ether to withdraw
-    function withdrawETH(address payable recipient, uint256 amount) external onlyOwner {
+    /// @dev Audit (#513): the balance check reads live `address(this).balance`
+    /// rather than a decrementable ledger, so a reentrant call just re-checks
+    /// the (already reduced) real balance instead of double-spending an
+    /// entitlement. `recipient` is still attacker-influenceable (it is
+    /// forwarded from the router on behalf of a tag owner), so `nonReentrant`
+    /// is added anyway as defense-in-depth against a malicious recipient
+    /// re-entering mid-transfer.
+    function withdrawETH(address payable recipient, uint256 amount) external onlyOwner nonReentrant {
         require(address(this).balance >= amount, "Insufficient balance");
         (bool sent,) = recipient.call{value: amount}("");
         require(sent, "Transfer failed");
@@ -54,7 +61,11 @@ contract Wallet {
      * @param recipient Address to receive the tokens
      * @param amount Amount of tokens (in token decimals) to withdraw
      */
-    function withdrawERC20(address token, address recipient, uint256 amount) external onlyOwner returns (bool) {
+    /// @dev Audit (#513): same reasoning as withdrawETH above — no internal
+    /// ledger to double-spend, but `recipient`/`token` are caller-supplied so
+    /// `nonReentrant` is applied for defense-in-depth against a malicious
+    /// ERC-20 token or a callback during `transfer`.
+    function withdrawERC20(address token, address recipient, uint256 amount) external onlyOwner nonReentrant returns (bool) {
         IERC20 erc20 = IERC20(token);
         require(erc20.balanceOf(address(this)) >= amount, "Insufficient token balance");
 
@@ -94,8 +105,13 @@ contract TagRouter is ReentrancyGuard {
         bool exists; // Whether the tag has been registered
     }
 
-    mapping(string => UserProfile) private userProfiles; // Maps tags to user profiles
-    mapping(string => bool) private tagTaken; // Tracks whether a tag is already taken
+    // Tags are stored and compared by their canonical hash (see
+    // _canonicalTagHash), never by the raw string, so "Alice", "alice" and
+    // "ALICE" all resolve to one registration instead of three
+    // visually-confusing duplicates. The original string a caller passed in
+    // is only ever emitted in events for off-chain display.
+    mapping(bytes32 => UserProfile) private userProfiles; // canonical tag hash => user profile
+    mapping(bytes32 => bool) private tagTaken; // canonical tag hash => already registered
 
     event TagRegistered(string indexed tag, address indexed owner);
     event DepositReceived(string indexed tag, address indexed from, uint256 amount);
@@ -113,8 +129,33 @@ contract TagRouter is ReentrancyGuard {
 
     // Ensures that only the owner of a tag can call certain functions
     modifier onlyTagOwner(string memory tag) {
-        require(userProfiles[tag].owner == msg.sender, "Not tag owner");
+        require(userProfiles[_canonicalTagHash(tag)].owner == msg.sender, "Not tag owner");
         _;
+    }
+
+    /// @notice Canonicalizes a tag for storage/comparison (#514).
+    /// @dev Lowercases ASCII letters and requires every byte to be in the
+    /// allow-list [a-z0-9_-]. Any multi-byte UTF-8 sequence (accents,
+    /// homoglyphs, emoji, RTL overrides, etc.) contains bytes outside that
+    /// range and is rejected outright, so confusable-Unicode duplicates
+    /// can't be registered. Returns the keccak256 hash of the canonical
+    /// bytes — the hash, not the string, is the actual storage/lookup key.
+    function _canonicalTagHash(string memory tag) internal pure returns (bytes32) {
+        bytes memory raw = bytes(tag);
+        bytes memory normalized = new bytes(raw.length);
+        for (uint256 i = 0; i < raw.length; i++) {
+            bytes1 char = raw[i];
+            if (char >= 0x41 && char <= 0x5A) {
+                // 'A'-'Z' -> 'a'-'z'
+                char = bytes1(uint8(char) + 32);
+            }
+            bool isLower = char >= 0x61 && char <= 0x7A; // 'a'-'z'
+            bool isDigit = char >= 0x30 && char <= 0x39; // '0'-'9'
+            bool isAllowedPunct = char == 0x2D || char == 0x5F; // '-' or '_'
+            require(isLower || isDigit || isAllowedPunct, "Invalid tag character");
+            normalized[i] = char;
+        }
+        return keccak256(normalized);
     }
 
     /// @notice Registers a unique tag and deploys a user wallet
@@ -122,24 +163,32 @@ contract TagRouter is ReentrancyGuard {
     /// @param _owner The address of the user who owns the tag
     /// @return The deployed wallet address associated with the tag
     function registerTag(string memory tag, address _owner) external returns (address) {
-        require(!tagTaken[tag], "Tag already taken");
+        bytes32 canonicalTag = _canonicalTagHash(tag);
+        require(!tagTaken[canonicalTag], "Tag already taken");
         require(bytes(tag).length > 2, "Tag too short");
 
         address userwallet = address(new Wallet(address(this)));
-        userProfiles[tag] = UserProfile(_owner, userwallet, true);
-        tagTaken[tag] = true;
+        userProfiles[canonicalTag] = UserProfile(_owner, userwallet, true);
+        tagTaken[canonicalTag] = true;
 
+        // `tag` (the original, unnormalized string) is only ever emitted for
+        // off-chain/display purposes; it is never used as a storage key.
         emit TagRegistered(tag, _owner);
         return userwallet;
     }
 
     /// @notice Allows sending ETH to a tag, which gets forwarded to the tag owner's wallet
     /// @param tag The registered tag to deposit ETH to
+    /// @dev Audit (#513): no balance is credited/decremented in this
+    /// contract's own storage before or after the forwarding call — the
+    /// funds simply move into the user's wallet contract — so there is no
+    /// ledger a reentrant call could double-spend. Not marked `nonReentrant`.
     function depositToTag(string memory tag) external payable {
-        require(userProfiles[tag].exists, "Tag not registered");
+        bytes32 canonicalTag = _canonicalTagHash(tag);
+        require(userProfiles[canonicalTag].exists, "Tag not registered");
         require(msg.value > 0, "No ETH sent");
 
-        address userWallet = userProfiles[tag].user_chainAddress;
+        address userWallet = userProfiles[canonicalTag].user_chainAddress;
         require(userWallet != address(0), "User wallet not found");
 
         (bool success,) = userWallet.call{value: msg.value}("");
@@ -150,12 +199,16 @@ contract TagRouter is ReentrancyGuard {
 
     /// @notice Allows sending ETH to a tag, which gets forwarded to the tag owner's wallet
     /// @param tag The registered tag to deposit ETH to
+    /// @dev Audit (#513): same as depositToTag — this contract holds no
+    /// ledger of tag balances, so there is nothing for a reentrant call
+    /// during `transferFrom` to double-spend. Not marked `nonReentrant`.
     function depositERC20ToTag(string memory tag, address token, uint256 amount) external {
-        require(userProfiles[tag].exists, "Tag not registered");
+        bytes32 canonicalTag = _canonicalTagHash(tag);
+        require(userProfiles[canonicalTag].exists, "Tag not registered");
         require(amount > 0, "No tokens sent");
         require(token != address(0), "Invalid token address");
 
-        address userWallet = userProfiles[tag].user_chainAddress;
+        address userWallet = userProfiles[canonicalTag].user_chainAddress;
         require(userWallet != address(0), "User wallet not found");
 
         IERC20 erc20 = IERC20(token);
@@ -171,15 +224,16 @@ contract TagRouter is ReentrancyGuard {
     /// @param tag The registered tag
     /// @return The wallet address deployed for the tag
     function getUserChainAddress(string memory tag) external view returns (address) {
-        require(userProfiles[tag].exists, "Tag does not exist");
-        return userProfiles[tag].user_chainAddress;
+        bytes32 canonicalTag = _canonicalTagHash(tag);
+        require(userProfiles[canonicalTag].exists, "Tag does not exist");
+        return userProfiles[canonicalTag].user_chainAddress;
     }
 
     /// @notice Returns the current ETH balance of the tag’s wallet
     /// @param tag The registered tag
     /// @return The ETH balance of the tag's wallet
     function getTagBalance(string memory tag) external view returns (uint256) {
-        address userwallet = userProfiles[tag].user_chainAddress;
+        address userwallet = userProfiles[_canonicalTagHash(tag)].user_chainAddress;
         require(userwallet != address(0), "Tag not registered");
         return userwallet.balance;
     }
@@ -187,7 +241,11 @@ contract TagRouter is ReentrancyGuard {
     /// @notice Withdraws the entire contract ETH balance to the given address.
     /// @dev Only the contract owner can call this function.
     /// @param to The address that will receive the withdrawn ETH.
-    function withdrawFromContract(address to) external {
+    /// @dev Audit (#513): `to` is caller-supplied and could be a malicious
+    /// contract that re-enters on receipt, so `nonReentrant` guards this
+    /// even though the balance read is live (CEI: balance is read, then the
+    /// external call is the last thing that happens).
+    function withdrawFromContract(address to) external nonReentrant {
         require(msg.sender == owner, "Only owner can withdraw");
         require(to != address(0), "Invalid recipient address");
 
@@ -212,11 +270,15 @@ contract TagRouter is ReentrancyGuard {
      * @param rate  Number of tokens to send per 1 ETH (18 decimals).
      *              Example: If 1 ETH = 200 USDC, rate = 200 * 10^18.
      */
+    /// @dev Audit (#513): already `nonReentrant` — this function both pulls
+    /// ETH out of the user's wallet and sends a token balance out of this
+    /// contract in one call, so a callback during either external call could
+    /// otherwise re-enter and repeat the swap against the same liquidity.
     function swapEthForToken(address token, uint256 rate, string memory _tag, uint256 _amountEth) public nonReentrant {
         require(_amountEth > 0, "No ETH amount");
         require(rate > 0, "Invalid rate");
 
-        address walletAddr = userProfiles[_tag].user_chainAddress;
+        address walletAddr = userProfiles[_canonicalTagHash(_tag)].user_chainAddress;
         require(walletAddr != address(0), "Tag not registered");
 
         IWallet wallet = IWallet(payable(walletAddr));
@@ -252,11 +314,15 @@ contract TagRouter is ReentrancyGuard {
      *               Example: If 200 USDC = 1 ETH, rate = 200 * 10^18.
      * @param _tag   The tag associated with the user.
      */
+    /// @dev Audit (#513): already `nonReentrant` — same reasoning as
+    /// swapEthForToken: it pulls tokens from the user's wallet and then
+    /// sends ETH out of this contract, so a callback mid-swap could
+    /// otherwise re-enter and repeat it against the same liquidity.
     function swapTokenForEth(address token, uint256 amount, uint256 rate, string memory _tag) public nonReentrant {
         require(amount > 0, "No token amount");
         require(rate > 0, "Invalid rate");
 
-        address walletAddr = userProfiles[_tag].user_chainAddress;
+        address walletAddr = userProfiles[_canonicalTagHash(_tag)].user_chainAddress;
         require(walletAddr != address(0), "Tag not registered");
 
         // Calculate how much ETH to send
@@ -288,18 +354,23 @@ contract TagRouter is ReentrancyGuard {
      * @return Token balance owned by this wallet
      */
     function getERC20Balance(address token, string memory _tag) external view returns (uint256) {
-        address _address = userProfiles[_tag].user_chainAddress;
+        address _address = userProfiles[_canonicalTagHash(_tag)].user_chainAddress;
         require(_address != address(0), "Tag not registered");
         require(token != address(0), "Invalid token address");
         // Return the balance of the token for the user's wallet address
         return IERC20(token).balanceOf(_address);
     }
 
-    function withdrawEthFromWallet(address to, uint256 amount, string memory _tag) external onlyTagOwner(_tag) {
+    /// @dev Audit (#513): `to` is caller-supplied and could re-enter on
+    /// receipt of ETH, and `wallet.withdrawETH` is itself `nonReentrant`, but
+    /// that only guards the Wallet instance — a reentrant call back into
+    /// this function would still pass `onlyTagOwner`/balance checks freshly.
+    /// Guarded with `nonReentrant` here too.
+    function withdrawEthFromWallet(address to, uint256 amount, string memory _tag) external onlyTagOwner(_tag) nonReentrant {
         require(to != address(0), "Invalid recipient address");
         require(amount > 0, "Amount must be greater than 0");
 
-        IWallet wallet = IWallet(payable(userProfiles[_tag].user_chainAddress));
+        IWallet wallet = IWallet(payable(userProfiles[_canonicalTagHash(_tag)].user_chainAddress));
         uint256 balance = wallet.getBalance();
         require(balance >= amount, "Insufficient wallet balance");
 
