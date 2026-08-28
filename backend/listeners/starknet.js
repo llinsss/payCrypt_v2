@@ -40,40 +40,59 @@ const getEventsInRange = async (from, to) => {
 };
 
 /**
- * Decode known event types
+ * Decode known event types.
+ *
+ * #616: events now carry a stable `operation_id` (emitted as a `#[key]`
+ * field, so it lands in `keys[1]`/`keys[2]` as a low/high u256 pair rather
+ * than in `data`) plus `tag`/`wallet`/`recipient` context needed to uniquely
+ * reconcile a deposit/withdrawal off-chain.
  */
 const decodeEvent = (rawEvent) => {
   const data = rawEvent.data;
+  const keys = rawEvent.keys || [];
   const txHash = rawEvent.transaction_hash;
 
-  // Determine event type by data length or your ABI pattern
-  // DepositReceived: sender, recipient, amount.low, amount.high, token
-  if (data.length === 5) {
+  const operationId =
+    keys.length >= 3
+      ? starknet.utils
+          .uint256ToBigInt({ low: keys[1], high: keys[2] })
+          .toString()
+      : null;
+
+  // DepositReceived data: tag, wallet, sender, amount.low, amount.high, token
+  if (data.length === 6) {
     const amount = starknet.utils.uint256ToBigInt({
-      low: data[2],
-      high: data[3],
+      low: data[3],
+      high: data[4],
     });
     return {
       type: "DepositReceived",
-      sender: data[0],
+      operationId,
+      tag: data[0],
+      wallet: data[1],
+      sender: data[2],
       recipient: data[1],
       amount: amount.toString(),
-      token: data[4],
+      token: data[5],
       txHash,
     };
   }
 
-  // WithdrawalCompleted: sender, amount.low, amount.high, token
-  if (data.length === 4) {
+  // WithdrawalCompleted data: tag, wallet, sender, recipient, amount.low, amount.high, token
+  if (data.length === 7) {
     const amount = starknet.utils.uint256ToBigInt({
-      low: data[1],
-      high: data[2],
+      low: data[4],
+      high: data[5],
     });
     return {
       type: "WithdrawalCompleted",
-      sender: data[0],
+      operationId,
+      tag: data[0],
+      wallet: data[1],
+      sender: data[2],
+      recipient: data[3],
       amount: amount.toString(),
-      token: data[3],
+      token: data[6],
       txHash,
     };
   }

@@ -73,7 +73,7 @@ export const starknetWorker = redisConnection ? new Worker(
     }
 
     if (event.type === "WithdrawalCompleted") {
-      const { sender, amount, token, txHash, timestamp } = event;
+      const { sender, recipient, amount, token, txHash, timestamp } = event;
 
       const transaction = await db("transactions")
         .where("tx_hash", txHash)
@@ -111,7 +111,7 @@ export const starknetWorker = redisConnection ? new Worker(
         amount: crypto_value,
         usd_value,
         from_address: sender,
-        to_address: null,
+        to_address: recipient ?? null,
         timestamp,
         description: "Withdrawal completed on StarkNet",
         extra: JSON.stringify(event),
