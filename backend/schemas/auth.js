@@ -75,4 +75,15 @@ export const authSchemas = {
         "string.empty": "Token cannot be empty",
       }),
   }),
+
+  refreshToken: Joi.object({
+    refreshToken: Joi.string()
+      .trim()
+      .min(1)
+      .required()
+      .messages({
+        "any.required": "Refresh token is required",
+        "string.empty": "Refresh token cannot be empty",
+      }),
+  }),
 };

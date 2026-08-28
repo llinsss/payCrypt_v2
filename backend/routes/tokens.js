@@ -8,6 +8,10 @@ import {
 } from "../controllers/tokenController.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { publicCache } from "../middleware/cacheControl.js";
+import validate from "../middleware/validate.js";
+import { paginationSchema } from "../validators/paginationValidator.js";
+import { createTokenSchema, updateTokenSchema } from "../validators/tokenSchemas.js";
+
 const router = express.Router();
 
 /**
@@ -23,9 +27,26 @@ const router = express.Router();
  *   get:
  *     summary: Get all tokens
  *     tags: [Tokens]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 10000
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
  *     responses:
  *       200:
  *         description: List of tokens
+ *       422:
+ *         description: Validation error (invalid page or limit)
  *   post:
  *     summary: Create a new token
  *     tags: [Tokens]
@@ -58,6 +79,8 @@ router.get("/", publicCache(3600), getTokens);
  *     responses:
  *       200:
  *         description: Token details
+ *       404:
+ *         description: Token not found
  *   put:
  *     summary: Update token
  *     tags: [Tokens]

@@ -1,8 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
+import LoadingSpinner from "./components/LoadingSpinner";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { Toaster } from "react-hot-toast";
 
@@ -107,12 +108,55 @@ const PrivateLayout: React.FC = () => {
 };
 
 // Guard for admin-only sections — admin and super_admin roles.
+// Authentication is handled by ProtectedRoute; this guard is authorization-only
+// and revalidates the user's role against the server on every entry instead of
+// trusting the possibly-stale role cached on the auth context, so a revoked
+// admin session can't keep reaching operational views.
 const AdminGuard: React.FC = () => {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
-  if (!isAdmin) {
+  const { user, refreshUser } = useAuth();
+  const [status, setStatus] = useState<"checking" | "authorized" | "denied">(
+    "checking"
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const verify = async () => {
+      try {
+        const freshUser = await refreshUser();
+        if (cancelled) return;
+        const isAdmin =
+          freshUser?.role === "admin" || freshUser?.role === "super_admin";
+        setStatus(isAdmin ? "authorized" : "denied");
+      } catch {
+        // Token invalid/expired or claims fetch failed — treat as revoked.
+        if (!cancelled) setStatus("denied");
+      }
+    };
+
+    verify();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  if (status === "checking") {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (status === "denied") {
     return <Navigate to="/" replace />;
   }
+
   return <Outlet />;
 };
 
