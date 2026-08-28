@@ -1,9 +1,13 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import QRCode from "react-qr-code";
-import { Copy, Download, Share2, CheckCircle } from "lucide-react";
+import { Copy, Download, Share2, CheckCircle, AlertTriangle } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { UserTokenBalance } from "../../interfaces";
 import { apiClient } from "../../utils/api";
+import {
+  buildPaymentUri,
+  InvalidPaymentUriError,
+} from "../../utils/paymentUri";
 
 const QRCodeGenerator: React.FC = () => {
   const [copiedField, setCopiedField] = useState("");
@@ -12,6 +16,8 @@ const QRCodeGenerator: React.FC = () => {
     null
   );
   const [loading, setLoading] = useState(true);
+  const [amount, setAmount] = useState("");
+  const [memo, setMemo] = useState("");
 
   const { user } = useAuth();
   const userTag = user ? `@${user.tag}` : "";
@@ -30,16 +36,29 @@ const QRCodeGenerator: React.FC = () => {
     fetchBalances();
   }, []);
 
-  const depositData = useMemo(
-    () =>
-      JSON.stringify({
-        tag: user?.tag,
-        address: selectedToken?.address,
-        token: selectedToken?.token_name,
-        version: "1.0",
-      }),
-    [user?.tag, selectedToken]
-  );
+  const { depositUri, depositUriError } = useMemo(() => {
+    if (!user?.tag || !selectedToken?.address) {
+      return { depositUri: "", depositUriError: null as string | null };
+    }
+    try {
+      return {
+        depositUri: buildPaymentUri({
+          tag: user.tag,
+          address: selectedToken.address,
+          token: selectedToken.token_symbol,
+          amount: amount || undefined,
+          memo: memo || undefined,
+        }),
+        depositUriError: null as string | null,
+      };
+    } catch (error) {
+      const message =
+        error instanceof InvalidPaymentUriError
+          ? error.message
+          : "Unable to build a valid payment QR code.";
+      return { depositUri: "", depositUriError: message };
+    }
+  }, [user?.tag, selectedToken, amount, memo]);
 
   const copyToClipboard = useCallback((text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -132,14 +151,50 @@ const QRCodeGenerator: React.FC = () => {
             Receive Crypto via QR Code
           </h3>
 
-          <div className="bg-white p-6 rounded-xl border-2 border-gray-100 inline-block mb-6">
-            <QRCode
-              id="qr-code"
-              value={depositData}
-              size={200}
-              style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 text-left max-w-md mx-auto">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Amount (optional)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Memo (optional)
+              </label>
+              <input
+                type="text"
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="What's this for?"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
           </div>
+
+          {depositUriError ? (
+            <div className="flex items-center justify-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
+              <AlertTriangle className="w-5 h-5" />
+              <span className="text-sm font-medium">{depositUriError}</span>
+            </div>
+          ) : (
+            <div className="bg-white p-6 rounded-xl border-2 border-gray-100 inline-block mb-6">
+              <QRCode
+                id="qr-code"
+                value={depositUri}
+                size={200}
+                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+              />
+            </div>
+          )}
 
           <div className="space-y-4">
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-lg">

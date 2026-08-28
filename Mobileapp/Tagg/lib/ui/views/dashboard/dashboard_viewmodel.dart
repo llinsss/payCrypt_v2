@@ -111,6 +111,7 @@ class DashboardViewModel extends BaseViewModel {
   @override
   void dispose() {
     _balanceUpdateSubscription?.cancel();
+    _searchDebounceTimer?.cancel();
     super.dispose();
   }
 
@@ -386,19 +387,34 @@ class DashboardViewModel extends BaseViewModel {
   String _searchQuery = '';
   String? _statusFilter;   // 'completed', 'pending', 'failed', or null (all)
   String? _typeFilter;     // 'credit', 'debit', or null (all)
+  DateTime? _dateRangeStart;
+  DateTime? _dateRangeEnd;
+  Set<String> _selectedTokens = {};  // Selected token symbols for filtering
+  Set<String> _selectedChains = {};  // Selected chain names for filtering
+  Timer? _searchDebounceTimer;
 
   String get searchQuery => _searchQuery;
   String? get statusFilter => _statusFilter;
   String? get typeFilter => _typeFilter;
+  DateTime? get dateRangeStart => _dateRangeStart;
+  DateTime? get dateRangeEnd => _dateRangeEnd;
+  Set<String> get selectedTokens => _selectedTokens;
+  Set<String> get selectedChains => _selectedChains;
+  bool get hasActiveFilters => _searchQuery.isNotEmpty || _statusFilter != null ||
+      _typeFilter != null || _dateRangeStart != null ||
+      _selectedTokens.isNotEmpty || _selectedChains.isNotEmpty;
 
   List<Transaction> get transactions => _transactions;
   bool get hasMore => _hasMore;
   bool get isLoadingMore => _isLoadingMore;
 
-  /// Update search query and filter the in-memory list.
+  /// Update search query with 300ms debounce and filter the in-memory list.
   void onSearchChanged(String query) {
-    _searchQuery = query.trim().toLowerCase();
-    notifyListeners();
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _searchQuery = query.trim().toLowerCase();
+      notifyListeners();
+    });
   }
 
   /// Set status filter ('completed', 'pending', 'failed', or null for all).
@@ -413,11 +429,42 @@ class DashboardViewModel extends BaseViewModel {
     notifyListeners();
   }
 
+  /// Set date range for filtering transactions.
+  void setDateRange(DateTime? start, DateTime? end) {
+    _dateRangeStart = start;
+    _dateRangeEnd = end;
+    notifyListeners();
+  }
+
+  /// Toggle token selection for multi-select filtering.
+  void toggleTokenFilter(String token) {
+    if (_selectedTokens.contains(token)) {
+      _selectedTokens.remove(token);
+    } else {
+      _selectedTokens.add(token);
+    }
+    notifyListeners();
+  }
+
+  /// Toggle chain selection for multi-select filtering.
+  void toggleChainFilter(String chain) {
+    if (_selectedChains.contains(chain)) {
+      _selectedChains.remove(chain);
+    } else {
+      _selectedChains.add(chain);
+    }
+    notifyListeners();
+  }
+
   /// Clear all search/filter state.
   void clearSearchFilters() {
     _searchQuery = '';
     _statusFilter = null;
     _typeFilter = null;
+    _dateRangeStart = null;
+    _dateRangeEnd = null;
+    _selectedTokens.clear();
+    _selectedChains.clear();
     selectedFilterIndex = 0;
     notifyListeners();
   }
@@ -435,14 +482,38 @@ class DashboardViewModel extends BaseViewModel {
         break;
     }
 
-    // Apply status filter from filter sheet
+    // Apply status filter
     if (_statusFilter != null) {
       list = list.where((t) => t.status == _statusFilter).toList();
     }
 
-    // Apply type filter from filter sheet (overrides tab)
+    // Apply type filter (overrides tab if set)
     if (_typeFilter != null) {
       list = list.where((t) => t.type == _typeFilter).toList();
+    }
+
+    // Apply date range filter
+    if (_dateRangeStart != null) {
+      list = list.where((t) {
+        final txDate = DateTime.tryParse(t.createdAt ?? '')?.toLocal() ?? DateTime.now();
+        return txDate.isAfter(_dateRangeStart!);
+      }).toList();
+    }
+    if (_dateRangeEnd != null) {
+      list = list.where((t) {
+        final txDate = DateTime.tryParse(t.createdAt ?? '')?.toLocal() ?? DateTime.now();
+        return txDate.isBefore(_dateRangeEnd!.add(const Duration(days: 1)));
+      }).toList();
+    }
+
+    // Apply token filter (AND semantics: only show if token matches)
+    if (_selectedTokens.isNotEmpty) {
+      list = list.where((t) => _selectedTokens.contains(t.tokenSymbol)).toList();
+    }
+
+    // Apply chain filter (AND semantics: only show if chain matches)
+    if (_selectedChains.isNotEmpty) {
+      list = list.where((t) => _selectedChains.contains(t.chainName)).toList();
     }
 
     // Apply search query

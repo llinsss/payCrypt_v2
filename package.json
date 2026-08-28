@@ -10,7 +10,12 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "build:solidity": "cd contracts/solidity_contract && forge build",
+    "build:starknet": "cd contracts/starknet_contract && scarb build",
+    "build:all": "bash scripts/verify.sh build",
+    "test:all": "bash scripts/verify.sh test",
+    "check": "npm run lint && npm run type-check && bash scripts/verify.sh build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",

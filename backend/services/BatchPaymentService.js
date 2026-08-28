@@ -15,6 +15,19 @@ const STELLAR_ADDRESS_REGEX = /^G[A-Z0-9]{55}$/;
 const STELLAR_CHAIN_ID = 6;
 const STELLAR_BASE_FEE = 100;
 
+// Batches larger than this are handed off to the background queue instead of
+// being processed inline on the request (issue #506: "small batches process
+// immediately; large batches queue once").
+const BATCH_QUEUE_THRESHOLD =
+  Math.max(1, parseInt(process.env.BATCH_QUEUE_THRESHOLD, 10) || 20);
+
+// Bounded concurrency for non-atomic batch items: a p-limit semaphore caps how
+// many payments run at once so a large batch can't fan out unboundedly against
+// the payment provider (issue #506: "parallel execution never exceeds the
+// configured concurrency"). Configurable via env for load tuning/tests.
+const BATCH_PAYMENT_CONCURRENCY =
+  Math.max(1, parseInt(process.env.BATCH_PAYMENT_CONCURRENCY, 10) || 10);
+
 const BATCH_STATUS = {
   PENDING: "pending",
   PROCESSING: "processing",
@@ -22,6 +35,29 @@ const BATCH_STATUS = {
   PARTIAL_FAILED: "partial_failed",
   FAILED: "failed",
 };
+
+// Stable, provider-agnostic outcome shape layered on top of the existing
+// `success`/`httpStatus`/`data` response (issue #506). Kept additive so
+// existing callers/tests that only read `success`/`httpStatus`/`data` are
+// unaffected, while new/updated callers get a normalized
+// `status`/`results`/`succeededCount`/`failedCount` contract for full
+// success, partial failure, and total failure alike.
+const RESULT_STATUS = {
+  SUCCESS: "success",
+  PARTIAL: "partial",
+  FAILED: "failed",
+};
+
+function toResultStatus(batchStatus) {
+  switch (batchStatus) {
+    case BATCH_STATUS.COMPLETED:
+      return RESULT_STATUS.SUCCESS;
+    case BATCH_STATUS.PARTIAL_FAILED:
+      return RESULT_STATUS.PARTIAL;
+    default:
+      return RESULT_STATUS.FAILED;
+  }
+}
 
 class BatchProcessingError extends Error {
   constructor(message, { results = [], statusCode = 400 } = {}) {
@@ -33,6 +69,18 @@ class BatchProcessingError extends Error {
 }
 
 class BatchPaymentService {
+  /**
+   * Upper bound on concurrently in-flight payments within a non-atomic
+   * batch (issue #506: "parallel execution never exceeds the configured
+   * concurrency"). Configurable via env for load tuning; overridable
+   * directly (`BatchPaymentService.PARALLEL_CONCURRENCY = n`) in tests that
+   * need to assert the bound is actually respected.
+   */
+  static PARALLEL_CONCURRENCY = Math.max(
+    1,
+    parseInt(process.env.BATCH_PAYMENT_CONCURRENCY, 10) || 10,
+  );
+
   async createBatchPayment({
     userId,
     senderTag,
@@ -45,7 +93,6 @@ class BatchPaymentService {
     const normalizedAsset = asset || "XLM";
     const normalizedAssetIssuer = normalizedAsset === "XLM" ? null : assetIssuer;
     const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    const BATCH_QUEUE_THRESHOLD = 20;
 
     if (payments.length > BATCH_QUEUE_THRESHOLD) {
       const batch = await BatchPayment.create({
@@ -142,19 +189,23 @@ class BatchPaymentService {
         memo,
       });
     } catch (error) {
-      const failedBatch = await this.failBatch(
-        batch.id,
-        error.message,
+      const results =
         error.results && error.results.length > 0
           ? error.results
-          : payments.map((payment, index) => this.buildFailedResult(index, payment, error.message))
-      );
+          : payments.map((payment, index) => this.buildFailedResult(index, payment, error.message));
+      const failedBatch = await this.failBatch(batch.id, error.message, results);
 
       return {
         success: false,
         httpStatus: this.getFailureStatusCode(error),
         message: error.message,
         data: failedBatch,
+        // Stable outcome shape (issue #506): a batch that never got past
+        // validation/preparation is a total failure — every item is failed.
+        status: RESULT_STATUS.FAILED,
+        results,
+        succeededCount: 0,
+        failedCount: results.length,
       };
     }
   }
@@ -515,7 +566,7 @@ class BatchPaymentService {
       results: results.filter(Boolean),
     });
 
-    const limit = pLimit(10);
+    const limit = pLimit(BatchPaymentService.PARALLEL_CONCURRENCY);
     const tasks = validItems.map((item) => {
       return limit(async () => {
         // Integrity gate: reject any leaf that no longer matches the committed
@@ -533,6 +584,12 @@ class BatchPaymentService {
           return;
         }
 
+        // Reserve the item's cost against the shared running balance
+        // synchronously (check-and-deduct, no `await` in between) so that
+        // concurrent tasks — bounded by `limit` but still interleaved —
+        // cannot all read the same pre-deduction balance and jointly
+        // overspend it. Any reservation not ultimately used (payment fails)
+        // is refunded below.
         if (remainingBalance < item.totalCost) {
           results[item.index] = this.buildFailedResult(
             item.index,
@@ -543,6 +600,7 @@ class BatchPaymentService {
           processedItems += 1;
           return;
         }
+        remainingBalance -= item.totalCost;
 
         try {
           const paymentResult = await PaymentService.processPayment({
@@ -582,9 +640,11 @@ class BatchPaymentService {
             txHash: paymentResult.txHash,
           };
 
-          remainingBalance -= item.totalCost;
           successfulItems += 1;
         } catch (error) {
+          // The reservation taken above was never spent — return it to the
+          // pool so a later item in the batch can still use it.
+          remainingBalance += item.totalCost;
           results[item.index] = this.buildFailedResult(item.index, item, error.message);
           failedItems += 1;
         }

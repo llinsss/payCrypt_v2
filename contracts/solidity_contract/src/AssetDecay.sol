@@ -10,6 +10,9 @@ pragma solidity ^0.8.19;
  * Using block.timestamp provides uniform and chain-agnostic decay behavior.
  */
 contract AssetDecay {
+import {ReentrancyGuard} from "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+
+contract AssetDecay is ReentrancyGuard {
     address public owner;
 
     /// @notice Minimum allowed decay duration (1 second).
@@ -88,6 +91,12 @@ contract AssetDecay {
      * @notice Withdraws the caller's deposited asset balance.
      */
     function withdraw() external {
+    /// @dev Audit (#513): follows checks-effects-interactions — `assets[msg.sender]`
+    /// is deleted (effect) before the ETH is sent (interaction) — so a
+    /// reentrant call from `msg.sender`'s fallback would already see
+    /// `asset.exists == false` and revert. `nonReentrant` is added as
+    /// defense-in-depth in case future changes weaken that ordering.
+    function withdraw() external nonReentrant {
         Asset storage asset = assets[msg.sender];
         require(asset.exists, "No active asset");
         require(asset.amount > 0, "No balance");

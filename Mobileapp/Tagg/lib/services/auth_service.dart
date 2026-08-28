@@ -47,7 +47,7 @@ class AuthService {
       }
 
       final response = await _apiService.post(
-        '${ApiConstants.baseUrl}/auth/google',
+        ApiConstants.googleAuth,
         {'idToken': idToken},
       );
       final authResponse = AuthResponse.fromJson(response);
