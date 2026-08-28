@@ -31,6 +31,10 @@ class ApiService {
   // Check if user is authenticated
   bool get isAuthenticated => _authToken != null && _authToken!.isNotEmpty;
 
+  // Current auth token, for consumers that need to transport it explicitly
+  // (e.g. the WebSocket handshake), not just via the HTTP headers above.
+  String? get authToken => _authToken;
+
   // Get headers with authentication
   Map<String, String> get _headers {
     final headers = <String, String>{
