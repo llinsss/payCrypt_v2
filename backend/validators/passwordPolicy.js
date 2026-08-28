@@ -3,15 +3,17 @@
  * Ensures API, UI, documentation, and tests all reference the same rules.
  */
 
+const SPECIAL_CHARS = "@$!%*?&#";
+
 const POLICY = {
   MIN_LENGTH: 8,
   MAX_LENGTH: 128,
-  SPECIAL_CHARS: "@$!%*?&#",
+  SPECIAL_CHARS,
   REQUIRED_RULES: [
     { name: "lowercase", pattern: /[a-z]/, code: "PASSWORD_MISSING_LOWERCASE" },
     { name: "uppercase", pattern: /[A-Z]/, code: "PASSWORD_MISSING_UPPERCASE" },
     { name: "digit", pattern: /\d/, code: "PASSWORD_MISSING_DIGIT" },
-    { name: "special", pattern: new RegExp(`[${POLICY.SPECIAL_CHARS}]`), code: "PASSWORD_MISSING_SPECIAL" },
+    { name: "special", pattern: new RegExp(`[${SPECIAL_CHARS}]`), code: "PASSWORD_MISSING_SPECIAL" },
   ],
 };
 
