@@ -14,6 +14,7 @@
         "lint": "npx --yes eslint .",
         "check:raw-sql": "node scripts/check-raw-sql.js",
         "backup:db": "node scripts/backup.js",
+        "backup:drill": "node scripts/backup.js --drill",
         "migrate": "knex migrate:latest && knex seed:run",
         "migrate:rollback": "knex migrate:rollback",
         "migrate:rollback:all": "knex migrate:rollback --all",
@@ -26,7 +27,7 @@
         "test:migrations": "node scripts/test-migrations.js",
         "generate:migration-docs": "node scripts/generate-migration-docs.js",
         "load-test:pool": "node scripts/load-test-pool.js",
-     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='tests/(env\\.validation|cacheControl|asyncContext|backup|backupEncryption|backupMetadata|backupAdminController|circuitBreaker|scheduledPayment|batchPayment|sentry|s3Client|redactor|webhookRetry|queueCorrelation|auth\\.service|kyc\\.service|kycController|logging|developmentSeeds|validateWebhookUrl|receiptService|validation\\.test|sql_injection|tag\\.service|transaction_cache|webhooks/paystackWebhook|webhooks/monnifyWebhook|services/BatchPaymentService|services/KeyVaultService)' --forceExit",
+     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='tests/(env\\.validation|cacheControl|asyncContext|backup|backupEncryption|backupMetadata|backupAdminController|circuitBreaker|scheduledPayment|batchPayment|sentry|s3Client|redactor|webhookRetry|webhookDeliveryLimits|webhookAdminRetry|exchangeRateFreshness|queueCorrelation|auth\\.service|kyc\\.service|kycController|logging|developmentSeeds|validateWebhookUrl|receiptService|validation\\.test|sql_injection|tag\\.service|transaction_cache|webhooks/paystackWebhook|webhooks/monnifyWebhook|services/BatchPaymentService|services/KeyVaultService)' --forceExit",
 "test:all": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit"
     },
     "jest": {

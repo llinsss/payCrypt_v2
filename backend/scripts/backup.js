@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 
 import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import dotenv from "dotenv";
 
-import { encryptBuffer } from "../utils/backupEncryption.js";
+import { encryptBuffer, decryptBuffer } from "../utils/backupEncryption.js";
 import { putObject as putObjectToS3, deleteObject as deleteObjectFromS3 } from "../utils/s3Client.js";
-import { writeBackupMetadata, deleteBackupMetadata } from "../utils/backupMetadata.js";
+import {
+  writeBackupMetadata,
+  deleteBackupMetadata,
+  listBackupMetadata,
+  recordRestoreDrill,
+} from "../utils/backupMetadata.js";
 
 const DUMP_HEADER = "PGDMP";
 const DEFAULT_BACKUP_PREFIX = "taggedpay";
@@ -218,6 +225,147 @@ export async function encryptBackupFile(filePath, encryptionKey, options = {}) {
 }
 
 /**
+ * Streams the file through SHA-256 so backups carry a tamper/corruption
+ * fingerprint that a later restore drill can check before spending time on a
+ * full `pg_restore`.
+ */
+export async function computeChecksum(filePath, algorithm = "sha256") {
+  const buffer = await fs.readFile(filePath);
+  return createHash(algorithm).update(buffer).digest("hex");
+}
+
+/**
+ * Proves a backup archive is actually restorable:
+ *   1. its bytes still match the recorded checksum (no silent corruption),
+ *   2. it decrypts with the supplied key (covers key-rotation mistakes), and
+ *   3. `pg_restore --list` can parse the resulting custom-format dump.
+ *
+ * Decryption happens into an isolated temp file that is always removed.
+ */
+export async function verifyBackupIntegrity(filePath, options = {}) {
+  const {
+    expectedChecksum = null,
+    checksumAlgorithm = "sha256",
+    encryptionKey = null,
+    execFileImpl = execFileAsync,
+    pgRestorePath = DEFAULT_PG_RESTORE_PATH,
+  } = options;
+
+  const result = { checksumOk: null, restoreOk: false, ok: false };
+
+  const actualChecksum = await computeChecksum(filePath, checksumAlgorithm);
+  result.checksum = actualChecksum;
+  if (expectedChecksum) {
+    result.checksumOk = actualChecksum === expectedChecksum;
+    if (!result.checksumOk) {
+      throw new Error(
+        `Backup checksum mismatch for ${path.basename(filePath)}: expected ${expectedChecksum}, got ${actualChecksum}`,
+      );
+    }
+  }
+
+  const isEncrypted = filePath.endsWith(".enc");
+  let dumpPath = filePath;
+  let scratchDir = null;
+
+  try {
+    if (isEncrypted) {
+      if (!encryptionKey) {
+        throw new Error("Encrypted backup supplied but no encryption key was provided for the drill");
+      }
+      const ciphertext = await fs.readFile(filePath);
+      const plaintext = decryptBuffer(ciphertext, encryptionKey);
+      scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), "paycrypt-restore-drill-"));
+      dumpPath = path.join(scratchDir, path.basename(filePath).replace(/\.enc$/, ""));
+      await fs.writeFile(dumpPath, plaintext, { mode: 0o600 });
+    }
+
+    await verifyBackupFile(dumpPath, { execFileImpl, pgRestorePath });
+    result.restoreOk = true;
+    result.ok = result.checksumOk !== false;
+    return result;
+  } finally {
+    if (scratchDir) {
+      await fs.rm(scratchDir, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * Automated restore drill: takes the most recent tracked backup, proves it is
+ * restorable end-to-end, and records the outcome (plus the backup's age) so the
+ * result can be alerted on. Returns metrics; never throws for a failed drill —
+ * the failure is captured in the returned/recorded result.
+ */
+export async function runRestoreDrill(config, options = {}) {
+  const {
+    execFileImpl = execFileAsync,
+    now = () => Date.now(),
+    persist = true,
+  } = options;
+
+  const startedAt = now();
+  const testedAt = new Date(startedAt).toISOString();
+  const backups = await listBackupMetadata(config.backupDir, 1);
+
+  if (backups.length === 0) {
+    const result = {
+      testedAt,
+      filename: null,
+      ok: false,
+      checksumOk: false,
+      restoreOk: false,
+      backupAgeMs: null,
+      durationMs: 0,
+      error: "No tracked backups found to drill",
+    };
+    if (persist) await recordRestoreDrill(config.backupDir, result);
+    return result;
+  }
+
+  const [meta] = backups;
+  const filePath = path.join(config.backupDir, meta.filename);
+  const createdMs = Date.parse(meta.createdAt);
+  const backupAgeMs = Number.isNaN(createdMs) ? null : startedAt - createdMs;
+
+  let result;
+  try {
+    const integrity = await verifyBackupIntegrity(filePath, {
+      expectedChecksum: meta.checksum ?? null,
+      checksumAlgorithm: meta.checksumAlgorithm ?? "sha256",
+      encryptionKey: config.encryptionKey,
+      execFileImpl,
+      pgRestorePath: config.pgRestorePath,
+    });
+
+    result = {
+      testedAt,
+      filename: meta.filename,
+      ok: integrity.ok,
+      checksumOk: integrity.checksumOk !== false,
+      restoreOk: integrity.restoreOk,
+      backupAgeMs,
+      durationMs: now() - startedAt,
+      error: null,
+    };
+  } catch (error) {
+    result = {
+      testedAt,
+      filename: meta.filename,
+      ok: false,
+      checksumOk: /checksum mismatch/i.test(error.message) ? false : null,
+      restoreOk: false,
+      backupAgeMs,
+      durationMs: now() - startedAt,
+      error: error.message,
+    };
+  }
+
+  if (persist) await recordRestoreDrill(config.backupDir, result);
+  return result;
+}
+
+/**
  * Uploads a backup file to S3 if BACKUP_S3_BUCKET (and AWS credentials) are
  * configured. Returns { uploaded: false } otherwise so callers can treat S3
  * as an optional destination.
@@ -324,6 +472,7 @@ export async function runBackup(env = process.env) {
   const s3Result = await uploadBackupToS3(finalFilePath, finalFilename, config);
 
   const stat = await fs.stat(finalFilePath);
+  const checksum = await computeChecksum(finalFilePath);
   await writeBackupMetadata(config.backupDir, {
     filename: finalFilename,
     createdAt: new Date().toISOString(),
@@ -333,6 +482,8 @@ export async function runBackup(env = process.env) {
     uploadedToS3: s3Result.uploaded,
     s3Bucket: s3Result.bucket ?? null,
     s3Key: s3Result.key ?? null,
+    checksum,
+    checksumAlgorithm: "sha256",
   });
 
   const deletedBackups = await pruneBackups(config);
@@ -353,6 +504,7 @@ export async function runBackup(env = process.env) {
     filePath: finalFilePath,
     filename: finalFilename,
     encrypted,
+    checksum,
     uploadedToS3: s3Result.uploaded,
     s3Bucket: s3Result.bucket ?? null,
     s3Key: s3Result.key ?? null,
@@ -360,13 +512,42 @@ export async function runBackup(env = process.env) {
   };
 }
 
+/**
+ * Resolve config and run a restore drill against the newest backup. Exposed for
+ * the `npm run backup:drill` entrypoint and host cron scheduling.
+ */
+export async function runBackupRestoreDrill(env = process.env) {
+  const config = resolveBackupConfig(env);
+  const result = await runRestoreDrill(config);
+
+  const ageHours = Number.isFinite(result.backupAgeMs)
+    ? (result.backupAgeMs / 3_600_000).toFixed(1)
+    : "unknown";
+  console.log(
+    `Restore drill for ${result.filename ?? "(none)"}: ok=${result.ok} ` +
+      `checksumOk=${result.checksumOk} restoreOk=${result.restoreOk} ` +
+      `backupAge=${ageHours}h durationMs=${result.durationMs}`,
+  );
+  if (result.error) {
+    console.error(`Restore drill error: ${result.error}`);
+  }
+  return result;
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  runBackup()
-    .then(() => {
-      process.exitCode = 0;
-    })
-    .catch((error) => {
-      console.error(`Database backup failed: ${error.message}`);
-      process.exitCode = 1;
-    });
+  const drillMode = process.argv.includes("--drill");
+  const task = drillMode
+    ? runBackupRestoreDrill().then((result) => {
+        process.exitCode = result.ok ? 0 : 1;
+      })
+    : runBackup().then(() => {
+        process.exitCode = 0;
+      });
+
+  task.catch((error) => {
+    console.error(
+      `Database backup ${drillMode ? "restore drill" : "run"} failed: ${error.message}`,
+    );
+    process.exitCode = 1;
+  });
 }
