@@ -6,6 +6,7 @@ class ApiConstants {
   // Auth endpoints
   static const String register = '/auth/register';
   static const String login = '/auth/login';
+  static const String googleAuth = '/auth/google';
 
   // Balance endpoints
   static const String balances = '/balances';
