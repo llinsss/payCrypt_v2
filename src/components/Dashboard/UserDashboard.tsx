@@ -11,6 +11,7 @@ import {
   Plus,
   QrCode,
   RefreshCcw,
+  AlertTriangle,
 } from "lucide-react";
 import TransactionTable from "./TransactionTable";
 import { apiClient } from "../../utils/api";
@@ -18,6 +19,8 @@ import {
   formatCrypto,
   formatCurrency,
   formatCurrencyToNGN,
+  parseDecimal,
+  sumDecimals,
 } from "../../utils/amount";
 import { useAuth } from "../../contexts/AuthContext";
 import { NavLink } from "react-router-dom";
@@ -59,47 +62,57 @@ const UserDashboard: React.FC = () => {
     fetchDashboardData();
   }, []);
 
-  const totalCryptoValue = balances.reduce(
-    (sum, balance) => Number(sum) + Number(balance.usd_value),
-    0
+  const { total: totalCryptoValue, invalidCount: invalidUsdCount } =
+    sumDecimals(balances, (balance) => balance.usd_value);
+
+  const { total: totalNgnValue, invalidCount: invalidNgnCount } = sumDecimals(
+    balances,
+    (balance) => balance.ngn_value
   );
 
-  const totalNgnValue = balances.reduce(
-    (sum, balance) => Number(sum) + Number(balance.ngn_value),
-    0
-  );
+  const hasMalformedBalances = invalidUsdCount > 0 || invalidNgnCount > 0;
 
-  const stats = useMemo(
-    () => [
+  const stats = useMemo(() => {
+    const totalDeposit = parseDecimal(summary?.total_deposit);
+    const totalWithdrawal = parseDecimal(summary?.total_withdrawal);
+    const totalBalance = parseDecimal(summary?.total_balance);
+
+    return [
       {
         title: "Available Balance",
-        value: `${formatCurrencyToNGN(
-          (totalNgnValue || summary?.total_balance) ?? 0
-        )}`,
+        value: formatCurrencyToNGN(totalNgnValue || totalBalance || 0),
         icon: Wallet,
         subtitle: "NGN Wallet",
       },
       {
         title: "Total Portfolio",
-        value: formatCurrency(summary?.total_balance ?? 0),
+        value:
+          totalBalance === null
+            ? "Unavailable"
+            : formatCurrency(totalBalance),
         icon: TrendingUp,
         subtitle: "All Assets",
       },
       {
         title: "Total Deposits",
-        value: formatCurrency(summary?.total_deposit ?? 0),
+        value:
+          totalDeposit === null
+            ? "Unavailable"
+            : formatCurrency(totalDeposit),
         icon: ArrowDownLeft,
         subtitle: "Lifetime",
       },
       {
         title: "Total Withdrawals",
-        value: formatCurrency(summary?.total_withdrawal ?? 0),
+        value:
+          totalWithdrawal === null
+            ? "Unavailable"
+            : formatCurrency(totalWithdrawal),
         icon: ArrowUpRight,
         subtitle: "Lifetime",
       },
-    ],
-    [summary, totalNgnValue]
-  );
+    ];
+  }, [summary, totalNgnValue]);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -196,12 +209,25 @@ const UserDashboard: React.FC = () => {
           </span>
         </div>
 
+        {hasMalformedBalances && (
+          <div className="flex items-start gap-2 mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+            <span>
+              Some balances returned unreadable values and were excluded from
+              your totals. Figures below may be incomplete.
+            </span>
+          </div>
+        )}
+
         {/* Assets Grid */}
         <div className="space-y-3">
           {balances.map((balance) => {
-            const hasBalance = Number(balance.amount) > 0;
-            const usdValue = Number(balance.usd_value);
-            const tokenPrice = Number(balance.token_price);
+            const amount = parseDecimal(balance.amount);
+            const usdValue = parseDecimal(balance.usd_value);
+            const tokenPrice = parseDecimal(balance.token_price);
+            const hasBalance = (amount ?? 0) > 0;
+            const isMalformed =
+              amount === null || usdValue === null || tokenPrice === null;
 
             return (
               <div
@@ -226,7 +252,10 @@ const UserDashboard: React.FC = () => {
                         </span>
                       </div>
                       <div className="text-xs text-gray-500">
-                        Price: {formatCurrency(tokenPrice)}
+                        Price:{" "}
+                        {tokenPrice === null
+                          ? "Unavailable"
+                          : formatCurrency(tokenPrice)}
                       </div>
                     </div>
                   </div>
@@ -234,14 +263,20 @@ const UserDashboard: React.FC = () => {
                   {/* Balance */}
                   <div className="text-right">
                     <div className="text-sm font-semibold text-gray-800">
-                      {formatCrypto(
-                        Number(balance.amount),
-                        balance.token_symbol
-                      )}
+                      {amount === null
+                        ? "Unavailable"
+                        : formatCrypto(amount, balance.token_symbol)}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {formatCurrency(usdValue)} USD
+                      {usdValue === null
+                        ? "-- USD"
+                        : `${formatCurrency(usdValue)} USD`}
                     </div>
+                    {isMalformed && (
+                      <div className="text-xs text-amber-600 mt-1">
+                        Malformed data
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -274,7 +309,8 @@ const UserDashboard: React.FC = () => {
         </div>
 
         {/* Empty State */}
-        {balances.filter((b) => Number(b.amount) > 0).length === 0 && (
+        {balances.filter((b) => (parseDecimal(b.amount) ?? 0) > 0).length ===
+          0 && (
           <div className="text-center py-12 text-gray-500">
             <Coins size={32} className="mx-auto mb-3 text-gray-400" />
             <p>No assets with balance</p>

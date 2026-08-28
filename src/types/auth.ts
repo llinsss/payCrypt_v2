@@ -17,6 +17,7 @@ export interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (userData: RegisterData) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<AuthUser | null>;
   loading: boolean;
   isLoading: boolean; // For form loading states
   isAuthenticated: boolean;
