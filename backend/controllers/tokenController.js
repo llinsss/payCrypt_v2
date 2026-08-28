@@ -1,9 +1,27 @@
 import Token from "../models/Token.js";
+import catalogCache from "../services/CatalogCacheService.js";
+
+const CATALOG = catalogCache.CATALOGS.TOKENS;
+
+/**
+ * Token controller
+ *
+ * Pagination is validated upstream by the validate(paginationSchema, "query")
+ * middleware wired in tokens.js routes -- req.query.page and req.query.limit
+ * are guaranteed to be safe integers when they reach these handlers.
+ *
+ * Body fields for create/update are validated and stripped by
+ * validate(createTokenSchema) / validate(updateTokenSchema) middleware,
+ * preventing mass-assignment of undocumented or sensitive columns.
+ */
 
 export const createToken = async (req, res) => {
   try {
+    // req.body has already been validated and unknown fields stripped by
+    // the validate(createTokenSchema) middleware -- no mass assignment risk.
     const tokenData = req.body;
     const token = await Token.create(tokenData);
+    await catalogCache.invalidate(CATALOG);
     res.status(201).json(token);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -12,13 +30,16 @@ export const createToken = async (req, res) => {
 
 export const getTokens = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-    const offset = (page - 1) * limit;
+    // page and limit are coerced to integers and bounded by the
+    // validate(paginationSchema, "query") middleware before reaching here.
+    const { page, limit } = req.query;
 
-    const tokens = await Token.getAll(
-      Number.parseInt(limit),
-      Number.parseInt(offset)
-    );
+    const cached = await catalogCache.get(CATALOG, page, limit);
+    if (cached) return res.json(cached);
+
+    const offset = (page - 1) * limit;
+    const tokens = await Token.getAll(limit, offset);
+    await catalogCache.set(CATALOG, page, limit, tokens);
     res.json(tokens);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -31,7 +52,7 @@ export const getTokenById = async (req, res) => {
     const token = await Token.findById(id);
 
     if (!token) {
-      return res.status(400).json({ error: "Token not found" });
+      return res.status(404).json({ error: "Token not found" });
     }
 
     res.json(token);
@@ -46,10 +67,13 @@ export const updateToken = async (req, res) => {
     const token = await Token.findById(id);
 
     if (!token) {
-      return res.status(400).json({ error: "Token not found" });
+      return res.status(404).json({ error: "Token not found" });
     }
 
+    // req.body has already been validated and unknown fields stripped by
+    // the validate(updateTokenSchema) middleware -- no mass assignment risk.
     const updatedToken = await Token.update(id, req.body);
+    await catalogCache.invalidate(CATALOG);
     res.json(updatedToken);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -62,10 +86,11 @@ export const deleteToken = async (req, res) => {
     const token = await Token.findById(id);
 
     if (!token) {
-      return res.status(400).json({ error: "Token not found" });
+      return res.status(404).json({ error: "Token not found" });
     }
 
     await Token.delete(id);
+    await catalogCache.invalidate(CATALOG);
     res.json({ message: "Token deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
