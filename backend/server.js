@@ -14,14 +14,13 @@ try {
   process.exit(1);
 }
 
-const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: AuditLog }, { default: ExportService }, { default: SocketService }, { initApollo }] = await Promise.all([
+const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: HousekeepingService }, { default: SocketService }, { initApollo }] = await Promise.all([
   import("./app.js"),
   import("./config/database.js"),
   import("./config/redis.js"),
   import("./listeners.js"),
   import("./workers.js"),
-  import("./models/AuditLog.js"),
-  import("./services/ExportService.js"),
+  import("./services/HousekeepingService.js"),
   import("./services/SocketService.js"),
   import("./graphql/apollo.js"),
 ]);
@@ -111,14 +110,14 @@ const isProduction = process.env.NODE_ENV === "production";
 
     const retentionDays = parseInt(process.env.AUDIT_LOG_RETENTION_DAYS) || 90;
 
+    // Housekeeping jobs run on every replica's timer, but HousekeepingService
+    // wraps each run in a distributed lease (see backend/services/
+    // HousekeepingService.js) so only one replica actually executes the work
+    // per tick; the rest observe the lease held and skip. See
+    // backend/docs/housekeeping-jobs.md for details.
     setInterval(async () => {
       try {
-        const deleted = await AuditLog.deleteOlderThan(retentionDays);
-        if (deleted > 0) {
-          console.log(
-            `Audit log cleanup: deleted ${deleted} entries older than ${retentionDays} days`
-          );
-        }
+        await HousekeepingService.runAuditLogCleanup(retentionDays);
       } catch (err) {
         console.error("Audit log cleanup failed:", err.message);
       }
@@ -128,10 +127,7 @@ const isProduction = process.env.NODE_ENV === "production";
 
     setInterval(async () => {
       try {
-        const deleted = await ExportService.cleanupExpiredExports();
-        if (deleted > 0) {
-          console.log(`Export cleanup: deleted ${deleted} expired export files`);
-        }
+        await HousekeepingService.runExportCleanup();
       } catch (err) {
         console.error("Export cleanup failed:", err.message);
       }
