@@ -419,24 +419,6 @@ router.get("/convert", controller.convert_currency);
 
 /**
  * @swagger
- * /api/health:
- *   get:
- *     summary: General health check
- *     tags: [General]
- *     responses:
- *       200:
- *         description: Health status
- */
-router.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    environment: "anon",
-  });
-});
-
-/**
- * @swagger
  * /api/api/crypto-rate:
  *   get:
  *     summary: Get cryptocurrency rate
