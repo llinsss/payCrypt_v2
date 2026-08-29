@@ -48,15 +48,6 @@ const app = express();
 
 initSentry();
 
-// Custom Sentry Middleware to attach context
-app.use((req, res, next) => {
-  // Try to use Sentry's newer IsolationScope if available, otherwise just use setContext safely.
-  // Actually, Express requests run in their own async context in Node, so we can do this:
-  Sentry.setContext("request_body", sanitizeSensitiveBody(req.body || {}));
-  Sentry.setContext("request_query", sanitizeSensitiveBody(req.query || {}));
-  next();
-});
-
 // ===== SECURITY MIDDLEWARE =====
 
 // Helmet for HTTP security headers
@@ -171,6 +162,21 @@ app.use(detectSqlInjection);
 
 // Sanitize all request inputs
 app.use(sanitizeRequest);
+
+// Sentry request context — runs AFTER body parsing and sanitization so
+// req.body is populated and secrets are already redacted.
+app.use((req, res, next) => {
+  Sentry.withIsolationScope((scope) => {
+    scope.setContext("request_body", sanitizeSensitiveBody(req.body || {}));
+    scope.setContext("request_query", sanitizeSensitiveBody(req.query || {}));
+    scope.setContext("request_meta", {
+      method: req.method,
+      url: req.originalUrl,
+      ip: req.ip,
+    });
+    next();
+  });
+});
 
 // Logging (only in development)
 if (process.env.NODE_ENV === "development") {
