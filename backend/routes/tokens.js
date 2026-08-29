@@ -7,7 +7,7 @@ import {
   deleteToken,
 } from "../controllers/tokenController.js";
 import { authenticate } from "../middleware/auth.js";
-import { publicCache } from "../middleware/cacheControl.js";
+import { publicCache, invalidateCache } from "../middleware/cacheControl.js";
 import validate from "../middleware/validate.js";
 import { paginationSchema } from "../validators/paginationValidator.js";
 import { createTokenSchema, updateTokenSchema } from "../validators/tokenSchemas.js";
@@ -91,7 +91,7 @@ const router = express.Router();
  *       422:
  *         description: Validation error (invalid or unknown fields)
  */
-router.post("/", validate(createTokenSchema), createToken);
+router.post("/", validate(createTokenSchema), invalidateCache("tokens"), createToken);
 router.get("/", validate(paginationSchema, "query"), publicCache(3600), getTokens);
 
 /**
@@ -147,7 +147,7 @@ router.get("/", validate(paginationSchema, "query"), publicCache(3600), getToken
  *         description: Token not found
  */
 router.get("/:id", getTokenById);
-router.put("/:id", validate(updateTokenSchema), updateToken);
-router.delete("/:id", deleteToken);
+router.put("/:id", validate(updateTokenSchema), invalidateCache("tokens"), updateToken);
+router.delete("/:id", invalidateCache("tokens"), deleteToken);
 
 export default router;
