@@ -27,14 +27,7 @@ export const RATE_LIMIT_TIERS = {
   ENTERPRISE: "ENTERPRISE",
 };
 
-// Per-minute user limits kept for backwards-compatible tests and middleware.
 export const TIER_LIMITS = {
-  [RATE_LIMIT_TIERS.FREE]: 100,
-  [RATE_LIMIT_TIERS.PREMIUM]: 1000,
-  [RATE_LIMIT_TIERS.ENTERPRISE]: 10000,
-};
-
-export const ENDPOINT_TIER_LIMITS = {
   [RATE_LIMIT_TIERS.FREE]: {
     login: 5,
     transactions: 100,
@@ -55,6 +48,8 @@ export const ENDPOINT_TIER_LIMITS = {
   },
 };
 
+export const ENDPOINT_TIER_LIMITS = TIER_LIMITS;
+
 const fallbackStores = new Map();
 
 // Track Redis availability for recovery detection and metrics
@@ -70,6 +65,44 @@ const clientIp = (req) =>
   (req.ip || req.headers?.["x-forwarded-for"] || req.connection?.remoteAddress || "unknown")
     .toString()
     .replace(/[^a-zA-Z0-9.:-]/g, "_");
+
+export const getOperationLimit = (tier = RATE_LIMIT_TIERS.FREE, operation = "api") => {
+  const normalizedTier = tier || RATE_LIMIT_TIERS.FREE;
+  if (!Object.values(RATE_LIMIT_TIERS).includes(normalizedTier)) {
+    throw new Error(`Invalid tier: ${normalizedTier}`);
+  }
+  const tierConfig = TIER_LIMITS[normalizedTier] || TIER_LIMITS.FREE;
+  if (!tierConfig || typeof tierConfig !== "object") {
+    throw new Error(`Tier ${normalizedTier} has no per-operation config`);
+  }
+  const limit = tierConfig[operation] || tierConfig.api;
+  if (typeof limit !== "number" || limit < 0) {
+    throw new Error(`Invalid operation limit for ${normalizedTier}:${operation} — got ${typeof limit}: ${limit}`);
+  }
+  return limit;
+};
+
+export const validateRateLimitConfig = () => {
+  const errors = [];
+  for (const [tierName, tierConfig] of Object.entries(TIER_LIMITS)) {
+    if (!Object.values(RATE_LIMIT_TIERS).includes(tierName)) {
+      errors.push(`Unknown tier: ${tierName}`);
+      continue;
+    }
+    if (typeof tierConfig !== "object" || tierConfig === null) {
+      errors.push(`Tier ${tierName} config is not an object: ${typeof tierConfig}`);
+      continue;
+    }
+    for (const [operation, limit] of Object.entries(tierConfig)) {
+      if (typeof limit !== "number" || limit < 0) {
+        errors.push(`Tier ${tierName} operation '${operation}' has invalid limit: ${typeof limit} ${limit}`);
+      }
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(`Rate limit config validation failed:\n  ${errors.join("\n  ")}`);
+  }
+};
 
 const hasRedisSortedSet = () =>
   redis &&
@@ -200,8 +233,7 @@ export const createTierRateLimiter = (options = {}) => {
   const endpointName = options.endpointName || options.type || "api";
   return async (req, res, next) => {
     const tier = req.user?.tier || RATE_LIMIT_TIERS.FREE;
-    const endpointLimits = ENDPOINT_TIER_LIMITS[tier] || ENDPOINT_TIER_LIMITS.FREE;
-    const max = options.max || endpointLimits[endpointName] || endpointLimits.api || TIER_LIMITS[tier] || TIER_LIMITS.FREE;
+    const max = options.max || getOperationLimit(tier, endpointName);
     return createUserRateLimiter({
       ...options,
       endpointName,

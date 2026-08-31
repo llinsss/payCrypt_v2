@@ -32,10 +32,11 @@
     "jest": {
         "testEnvironment": "node",
         "transform": {},
+        "setupFiles": [
+            "<rootDir>/tests/setupEnv.js"
+        ],
         "testPathIgnorePatterns": [
-            "/node_modules/",
-            "Real-Time Stellar Horizon",
-            "Multi-Chain Transaction"
+            "/node_modules/"
         ]
     },
     "dependencies": {

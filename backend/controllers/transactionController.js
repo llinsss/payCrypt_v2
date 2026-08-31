@@ -574,3 +574,67 @@ export const getPaymentHistory = async (req, res) => {
     });
   }
 };
+
+/**
+ * Estimate gas costs before transaction submission on EVM chains
+ * POST /api/v1/transactions/estimate-gas
+ */
+export const estimateTransactionGas = async (req, res) => {
+  try {
+    const { chain, recipientTag, amount, token, userBalance } = req.body;
+
+    if (!chain || !recipientTag || !amount || !token) {
+      return res.status(400).json({
+        error: "Missing required fields: chain, recipientTag, amount, token",
+      });
+    }
+
+    // Import gas estimation service
+    const MultiChainTransactionService = (await import("../services/MultiChainTransactionService.js")).default;
+
+    // Validate chain is EVM
+    if (!MultiChainTransactionService.isEVMChain(chain)) {
+      return res.status(400).json({
+        error: `Chain ${chain} is not supported for gas estimation`,
+        code: "UNSUPPORTED_CHAIN",
+      });
+    }
+
+    // Get gas estimation preview
+    const preview = await MultiChainTransactionService.getGasEstimationPreview(
+      { balance: userBalance, address: req.user?.walletAddress },
+      chain,
+      recipientTag,
+      amount,
+      token
+    );
+
+    if (!preview.success) {
+      return res.status(preview.code === "RPC_ERROR" ? 502 : 503).json({
+        error: preview.error,
+        code: preview.code,
+        message: "Unable to estimate gas. Please try again later.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      preview: preview.preview,
+      message: "Gas estimation completed",
+    });
+  } catch (error) {
+    console.error("Gas estimation error:", error);
+
+    if (error.statusCode === 502 || error.statusCode === 503) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        code: error.code,
+      });
+    }
+
+    res.status(500).json({
+      error: "Failed to estimate gas",
+      message: error.message,
+    });
+  }
+};

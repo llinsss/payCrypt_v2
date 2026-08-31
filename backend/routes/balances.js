@@ -10,7 +10,7 @@ import {
   getBalanceByTag,
   getBalanceSummary,
 } from "../controllers/balanceController.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { validate, validateParams } from "../middleware/validation.js";
 import { balanceCreateSchema, balanceUpdateSchema } from "../schemas/balance.js";
 import { numericIdParamSchema } from "../validators/customValidators.js";
@@ -55,15 +55,36 @@ router.get("/", authenticate, balanceQueryLimiter, privateNoStore, getBalanceByU
  * @swagger
  * /api/balances/all:
  *   get:
- *     summary: Get all balances (admin)
+ *     summary: Get all balances (admin only)
+ *     description: Returns a minimal paginated projection of every customer's balances. Requires an authenticated admin user.
  *     tags: [Balances]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number (1-based)
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           maximum: 100
+ *         description: Number of records per page
  *     responses:
  *       200:
- *         description: List of all balances
+ *         description: Paginated list of all balances
+ *       401:
+ *         description: Unauthorized — access token required or invalid
+ *       403:
+ *         description: Forbidden — admin access required
  */
-router.get("/all", authenticate, balanceQueryLimiter, getBalances);
+router.get("/all", authenticate, requireAdmin, balanceQueryLimiter, getBalances);
 
 /**
  * @swagger

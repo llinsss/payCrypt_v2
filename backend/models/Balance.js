@@ -171,6 +171,12 @@ const Balance = {
       .limit(limit)
       .offset(offset);
   },
+
+  async countAll() {
+    const result = await db("balances").count("* as total").first();
+    return result ? Number(result.total) : 0;
+  },
+
   async findByUserId(userId) {
     // Try cache first
     const cacheKey = cacheKeys.balanceByUser(userId);

@@ -99,11 +99,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     navigate("/login");
   };
 
+  // Re-fetches the current user's claims from the server rather than trusting
+  // the locally cached state, so role/authorization checks can't rely on a
+  // stale token payload. Throws (and clears the session) on an invalid or
+  // revoked token so callers can redirect to login.
+  const refreshUser = async (): Promise<AuthUser | null> => {
+    if (!authApi.isAuthenticated()) {
+      setUser(null);
+      return null;
+    }
+    try {
+      const currentUser = await authApi.getCurrentUser();
+      setUser(currentUser);
+      return currentUser;
+    } catch (error) {
+      authApi.logout();
+      setUser(null);
+      throw error;
+    }
+  };
+
   const value: AuthContextType = {
     user,
     login,
     register,
     logout,
+    refreshUser,
     loading,
     isLoading,
     isAuthenticated: !!user,

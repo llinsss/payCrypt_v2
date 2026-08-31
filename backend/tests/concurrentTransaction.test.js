@@ -1,9 +1,14 @@
 import { jest } from "@jest/globals";
-import LockService from "../services/LockService.js";
-import distributedLock from "../utils/distributedLock.js";
 
-// Mock the lower level lock utility
-jest.mock("../utils/distributedLock.js");
+jest.unstable_mockModule("../utils/distributedLock.js", () => ({
+  default: {
+    acquire: jest.fn(),
+    release: jest.fn()
+  }
+}));
+
+const { default: LockService } = await import("../services/LockService.js");
+const { default: distributedLock } = await import("../utils/distributedLock.js");
 
 describe("Concurrency Test Simulation", () => {
   beforeEach(() => {
@@ -15,7 +20,7 @@ describe("Concurrency Test Simulation", () => {
     distributedLock.acquire.mockImplementation(async () => {
       callCount++;
       if (callCount === 1) return "id-1";
-      return null; // Fail second one immediately for this test
+      return null;
     });
 
     const results = await Promise.allSettled([
@@ -40,5 +45,33 @@ describe("Concurrency Test Simulation", () => {
 
     expect(id1).toBe("id-1");
     expect(id2).toBe("id-2");
+  });
+
+  it("should prevent concurrent access to same resource", async () => {
+    const acquireStates = [];
+    distributedLock.acquire.mockImplementation(async (key) => {
+      acquireStates.push({ key, timestamp: Date.now() });
+      if (acquireStates.length === 1) return "token-1";
+      return null;
+    });
+
+    const [res1, res2] = await Promise.all([
+      LockService.acquireUserLock(5),
+      LockService.acquireUserLock(5)
+    ]);
+
+    expect(res1).toBe("token-1");
+    expect(res2).toBeNull();
+  });
+
+  it("should use lock identifier for ownership-safe release", async () => {
+    distributedLock.acquire.mockResolvedValue("owned-token-123");
+    distributedLock.release.mockResolvedValue(true);
+
+    const identifier = await LockService.acquireUserLock(1);
+    const released = await LockService.releaseUserLock(1, identifier);
+
+    expect(released).toBe(true);
+    expect(distributedLock.release).toHaveBeenCalledWith("user:1:txn", "owned-token-123");
   });
 });
