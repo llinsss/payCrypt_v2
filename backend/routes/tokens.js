@@ -6,7 +6,7 @@ import {
   updateToken,
   deleteToken,
 } from "../controllers/tokenController.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { publicCache } from "../middleware/cacheControl.js";
 import validate from "../middleware/validate.js";
 import { paginationSchema } from "../validators/paginationValidator.js";
@@ -52,47 +52,17 @@ const router = express.Router();
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - symbol
- *               - name
- *               - decimals
- *               - chain
- *             properties:
- *               symbol:
- *                 type: string
- *                 example: "USDC"
- *               name:
- *                 type: string
- *                 example: "USD Coin"
- *               decimals:
- *                 type: integer
- *                 minimum: 0
- *                 maximum: 36
- *                 example: 6
- *               contractAddress:
- *                 type: string
- *               chain:
- *                 type: string
- *                 enum: [starknet, base, flow, lisk, u2u, evm, stellar]
- *               is_active:
- *                 type: boolean
- *                 default: true
- *               logoUrl:
- *                 type: string
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     responses:
  *       201:
  *         description: Token created
- *       422:
- *         description: Validation error (invalid or unknown fields)
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  */
-router.post("/", validate(createTokenSchema), createToken);
-router.get("/", validate(paginationSchema, "query"), publicCache(3600), getTokens);
+router.post("/", authenticate, requireAdmin, createToken);
+router.get("/", publicCache(3600), getTokens);
 
 /**
  * @swagger
@@ -116,6 +86,7 @@ router.get("/", validate(paginationSchema, "query"), publicCache(3600), getToken
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     parameters:
  *       - in: path
  *         name: id
@@ -125,15 +96,16 @@ router.get("/", validate(paginationSchema, "query"), publicCache(3600), getToken
  *     responses:
  *       200:
  *         description: Token updated
- *       404:
- *         description: Token not found
- *       422:
- *         description: Validation error
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  *   delete:
  *     summary: Delete token
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     parameters:
  *       - in: path
  *         name: id
@@ -143,11 +115,13 @@ router.get("/", validate(paginationSchema, "query"), publicCache(3600), getToken
  *     responses:
  *       200:
  *         description: Token deleted
- *       404:
- *         description: Token not found
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  */
 router.get("/:id", getTokenById);
-router.put("/:id", validate(updateTokenSchema), updateToken);
-router.delete("/:id", deleteToken);
+router.put("/:id", authenticate, requireAdmin, updateToken);
+router.delete("/:id", authenticate, requireAdmin, deleteToken);
 
 export default router;

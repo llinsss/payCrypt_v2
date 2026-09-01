@@ -200,10 +200,10 @@ export const createUserBalance = async (user_id, tag) => {
 export const updateUserBalance = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    if (!user) return;
+    if (!user) return res.status(404).json({ error: "User not found" });
     const balances = await Balance.findByUserId(user.id);
     if (!balances.length) {
-      return;
+      return res.json([]);
     }
     await Promise.all(
       balances.map(async (balance) => {
@@ -242,8 +242,10 @@ export const updateUserBalance = async (req, res) => {
     );
 
     console.log(" Polling cycle complete.");
+    return res.json(await Balance.findByUserId(user.id));
   } catch (err) {
     console.error("💥 Poller error:", err.message);
+    return res.status(500).json({ error: "Balance synchronization failed" });
   }
 };
 
