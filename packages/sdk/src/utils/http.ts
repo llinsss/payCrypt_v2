@@ -25,6 +25,8 @@ export interface RequestOptions {
 export class HttpClient {
   private client: AxiosInstance;
   private config: HttpClientConfig;
+  private refreshTokenCallback: (() => Promise<string | null>) | null = null;
+  private refreshPromise: Promise<string | null> | null = null;
 
   constructor(config: HttpClientConfig) {
     this.config = config;
@@ -47,15 +49,26 @@ export class HttpClient {
         }
 
         const { status, data } = error.response;
+        const originalRequest = error.config as (AxiosRequestConfig & { _retry?: boolean });
 
         switch (status) {
           case 401:
-            // Attempt token refresh
-            if (this.config.token) {
-              const newToken = await this.refreshToken(error.config);
-              if (newToken) {
-                error.config.headers.Authorization = `Bearer ${newToken}`;
-                return this.client.request(error.config);
+            // Attempt single-flight token refresh only once per request
+            if (originalRequest && !originalRequest._retry && this.refreshTokenCallback) {
+              originalRequest._retry = true;
+              try {
+                const newToken = await this.getRefreshedToken();
+                if (newToken) {
+                  originalRequest.headers = originalRequest.headers || {};
+                  originalRequest.headers.Authorization = `Bearer ${newToken}`;
+                  return this.client.request(originalRequest);
+                }
+              } catch (refreshErr) {
+                throw new AuthenticationError(
+                  (refreshErr instanceof Error ? refreshErr.message : undefined) ||
+                    data?.message ||
+                    'Authentication failed during token refresh'
+                );
               }
             }
             throw new AuthenticationError(data?.message);
@@ -84,25 +97,31 @@ export class HttpClient {
     );
   }
 
-  private refreshTokenCallback: (() => Promise<string | null>) | null = null;
-
   setRefreshTokenHandler(handler: () => Promise<string | null>): void {
     this.refreshTokenCallback = handler;
   }
 
-  private async refreshToken(failedConfig: AxiosRequestConfig): Promise<string | null> {
+  /**
+   * Single-flight token refresh: ensures only one refresh request is active at a time,
+   * sharing the result promise among concurrent 401 responses.
+   */
+  private async getRefreshedToken(): Promise<string | null> {
     if (!this.refreshTokenCallback) return null;
-    try {
-      const newToken = await this.refreshTokenCallback();
-      if (newToken) {
-        this.config.token = newToken;
-        this.client.defaults.headers.common.Authorization = `Bearer ${newToken}`;
-        return newToken;
-      }
-    } catch {
-      // Refresh failed
+    if (!this.refreshPromise) {
+      this.refreshPromise = (async () => {
+        try {
+          const newToken = await this.refreshTokenCallback!();
+          if (newToken) {
+            this.setToken(newToken);
+            return newToken;
+          }
+          return null;
+        } finally {
+          this.refreshPromise = null;
+        }
+      })();
     }
-    return null;
+    return this.refreshPromise;
   }
 
   setToken(token: string | undefined): void {

@@ -26,7 +26,7 @@
         "test:migrations": "node scripts/test-migrations.js",
         "generate:migration-docs": "node scripts/generate-migration-docs.js",
         "load-test:pool": "node scripts/load-test-pool.js",
-     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='tests/(env\\.validation|cacheControl|asyncContext|backup|backupEncryption|backupMetadata|backupAdminController|circuitBreaker|scheduledPayment|batchPayment|sentry|s3Client|redactor|webhookRetry|queueCorrelation|auth\\.service|kyc\\.service|kycController|logging|developmentSeeds|validateWebhookUrl|receiptService|validation\\.test|sql_injection|tag\\.service|transaction_cache|webhooks/paystackWebhook|webhooks/monnifyWebhook|services/BatchPaymentService|services/KeyVaultService)' --forceExit",
+     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='tests/(env\\.validation|cacheControl|asyncContext|backup|backupEncryption|backupMetadata|backupAdminController|circuitBreaker|scheduledPayment|batchPayment|sentry|s3Client|redactor|webhookRetry|queueCorrelation|auth\\.service|kyc\\.service|kycController|logging|developmentSeeds|validateWebhookUrl|receiptService|validation\\.test|sql_injection|tag\\.service|transaction_cache|webhooks/paystackWebhook|services/BatchPaymentService|services/KeyVaultService|publishIssues)' --forceExit",
 "test:all": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=tests/ --forceExit"
     },
     "jest": {
@@ -51,7 +51,6 @@
         "bcrypt": "^5.1.1",
         "bignumber.js": "^9.3.1",
         "body-parser": "^2.2.2",
-        "bull-board": "^1.7.2",
         "bullmq": "^5.61.0",
         "cloudinary": "^2.8.0",
         "compression": "^1.8.1",
@@ -76,7 +75,7 @@
         "knex": "^2.5.1",
         "merkletreejs": "^0.6.0",
         "morgan": "^1.10.1",
-        "nodemailer": "^8.0.3",
+        "nodemailer": "^9.0.6",
         "opossum": "^9.0.0",
         "p-limit": "^7.1.1",
         "pdfkit": "^0.17.2",
@@ -86,7 +85,7 @@
         "qrcode": "^1.5.4",
         "rate-limit-redis": "^4.3.1",
         "redis": "^5.11.0",
-        "sanitize-html": "^2.17.1",
+        "sanitize-html": "2.17.1",
         "socket.io": "^4.8.3",
         "speakeasy": "^2.0.0",
         "starknet": "^7.6.4",
@@ -104,5 +103,8 @@
         "nodemon": "^3.0.1",
         "prettier": "^3.8.1",
         "supertest": "^7.2.2"
+    },
+    "overrides": {
+        "tar": "^7.5.22"
     }
 }
