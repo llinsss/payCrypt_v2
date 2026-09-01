@@ -77,6 +77,7 @@ export const corsOptions = {
   allowedHeaders: [
     "Content-Type",
     "Authorization",
+    "X-CSRF-Token",
     "x-api-key",
     "x-request-id",
   ],

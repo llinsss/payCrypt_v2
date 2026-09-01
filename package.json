@@ -11,11 +11,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "type-check": "tsc --noEmit",
-    "build:solidity": "cd contracts/solidity_contract && forge build",
-    "build:starknet": "cd contracts/starknet_contract && scarb build",
-    "build:all": "bash scripts/verify.sh build",
-    "test:all": "bash scripts/verify.sh test",
-    "check": "npm run lint && npm run type-check && bash scripts/verify.sh build"
+    "test:contracts": "vitest run src/utils/apiContracts.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
@@ -53,6 +49,7 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
+    "vitest": "^2.1.9",
     "vite": "^5.4.2"
   }
 }

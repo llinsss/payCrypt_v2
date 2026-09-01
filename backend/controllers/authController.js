@@ -6,9 +6,7 @@ import Wallet from "../models/Wallet.js";
 import BankAccount from "../models/BankAccount.js";
 import RefreshToken from "../models/RefreshToken.js";
 import { balanceQueue } from "../queues/balance.js";
-import { signToken, signRefreshToken, verifyToken } from "../config/jwt.js";
-import Sentry from "@sentry/node";
-import db from "../config/database.js";
+import { issueSession } from "../utils/authCookies.js";
 
 const sanitizeAuthUser = (user) => {
   if (!user) return user;
@@ -39,7 +37,7 @@ const generateBackupCodes = (count = 8) => {
 
 export const register = async (req, res) => {
   try {
-    const { email, tag, address, password, role, referralCode } = req.body;
+    const { email, tag, address, password } = req.body;
 
     // --- Check email ---
     const existingUserEmail = await User.findByEmail(email);
@@ -73,13 +71,11 @@ export const register = async (req, res) => {
       address,
       password,
       photo,
-      role,
-      referral_code: newReferralCode,
-      referred_by: referredBy,
+      role: "user",
     });
 
-    // --- Generate token pair ---
-    const { accessToken, refreshToken } = await createRefreshTokenPair(user.id, req);
+    // --- Generate JWT ---
+    await issueSession(user.id, res);
     sanitizeAuthUser(user);
 
     // --- Create wallet + bank account immediately ---
@@ -94,8 +90,6 @@ export const register = async (req, res) => {
     // --- Respond immediately ---
     res.status(201).json({
       message: "User registered successfully",
-      accessToken,
-      refreshToken,
       user,
     });
   } catch (error) {
@@ -120,8 +114,8 @@ export const login = async (req, res) => {
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
-    // Generate token pair with refresh token rotation
-    const { accessToken, refreshToken } = await createRefreshTokenPair(user.id, req);
+    // Generate JWT token
+    await issueSession(user.id, res);
 
     const last_login = new Date();
     await User.update(user.id, { last_login });
@@ -130,8 +124,6 @@ export const login = async (req, res) => {
 
     res.json({
       message: "Login successful",
-      accessToken,
-      refreshToken,
       user: { ...user, last_login },
     });
   } catch (error) {
