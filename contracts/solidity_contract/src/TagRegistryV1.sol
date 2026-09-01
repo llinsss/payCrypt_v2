@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import {UUPSUpgradeable} from "lib/openzeppelin-contracts/contracts/proxy/utils/UUPSUpgradeable.sol";
-import {OwnableUpgradeable} from "lib/openzeppelin-contracts/contracts/access/OwnableUpgradeable.sol";
-import {Initializable} from "lib/openzeppelin-contracts/contracts/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+import {OwnableUpgradeable} from "lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {Initializable} from "lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 
 contract TagRegistryV1 is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     struct TagProfile {
@@ -21,8 +21,7 @@ contract TagRegistryV1 is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     event TagResolved(string indexed tag, address indexed chainAddress);
 
     function initialize() public initializer {
-        __Ownable_init();
-        __UUPSUpgradeable_init();
+        __Ownable_init(msg.sender);
     }
 
     modifier onlyTagOwner(string memory tag) {

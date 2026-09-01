@@ -89,8 +89,9 @@ router.get("/all", authenticate, requireAdmin, balanceQueryLimiter, getBalances)
 /**
  * @swagger
  * /api/balances/sync:
- *   get:
- *     summary: Sync user balance
+ *   post:
+ *     summary: Synchronize user balance
+ *     description: Idempotently reconciles persisted balances with on-chain balances. Repeating the request converges to the same state.
  *     tags: [Balances]
  *     security:
  *       - bearerAuth: []
@@ -98,7 +99,7 @@ router.get("/all", authenticate, requireAdmin, balanceQueryLimiter, getBalances)
  *       200:
  *         description: Balance synced
  */
-router.get("/sync", authenticate, updateUserBalance);
+router.post("/sync", authenticate, updateUserBalance);
 
 /**
  * @swagger
@@ -160,9 +161,6 @@ router.get("/summary", authenticate, balanceQueryLimiter, getBalanceSummary);
  *       200:
  *         description: Balance deleted
  */
-router.get("/:id", authenticate, balanceQueryLimiter, getBalanceById);
-router.put("/:id", authenticate, validate(balanceUpdateSchema), updateBalance);
-router.delete("/:id", authenticate, deleteBalance);
 router.get("/:id", authenticate, balanceQueryLimiter, validateParams(numericIdParamSchema), getBalanceById);
 router.put("/:id", authenticate, validateParams(numericIdParamSchema), validate(balanceUpdateSchema), updateBalance);
 router.delete("/:id", authenticate, validateParams(numericIdParamSchema), deleteBalance);

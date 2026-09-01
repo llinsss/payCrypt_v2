@@ -35,7 +35,8 @@ pub trait IWallet<ContractState> {
 pub mod Wallet {
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
-        Map, StorageMapWriteAccess, StoragePointerReadAccess, StoragePointerWriteAccess,
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
+        StoragePointerWriteAccess,
     };
     use starknet::{
         ContractAddress, contract_address_const, get_caller_address, get_contract_address,
@@ -47,6 +48,7 @@ pub mod Wallet {
         owner: ContractAddress,
         tag_router: ContractAddress,
         token_addresses: Map<felt252, ContractAddress>,
+        is_token_supported: Map<ContractAddress, bool>,
         reentrancy_guard: bool,
     }
 
@@ -87,7 +89,7 @@ pub mod Wallet {
         usdc_address: ContractAddress,
         strk_address: ContractAddress,
     ) {
-        let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+        let zero_address: ContractAddress = contract_address_const::<0>();
         assert(owner != zero_address, 'Invalid owner address');
         assert(tag_router != zero_address, 'Invalid tag router address');
         assert(usdc_address != zero_address, 'Invalid USDC address');
@@ -96,12 +98,14 @@ pub mod Wallet {
         self.tag_router.write(tag_router);
         self.token_addresses.write('USDC', usdc_address);
         self.token_addresses.write('STRK', strk_address);
+        self.is_token_supported.write(usdc_address, true);
+        self.is_token_supported.write(strk_address, true);
     }
 
     #[abi(embed_v0)]
     impl WalletImpl of IWallet<ContractState> {
         /// Withdraws tokens from the wallet (only callable by the TagRouter contract).
-        /// @param token The address of the token contract.
+        /// @param token The address of the token contract (must be allowlisted).
         /// @param recipient_address The address to receive the withdrawn tokens.
         /// @param amount The amount of tokens to withdraw.
         /// @return True if the withdrawal is successful.
@@ -112,13 +116,14 @@ pub mod Wallet {
             recipient_address: ContractAddress,
             amount: u256,
         ) -> bool {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             assert(!self.reentrancy_guard.read(), 'Reentrancy detected');
             self.reentrancy_guard.write(true);
 
-            assert(token != zero_address, 'Invalid token address');
-            assert(recipient_address != zero_address, 'Invalid recipient address');
             assert(amount > 0, 'Amount must be positive');
+            assert(token != zero_address, 'Invalid token address');
+            assert(self.is_token_supported.read(token), 'Token not supported');
+            assert(recipient_address != zero_address, 'Invalid recipient address');
 
             let caller = get_caller_address();
             let tag_router: ContractAddress = self.tag_router.read();
@@ -142,14 +147,15 @@ pub mod Wallet {
         }
 
         /// Retrieves the token balance of a specified address.
-        /// @param token The address of the token contract.
+        /// @param token The address of the token contract (must be allowlisted).
         /// @param address The address to check the balance for.
         /// @return The balance of the specified token for the given address.
         fn check_balance(
             self: @ContractState, token: ContractAddress, address: ContractAddress,
         ) -> u256 {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             assert(token != zero_address, 'Invalid token address');
+            assert(self.is_token_supported.read(token), 'Token not supported');
             assert(address != zero_address, 'Invalid address');
             let erc20_dispatcher = IERC20Dispatcher { contract_address: token };
             erc20_dispatcher.balance_of(address)
