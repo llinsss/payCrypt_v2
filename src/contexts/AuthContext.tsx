@@ -30,19 +30,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false); // For form loading states
   const navigate = useNavigate();
 
-  // Check for existing token on mount and validate it
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        if (authApi.isAuthenticated()) {
-          // Validate token by fetching current user
-          const currentUser = await authApi.getCurrentUser();
-          setUser(currentUser);
-        }
+        const currentUser = await authApi.getCurrentUser();
+        setUser(currentUser);
       } catch (error) {
         console.error("Auth initialization failed:", error);
-        // Token is invalid, remove it
-        authApi.logout();
       } finally {
         setLoading(false);
       }
@@ -93,10 +87,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = (): void => {
-    authApi.logout();
-    setUser(null);
-    navigate("/login");
+  const logout = async (): Promise<void> => {
+    try {
+      await authApi.logout();
+    } finally {
+      setUser(null);
+      navigate("/login");
+    }
   };
 
   // Re-fetches the current user's claims from the server rather than trusting

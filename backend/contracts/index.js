@@ -83,9 +83,17 @@ export const send_via_wallet = async (payload) => {
 
 /**
  * Get a raw ethers provider for a given EVM-compatible chain.
- * Used by EvmReconciliationService.
+ * Providers are cached per chain to avoid creating duplicate instances.
+ * Used by EvmReconciliationService for on-chain balance queries.
+ * @param {string} chain - The EVM chain name ("base", "flow", "lisk", "u2u")
+ * @returns {ethers.JsonRpcProvider} Provider instance for the chain
+ * @throws {Error} If chain is unsupported or RPC configuration is missing
  */
 export const getEvmProvider = (chain) => {
   const { provider } = evm.getEvmChain(chain);
   return provider;
 };
+
+// Export cache helpers for testing and observability
+export const getProviderCache = evm.getProviderCache;
+export const clearProviderCache = evm.clearProviderCache;

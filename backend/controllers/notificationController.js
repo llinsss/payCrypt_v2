@@ -149,7 +149,7 @@ export const unregisterDeviceToken = async (req, res) => {
       return res.status(400).json({ error: "token is required" });
     }
 
-    await DeviceToken.deactivateByToken(token);
+    await DeviceToken.deactivateByUserAndToken(req.user.id, token);
     res.json({ message: "Device token unregistered" });
   } catch (error) {
     res.status(500).json({ error: error.message });
