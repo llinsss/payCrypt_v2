@@ -589,7 +589,7 @@ class BatchPaymentService {
       results: results.filter(Boolean),
     });
 
-    const limit = pLimit(BatchPaymentService.PARALLEL_CONCURRENCY);
+    const limit = pLimit(this.PARALLEL_CONCURRENCY ?? BatchPaymentService.PARALLEL_CONCURRENCY);
     const tasks = validItems.map((item) => {
       return limit(async () => {
         const remainingBalanceStroops = PaymentService.parseAmountToStroops(remainingBalance);

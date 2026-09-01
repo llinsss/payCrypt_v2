@@ -6,7 +6,10 @@ import Wallet from "../models/Wallet.js";
 import BankAccount from "../models/BankAccount.js";
 import RefreshToken from "../models/RefreshToken.js";
 import { balanceQueue } from "../queues/balance.js";
-import { issueSession } from "../utils/authCookies.js";
+import { signToken, signRefreshToken, verifyToken } from "../config/jwt.js";
+import * as Sentry from "@sentry/node";
+import db from "../config/database.js";
+import ReferralService from "../services/ReferralService.js";
 
 const sanitizeAuthUser = (user) => {
   if (!user) return user;
@@ -21,7 +24,7 @@ const createRefreshTokenPair = async (userId, req) => {
   const refreshTokenString = signRefreshToken({ userId, type: "refresh" });
   const tokenHash = await RefreshToken.hashToken(refreshTokenString);
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  const ipAddress = req.ip || req.connection.remoteAddress || null;
+  const ipAddress = req.ip || req.connection?.remoteAddress || null;
   const userAgent = req.get("user-agent") || null;
 
   await RefreshToken.create(userId, tokenHash, expiresAt, ipAddress, userAgent);
