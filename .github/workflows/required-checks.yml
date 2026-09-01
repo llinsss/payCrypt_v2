@@ -1,0 +1,426 @@
+# Required Checks — CI Gate
+# Stable check name: ci/required-checks
+#
+# This workflow runs on EVERY pull request regardless of changed paths.
+# It calls each component workflow via workflow_call and aggregates results.
+# Configure GitHub branch-protection to require ONLY this check name, so that
+# contributors never need to know which component names may exist.
+#
+# Strategy:
+#   Each component workflow is triggered. When a component's path filter finds
+#   no relevant changes, that workflow exits cleanly (success) — the gate still
+#   passes. When relevant paths DO change the component jobs run normally.
+#
+# Implementation note:
+#   GitHub Actions does not support cross-workflow `needs` for workflows that
+#   run independently. Instead this workflow re-runs each component inline (via
+#   path-filter + job conditionals), so branch-protection has a single stable
+#   check to require.
+
+name: Required Checks
+
+on:
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: required-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Shared path detection (single checkout, four filter groups) ─────────────
+  detect:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      backend: ${{ steps.filter.outputs.backend }}
+      sdk: ${{ steps.filter.outputs.sdk }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web:
+              - "src/**"
+              - "index.html"
+              - "vite.config.ts"
+              - "tsconfig*.json"
+              - "eslint.config.js"
+              - "tailwind.config.js"
+              - "postcss.config.js"
+              - "package.json"
+              - "package-lock.json"
+              - ".github/workflows/web-ci.yml"
+            backend:
+              - "backend/**"
+              - ".github/workflows/backend-ci.yml"
+            sdk:
+              - "packages/**"
+              - "tsconfig*.json"
+              - "eslint.config.js"
+              - ".github/workflows/sdk-ci.yml"
+            contracts:
+              - "contracts/**"
+              - ".github/workflows/contracts-ci.yml"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # WEB
+  # ═══════════════════════════════════════════════════════════════════════════
+  web-lint:
+    name: "ci/web · lint"
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
+  web-typecheck:
+    name: "ci/web · typecheck"
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run type-check
+
+  web-build:
+    name: "ci/web · build"
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Upload build artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vite-build-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BACKEND
+  # ═══════════════════════════════════════════════════════════════════════════
+  backend-quality:
+    name: "ci/backend · lint+audit+test"
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: taggedpay_test
+          POSTGRES_USER: taggedpay_test
+          POSTGRES_PASSWORD: taggedpay_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taggedpay_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: taggedpay_test
+      DB_USER: taggedpay_test
+      DB_PASSWORD: taggedpay_test
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci_test_jwt_secret_minimum_32_characters_long
+      BULL_ADMIN_USER: ci_admin
+      BULL_ADMIN_PASS: ci_admin_password
+      SWAGGER_ADMIN_USER: ci_admin
+      SWAGGER_ADMIN_PASS: ci_admin_password
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm audit --audit-level=high
+      - name: Run tests
+        run: npm test -- --json --outputFile=/tmp/jest-results.json
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-results-${{ github.sha }}
+          path: /tmp/jest-results.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SDK
+  # ═══════════════════════════════════════════════════════════════════════════
+  sdk-tagged:
+    name: "ci/sdk · @tagged/sdk"
+    needs: detect
+    if: needs.detect.outputs.sdk == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/sdk/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
+  sdk-stellar:
+    name: "ci/sdk · @tagged/stellar-sdk"
+    needs: detect
+    if: needs.detect.outputs.sdk == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/stellar-sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/stellar-sdk/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # CONTRACTS
+  # ═══════════════════════════════════════════════════════════════════════════
+  contracts-solidity:
+    name: "ci/contracts · solidity"
+    needs: detect
+    if: needs.detect.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: contracts/solidity_contract
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install solhint
+        run: npm install --global solhint@5
+
+      - name: Lint Solidity
+        run: |
+          if [ ! -f .solhint.json ]; then
+            cat > .solhint.json << 'EOF'
+          {
+            "extends": "solhint:recommended",
+            "rules": {
+              "compiler-version": ["error", "^0.8.0"],
+              "avoid-suicide": "error",
+              "avoid-sha3": "warn",
+              "no-unused-vars": "warn",
+              "func-visibility": ["warn", { "ignoreConstructors": true }]
+            }
+          }
+          EOF
+          fi
+          solhint 'src/**/*.sol'
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            contracts/solidity_contract/.forge-cache
+            ~/.foundry/cache
+          key: foundry-${{ hashFiles('contracts/solidity_contract/foundry.toml') }}
+          restore-keys: foundry-
+
+      - run: forge install
+      - run: forge build --sizes
+      - run: forge test -vvv
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Slither
+        run: pip install slither-analyzer==0.10.4
+
+      - name: Run Slither (security gate)
+        run: |
+          slither . \
+            --exclude-dependencies \
+            --filter-paths "lib/" \
+            --fail-high
+
+      - name: Upload Slither report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slither-report-${{ github.sha }}
+          path: contracts/solidity_contract/slither-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  contracts-starknet:
+    name: "ci/contracts · starknet"
+    needs: detect
+    if: needs.detect.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: contracts/starknet_contract
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Scarb
+        uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.11.4"
+
+      - name: Install Starknet Foundry
+        uses: foundry-rs/setup-snfoundry@v3
+        with:
+          starknet-foundry-version: "0.43.1"
+
+      - run: scarb build
+      - run: snforge test
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # FINAL GATE — this is the single stable name for branch protection
+  # ═══════════════════════════════════════════════════════════════════════════
+  ci-required-checks:
+    name: ci/required-checks
+    needs:
+      - detect
+      - web-lint
+      - web-typecheck
+      - web-build
+      - backend-quality
+      - sdk-tagged
+      - sdk-stellar
+      - contracts-solidity
+      - contracts-starknet
+    # Always run so branch-protection always sees a result for this check
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Evaluate all component results
+        env:
+          WEB_CHANGED: ${{ needs.detect.outputs.web }}
+          BACKEND_CHANGED: ${{ needs.detect.outputs.backend }}
+          SDK_CHANGED: ${{ needs.detect.outputs.sdk }}
+          CONTRACTS_CHANGED: ${{ needs.detect.outputs.contracts }}
+          WEB_LINT: ${{ needs.web-lint.result }}
+          WEB_TYPE: ${{ needs.web-typecheck.result }}
+          WEB_BUILD: ${{ needs.web-build.result }}
+          BACKEND: ${{ needs.backend-quality.result }}
+          SDK_TAGGED: ${{ needs.sdk-tagged.result }}
+          SDK_STELLAR: ${{ needs.sdk-stellar.result }}
+          SOL: ${{ needs.contracts-solidity.result }}
+          STARK: ${{ needs.contracts-starknet.result }}
+        run: |
+          FAILED=0
+
+          check() {
+            local component=$1
+            local changed=$2
+            local result=$3
+            if [[ "$changed" == "true" ]]; then
+              if [[ "$result" != "success" ]]; then
+                echo "❌  $component failed (result: $result)"
+                FAILED=1
+              else
+                echo "✅  $component passed"
+              fi
+            else
+              echo "⏭️   $component skipped (no relevant paths changed)"
+            fi
+          }
+
+          check "web/lint"      "$WEB_CHANGED"      "$WEB_LINT"
+          check "web/typecheck" "$WEB_CHANGED"      "$WEB_TYPE"
+          check "web/build"     "$WEB_CHANGED"      "$WEB_BUILD"
+          check "backend"       "$BACKEND_CHANGED"  "$BACKEND"
+          check "sdk/@tagged"   "$SDK_CHANGED"      "$SDK_TAGGED"
+          check "sdk/stellar"   "$SDK_CHANGED"      "$SDK_STELLAR"
+          check "contracts/sol" "$CONTRACTS_CHANGED" "$SOL"
+          check "contracts/cairo" "$CONTRACTS_CHANGED" "$STARK"
+
+          echo ""
+          if [[ $FAILED -eq 0 ]]; then
+            echo "🎉 All required checks passed."
+          else
+            echo "💥 One or more required checks failed. See above for details."
+            exit 1
+          fi

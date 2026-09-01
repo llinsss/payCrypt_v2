@@ -166,6 +166,78 @@ local input, never from request data. If you have a genuinely safe interpolation
 that the check flags, add a `check-raw-sql-allow` comment on that line stating
 why it is safe.
 
+## Continuous Integration
+
+Every pull request is gated on a single required status check:
+
+```
+ci/required-checks
+```
+
+This check runs unconditionally on every PR and aggregates four component
+pipelines. You only ever need to watch this one name in the branch-protection
+UI.
+
+### Component checks
+
+| Check name | Triggered by | What runs |
+|---|---|---|
+| `ci/web` | `src/**`, shared config | lint, typecheck, vite build |
+| `ci/backend` | `backend/**` | lint, npm audit (high+critical), jest |
+| `ci/sdk` | `packages/**`, shared config | lint, typecheck, tsup build |
+| `ci/contracts` | `contracts/**` | solhint, forge build+test, slither, snforge |
+
+> **Shared-config fan-out** — `tsconfig*.json` and `eslint.config.js` are
+> shared between the web frontend and both SDK packages, so changing them
+> triggers `ci/web` **and** `ci/sdk`.
+
+### Security gates
+
+- `ci/backend` — `npm audit --audit-level=high` fails the PR on HIGH or CRITICAL
+  CVEs in backend dependencies.
+- `ci/contracts` — Slither static analysis runs with `--fail-high`; any HIGH or
+  CRITICAL finding blocks the merge.
+
+### Workflow files
+
+```
+.github/workflows/
+├── web-ci.yml          ← Web lint · typecheck · build
+├── backend-ci.yml      ← Backend lint · audit · test
+├── sdk-ci.yml          ← SDK lint · typecheck · build (matrix)
+├── contracts-ci.yml    ← Contracts solhint · forge · slither · snforge
+├── required-checks.yml ← Gate — exposes ci/required-checks
+├── flutter-ci.yml      ← Mobile (Flutter) — separate, not part of gate
+└── docker-build.yml    ← Docker image push (push to master only)
+```
+
+See **[docs/ci.md](docs/ci.md)** for the full reference: path-trigger tables,
+per-step detail, tool versions, local equivalents, and artifact retention.
+
+### Running CI checks locally
+
+```bash
+# Web
+npm ci && npm run lint && npm run type-check && npm run build
+
+# Backend
+cd backend && npm ci && npm run lint && npm audit --audit-level=high && npm test
+
+# SDK (@tagged/sdk)
+cd packages/sdk && npm ci && npm run lint && npm run typecheck && npm run build
+
+# SDK (@tagged/stellar-sdk)
+cd packages/stellar-sdk && npm ci && npm run lint && npm run typecheck && npm run build
+
+# Contracts — Solidity
+cd contracts/solidity_contract
+solhint 'src/**/*.sol' && forge build && forge test -vvv
+slither . --exclude-dependencies --filter-paths "lib/" --fail-high
+
+# Contracts — StarkNet
+cd contracts/starknet_contract && scarb build && snforge test
+```
+
 ## Project Structure
 
 ```
@@ -179,12 +251,32 @@ payCrypt_v2/
 
 ## Testing
 
-```bash
-# Frontend
-npm run test
+### Backend Testing
 
-# Backend
+Tests are split into unit and integration suites (see `backend/TESTING.md` for details).
+
+**Unit Tests** (no database required — fast)
+```bash
 cd backend
+npm run test:unit
+```
+
+**Integration Tests** (requires PostgreSQL — see CONTRIBUTING.md setup)
+```bash
+cd backend
+export DATABASE_URL="postgres://taggedpay_user:taggedpay_password@localhost:5432/paycrypt_test"
+npm run test:integration
+```
+
+**All Tests** (legacy)
+```bash
+cd backend
+npm run test
+```
+
+### Frontend Testing
+
+```bash
 npm run test
 ```
 

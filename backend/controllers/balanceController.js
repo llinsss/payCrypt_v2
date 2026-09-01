@@ -32,13 +32,41 @@ export const createBalance = async (req, res) => {
 export const getBalances = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-    const offset = (page - 1) * limit;
-
-    const balances = await Balance.getAll(
-      Number.parseInt(limit),
-      Number.parseInt(offset)
+    const parsedPage = Math.max(Number.parseInt(page, 10) || 1, 1);
+    const parsedLimit = Math.min(
+      Math.max(Number.parseInt(limit, 10) || 10, 1),
+      100
     );
-    res.json(balances);
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    const [rows, total] = await Promise.all([
+      Balance.getAll(parsedLimit, offset),
+      Balance.countAll(),
+    ]);
+
+    // Minimal projection — no emails, prices, chain metadata, or currency preference
+    const balances = rows.map((b) => ({
+      id: b.id,
+      user_id: b.user_id,
+      token_symbol: b.token_symbol,
+      amount: b.amount,
+      usd_value: b.usd_value,
+      address: b.address,
+      created_at: b.created_at,
+      updated_at: b.updated_at,
+    }));
+
+    res.json({
+      success: true,
+      data: balances,
+      pagination: {
+        page: parsedPage,
+        limit: parsedLimit,
+        offset,
+        total,
+        hasMore: offset + balances.length < total,
+      },
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

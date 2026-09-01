@@ -12,6 +12,7 @@ import basicAuth from "express-basic-auth";
 import mongoSanitize from "express-mongo-sanitize";
 
 import indexRoutes from "./routes/index.js";
+import { getDeploymentStatus } from "./services/deploymentValidator.js";
 import generalRoutes from "./routes/general.js";
 import bullBoardRouter from "./bullboard.js";
 import swaggerJsdoc from "swagger-jsdoc";
@@ -36,11 +37,7 @@ import {
 } from "./middleware/validation.js";
 
 import { rateLimit } from "./middleware/rateLimiter.js";
-import {
-  applyPayloadLimits,
-  payloadTooLargeHandler,
-} from "./middleware/payloadLimits.js";
-import { initSentry } from "./observability/sentry.js";
+import { parseCookies, csrfProtection } from "./middleware/cookies.js";
 
 dotenv.config();
 
@@ -155,16 +152,11 @@ app.use(
   }),
 );
 
-// Request body parsing with tiered size limits.
-//
-// A single 10mb limit applied everywhere meant any endpoint could be used to
-// buffer 10mb of attacker-supplied JSON. Limits are now scoped per route class
-// (10kb auth / 50kb default / 10mb upload) — see middleware/payloadLimits.js.
-//
-// Each parser preserves the raw request buffer so webhook handlers (e.g.
-// Paystack) can verify HMAC signatures against the exact bytes received rather
-// than the re-serialized JSON.
-applyPayloadLimits(app);
+// Request body parsing with size limits
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(parseCookies);
+app.use(csrfProtection);
 
 // Detect SQL Injection attempts
 app.use(detectSqlInjection);
@@ -206,17 +198,31 @@ app.get("/", (req, res) => {
 });
 
 // Health check endpoint (no rate limiting)
-app.get("/health", (req, res) => {
+app.get("/health", async (req, res) => {
+  const timestamp = new Date().toISOString();
+  let deploymentChecks = {};
+  try {
+    deploymentChecks = await getDeploymentStatus();
+  } catch (err) {
+    deploymentChecks = { error: err.message };
+  }
+
   res.status(200).json({
     status: "ok",
-    timestamp: new Date().toISOString(),
+    timestamp,
+    checks: {
+      deployments: deploymentChecks,
+    },
   });
 });
 
-// Test route for user verification of Sentry
-app.get("/test-error", (req, res) => {
-  throw new Error("Sentry Test Error manually triggered");
-});
+// Test route for user verification of Sentry. Never expose this deliberately
+// failing endpoint to production traffic.
+if (process.env.NODE_ENV !== "production") {
+  app.get("/test-error", (req, res) => {
+    throw new Error("Sentry Test Error manually triggered");
+  });
+}
 
 import rateLimitRoutes from "./routes/rateLimit.js";
 

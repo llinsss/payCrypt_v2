@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'crypto';
 import CircuitBreakerService from './CircuitBreakerService.js';
 
 class MonnifyService {
@@ -81,18 +82,49 @@ class MonnifyService {
   }
 
   /**
-   * Verify Monnify webhook signature
-   * @param {string} signature
-   * @param {Object} body
+   * Verify a Monnify webhook signature.
+   *
+   * Monnify signs the exact raw bytes of the request body with SHA-512 HMAC
+   * using the merchant's secret key, and sends the hex digest in the
+   * `monnify-signature` header. The hash MUST be computed over the raw
+   * request bytes — re-serializing the parsed JSON body (via
+   * `JSON.stringify`) is not guaranteed to reproduce the exact bytes Monnify
+   * signed (key order, whitespace, number formatting can all differ), which
+   * would make a legitimate webhook fail verification. Callers should pass
+   * `req.rawBody` (captured by the raw-body middleware applied to every JSON
+   * route — see middleware/payloadLimits.js) rather than the parsed body.
+   *
+   * @param {string} signature - value of the `monnify-signature` header
+   * @param {Buffer|string|Object} rawBody - the raw request body (preferred),
+   *   or the parsed body as a fallback if the raw bytes are unavailable
    * @returns {boolean}
    */
-  verifyWebhookSignature(signature, body) {
-    const crypto = require('crypto');
-    const hash = crypto
+  verifyWebhookSignature(signature, rawBody) {
+    if (!signature || !this.secretKey || rawBody == null) {
+      return false;
+    }
+
+    const payload = Buffer.isBuffer(rawBody)
+      ? rawBody
+      : Buffer.from(
+          typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody),
+        );
+
+    const expected = crypto
       .createHmac('sha512', this.secretKey)
-      .update(JSON.stringify(body))
+      .update(payload)
       .digest('hex');
-    return hash === signature;
+
+    const expectedBuffer = Buffer.from(expected, 'utf8');
+    const providedBuffer = Buffer.from(String(signature), 'utf8');
+
+    // Lengths must match before timingSafeEqual — it throws on mismatched
+    // buffer lengths rather than returning false.
+    if (expectedBuffer.length !== providedBuffer.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
   }
 }
 

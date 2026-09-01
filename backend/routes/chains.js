@@ -7,6 +7,10 @@ import {
   deleteChain,
 } from "../controllers/chainController.js";
 import { publicCache } from "../middleware/cacheControl.js";
+import validate from "../middleware/validate.js";
+import { paginationSchema } from "../validators/paginationValidator.js";
+import { createChainSchema, updateChainSchema } from "../validators/chainSchemas.js";
+
 const router = express.Router();
 
 /**
@@ -48,64 +52,41 @@ const router = express.Router();
  *               is_active:
  *                 type: boolean
  *                 default: true
+ *               network:
+ *                 type: string
+ *                 enum: [starknet, base, flow, lisk, u2u, evm, stellar]
  *     responses:
  *       201:
  *         description: Chain created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                     name:
- *                       type: string
- *                     chainId:
- *                       type: string
- *       400:
- *         description: Validation error
+ *       422:
+ *         description: Validation error (invalid or unknown fields)
  *   get:
  *     summary: List all supported blockchain chains
  *     description: Returns all supported chains with their configuration. Cached for 1 hour.
  *     tags: [Chains]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 10000
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
  *     responses:
  *       200:
  *         description: List of supported chains
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: integer
- *                         example: 1
- *                       name:
- *                         type: string
- *                         example: "Stellar"
- *                       chainId:
- *                         type: string
- *                         example: "xlm"
- *                       symbol:
- *                         type: string
- *                         example: "XLM"
- *                       is_active:
- *                         type: boolean
- *                         example: true
+ *       422:
+ *         description: Validation error (invalid page or limit)
  */
-router.post("/", createChain);
-router.get("/", publicCache(3600), getChains);
+router.post("/", validate(createChainSchema), createChain);
+router.get("/", validate(paginationSchema, "query"), publicCache(3600), getChains);
 
 /**
  * @swagger
@@ -123,26 +104,6 @@ router.get("/", publicCache(3600), getChains);
  *     responses:
  *       200:
  *         description: Chain details
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                     name:
- *                       type: string
- *                     chainId:
- *                       type: string
- *                     rpcUrl:
- *                       type: string
- *                     symbol:
- *                       type: string
  *       404:
  *         description: Chain not found
  *   put:
@@ -163,15 +124,23 @@ router.get("/", publicCache(3600), getChains);
  *             properties:
  *               name:
  *                 type: string
+ *               chainId:
+ *                 type: string
  *               rpcUrl:
+ *                 type: string
+ *               symbol:
  *                 type: string
  *               is_active:
  *                 type: boolean
+ *               network:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Chain updated
  *       404:
  *         description: Chain not found
+ *       422:
+ *         description: Validation error
  *   delete:
  *     summary: Delete a chain configuration
  *     tags: [Chains]
@@ -188,7 +157,7 @@ router.get("/", publicCache(3600), getChains);
  *         description: Chain not found
  */
 router.get("/:id", getChainById);
-router.put("/:id", updateChain);
+router.put("/:id", validate(updateChainSchema), updateChain);
 router.delete("/:id", deleteChain);
 
 export default router;

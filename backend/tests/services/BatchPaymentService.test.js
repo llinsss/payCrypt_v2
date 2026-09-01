@@ -152,5 +152,96 @@ describe("BatchPaymentService", () => {
             expect(PaymentService.processPayment).toHaveBeenCalledTimes(2);
             expect(result.success).toBe(true);
         });
+
+        it("never runs more than the configured concurrency at once", async () => {
+            const originalConcurrency = BatchPaymentService.PARALLEL_CONCURRENCY;
+            BatchPaymentService.PARALLEL_CONCURRENCY = 2;
+
+            const total = 6;
+            const batch = { id: 126, total_items: total, reference: "REF-126" };
+            const preparedBatch = {
+                senderAddress: "G-SENDER",
+                validItems: Array.from({ length: total }, (_, index) => ({
+                    index,
+                    recipientTag: `user${index}`,
+                    recipientAddress: `G${index}`,
+                    amount: 1,
+                    totalCost: 1,
+                    feeInfo: { fee: 0 },
+                })),
+                failures: [],
+            };
+
+            let inFlight = 0;
+            let maxInFlight = 0;
+            PaymentService.getBalance.mockResolvedValue(1000);
+            PaymentService.processPayment.mockImplementation(async () => {
+                inFlight += 1;
+                maxInFlight = Math.max(maxInFlight, inFlight);
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                inFlight -= 1;
+                return { transactionId: 1, fee: 0, txHash: "HASH" };
+            });
+            BatchPayment.update.mockResolvedValue(batch);
+            BatchPayment.getDetailedByIdForUser.mockResolvedValue(batch);
+
+            try {
+                const result = await BatchPaymentService.processNonAtomicBatch({
+                    batch,
+                    preparedBatch,
+                    userId: 1,
+                    senderTag: "user1",
+                    asset: "XLM",
+                });
+
+                expect(PaymentService.processPayment).toHaveBeenCalledTimes(total);
+                expect(maxInFlight).toBeLessThanOrEqual(2);
+                expect(result.success).toBe(true);
+            } finally {
+                BatchPaymentService.PARALLEL_CONCURRENCY = originalConcurrency;
+            }
+        });
+
+        it("does not let concurrent items overspend a shared balance", async () => {
+            const batch = { id: 127, total_items: 3, reference: "REF-127" };
+            // Balance only covers 2 of the 3 items; every item costs the same,
+            // so whichever 2 run first should succeed and the remaining one
+            // should fail on insufficient funds — never all 3 succeeding.
+            const preparedBatch = {
+                senderAddress: "G-SENDER",
+                validItems: [
+                    { index: 0, recipientTag: "user2", recipientAddress: "G2", amount: 10, totalCost: 10, feeInfo: { fee: 0 } },
+                    { index: 1, recipientTag: "user3", recipientAddress: "G3", amount: 10, totalCost: 10, feeInfo: { fee: 0 } },
+                    { index: 2, recipientTag: "user4", recipientAddress: "G4", amount: 10, totalCost: 10, feeInfo: { fee: 0 } },
+                ],
+                failures: [],
+            };
+
+            PaymentService.getBalance.mockResolvedValue(20);
+            PaymentService.processPayment.mockImplementation(
+                async () => new Promise((resolve) =>
+                    setTimeout(() => resolve({ transactionId: 1, fee: 0, txHash: "HASH" }), 5)
+                ),
+            );
+            BatchPayment.update.mockResolvedValue(batch);
+            BatchPayment.getDetailedByIdForUser.mockResolvedValue(batch);
+
+            await BatchPaymentService.processNonAtomicBatch({
+                batch,
+                preparedBatch,
+                userId: 1,
+                senderTag: "user1",
+                asset: "XLM",
+            });
+
+            // Only 2 of the 3 payments should ever have been attempted — the
+            // third must be rejected as insufficient funds before it reaches
+            // PaymentService, not attempted and refunded afterward.
+            expect(PaymentService.processPayment).toHaveBeenCalledTimes(2);
+
+            const finalUpdateCall = BatchPayment.update.mock.calls.at(-1)[1];
+            expect(finalUpdateCall.successful_items).toBe(2);
+            expect(finalUpdateCall.failed_items).toBe(1);
+        });
     });
 });
