@@ -4,11 +4,13 @@ import queueConfig from "./index.js";
 import ExportService from "../services/ExportService.js";
 import NotificationService from "../services/NotificationService.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { attachQueueDepthAlert } from "./queueDefaults.js";
 
 export const exportQueue = queueConfig
   ? new Queue("export", queueConfig)
   : null;
 attachRedisErrorAlert(exportQueue, "export-queue");
+attachQueueDepthAlert(exportQueue, "export-queue");
 
 if (exportQueue) {
   exportQueue.on("waiting", (job) =>

@@ -2,6 +2,7 @@ import axios from "axios";
 import WebhookSignature from "../utils/webhookSignature.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 import Webhook from "../models/Webhook.js";
+import { assertPayloadSize } from "../queues/queueDefaults.js";
 
 const TIMEOUT_MS = 10_000;
 
@@ -96,9 +97,7 @@ const WebhookDeliveryService = {
     const { webhookRetryQueue } = await import("../queues/webhookRetry.js");
     
     if (webhookRetryQueue) {
-       await webhookRetryQueue.add(
-        "retry-deliver",
-        {
+       const retryJobData = {
           webhookId,
           eventId,
           eventKey,
@@ -106,7 +105,11 @@ const WebhookDeliveryService = {
           secret,
           payload,
           attempt: nextAttempt
-        },
+        };
+       assertPayloadSize(retryJobData);
+       await webhookRetryQueue.add(
+        "retry-deliver",
+        retryJobData,
         { 
           delay: delayMs,
           jobId: `retry-${eventId}-${nextAttempt}`

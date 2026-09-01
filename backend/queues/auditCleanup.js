@@ -1,20 +1,20 @@
 import { Queue } from "bullmq";
 import { redisConnection } from "../config/redis.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { buildJobOptions, attachQueueDepthAlert } from "./queueDefaults.js";
 
 export const auditCleanupQueue = redisConnection
   ? new Queue("audit-cleanup", {
       connection: redisConnection,
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: {
-          type: "exponential",
-          delay: 2000,
-        },
-        removeOnComplete: true,
-        removeOnFail: false,
-      },
+      defaultJobOptions: buildJobOptions({
+        backoff: { type: "exponential", delay: 2000 },
+        removeOnComplete: { count: 30 }, // one/day cron; 30 runs is plenty of history
+        removeOnFail: { count: 100 },
+      }),
     })
   : null;
+attachRedisErrorAlert(auditCleanupQueue, "audit-cleanup-queue");
+attachQueueDepthAlert(auditCleanupQueue, "audit-cleanup-queue");
 
 if (auditCleanupQueue) {
   auditCleanupQueue.on("waiting", (job) =>

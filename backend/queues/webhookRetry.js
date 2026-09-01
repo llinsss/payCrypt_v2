@@ -3,22 +3,27 @@ import { redisConnection } from "../config/redis.js";
 import WebhookDeliveryService from "../services/WebhookDeliveryService.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 import { instrumentBullWorker } from "../observability/sentry.js";
+import { buildJobOptions, attachQueueDepthAlert } from "./queueDefaults.js";
 
 // ========== Retry Queue Setup ==========
 // Utilizes custom explicit delays managed entirely via the delivery service,
 // decoupled from default BullMQ backoffs, to adhere strictly to:
 // [1m, 5m, 15m, 1h, 6h]
+// attempts:1 keeps BullMQ's own retry/backoff out of the loop since
+// WebhookDeliveryService re-enqueues each retry attempt itself.
 
 export const webhookRetryQueue = redisConnection
   ? new Queue("webhook-retry", {
       connection: redisConnection,
-      defaultJobOptions: {
-        removeOnComplete: 100,
-        removeOnFail: 500, // Higher limit for tracking failed webhook flows
-      },
+      defaultJobOptions: buildJobOptions({
+        attempts: 1,
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 500, age: 7 * 24 * 60 * 60 }, // Higher limit for tracking failed webhook flows
+      }),
     })
   : null;
 attachRedisErrorAlert(webhookRetryQueue, "webhook-retry-queue");
+attachQueueDepthAlert(webhookRetryQueue, "webhook-retry-queue");
 
 if (webhookRetryQueue) {
   webhookRetryQueue.on("waiting", (job) =>
