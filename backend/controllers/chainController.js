@@ -15,6 +15,18 @@ const CATALOG = catalogCache.CATALOGS.CHAINS;
  * preventing mass-assignment of undocumented or sensitive columns.
  */
 
+/**
+ * Chain controller
+ *
+ * Pagination is validated upstream by the validate(paginationSchema, "query")
+ * middleware wired in chains.js routes — req.query.page and req.query.limit
+ * are guaranteed to be safe integers when they reach these handlers.
+ *
+ * Body fields for create/update are validated and stripped by
+ * validate(createChainSchema) / validate(updateChainSchema) middleware,
+ * preventing mass-assignment of undocumented or sensitive columns.
+ */
+
 export const createChain = async (req, res) => {
   try {
     // req.body has already been validated and unknown fields stripped by

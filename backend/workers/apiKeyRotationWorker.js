@@ -2,12 +2,14 @@ import { Worker, Queue } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import ApiKey from "../models/ApiKey.js";
 import Notification from "../models/Notification.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 // ========== Queues ==========
 
 export const apiKeyRotationQueue = redisConnection
     ? new Queue("api-key-rotation", { connection: redisConnection })
     : null;
+attachRedisErrorAlert(apiKeyRotationQueue, "api-key-rotation-queue");
 
 // ========== Rotation Worker ==========
 // Runs every hour — checks for keys due for rotation and handles transition cleanups
@@ -63,6 +65,7 @@ export const apiKeyRotationWorker = redisConnection
         }
     )
     : null;
+attachRedisErrorAlert(apiKeyRotationWorker, "api-key-rotation-worker");
 
 // ========== Event Handlers ==========
 

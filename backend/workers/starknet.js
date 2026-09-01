@@ -3,6 +3,7 @@ import db from "../config/database.js";
 import redis, { redisConnection } from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import secureRandomString from "../utils/random-string.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 export const starknetWorker = redisConnection ? new Worker(
   "starknet-transactions",
@@ -128,6 +129,7 @@ export const starknetWorker = redisConnection ? new Worker(
     connection: redisConnection,
   }
 ) : null;
+attachRedisErrorAlert(starknetWorker, "starknet-transactions-worker");
 
 if (starknetWorker) {
   starknetWorker.on("completed", (job) => {

@@ -43,6 +43,24 @@ export const createScheduledPaymentSchema = Joi.object({
             'string.max': 'Memo must be 28 characters or less'
         }),
 
+    frequency: Joi.string()
+        .valid('once', 'daily', 'weekly', 'monthly')
+        .default('once')
+        .messages({
+            'any.only': 'Frequency must be one of: once, daily, weekly, monthly'
+        }),
+
+    maxExecutions: Joi.number()
+        .integer()
+        .min(1)
+        .max(365)
+        .allow(null)
+        .messages({
+            'number.base': 'Max executions must be a number',
+            'number.min': 'Max executions must be at least 1',
+            'number.max': 'Max executions cannot exceed 365'
+        }),
+
     scheduledAt: Joi.date()
         .iso()
         .greater('now')
@@ -66,9 +84,15 @@ export const scheduledPaymentQuerySchema = Joi.object({
     limit: Joi.number().integer().min(1).max(100).default(20),
     offset: Joi.number().integer().min(0).default(0),
     status: Joi.string()
-        .valid('pending', 'processing', 'completed', 'failed', 'cancelled')
+        .valid('pending', 'processing', 'completed', 'failed', 'cancelled', 'paused')
         .allow(null, '')
         .messages({
-            'any.only': 'Status must be one of: pending, processing, completed, failed, cancelled'
+            'any.only': 'Status must be one of: pending, processing, completed, failed, cancelled, paused'
+        }),
+    frequency: Joi.string()
+        .valid('once', 'daily', 'weekly', 'monthly')
+        .allow(null, '')
+        .messages({
+            'any.only': 'Frequency must be one of: once, daily, weekly, monthly'
         }),
 });

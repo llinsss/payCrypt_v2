@@ -20,7 +20,7 @@
 await PaymentService.processPayment({
   senderTag: 'alice',
   recipientTag: 'bob',
-  amount: 100,
+  amount: '100',
   asset: 'XLM',
   memo: 'Payment',
   secrets: ['SXXXXXXX...'],
@@ -31,6 +31,7 @@ await PaymentService.processPayment({
 ### 2. Validation
 - Tag format: 3-20 alphanumeric + underscore
 - Amount: 0.00001 - 1,000,000 XLM
+- Amounts are decimal strings with up to 7 decimal places (1 XLM = 10,000,000 stroops); do not use JavaScript floating-point arithmetic for payment or fee values.
 - Asset: 1-12 uppercase alphanumeric
 - Memo: max 28 characters
 
@@ -61,7 +62,7 @@ Content-Type: application/json
 {
   "senderTag": "alice",
   "recipientTag": "bob",
-  "amount": 100.5,
+  "amount": "100.5",
   "asset": "XLM",
   "assetIssuer": null,
   "memo": "Payment",

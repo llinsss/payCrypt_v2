@@ -1,44 +1,104 @@
-import React, { useEffect } from "react";
+import React, { Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
+import LoadingSpinner from "./components/LoadingSpinner";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { Toaster } from "react-hot-toast";
 
-// Layout
+// Layout — loaded eagerly (always visible)
 import Sidebar from "./components/Layout/Sidebar";
 import Header from "./components/Layout/Header";
+import LoadingSpinner from "./components/LoadingSpinner";
 
-// Public pages
-import AuthPage from "./components/Auth/AuthPage";
+// Error boundaries (#524)
+import { ErrorBoundary, RouteErrorBoundary } from "./components/ErrorBoundary";
 
-// User pages
-import UserDashboard from "./components/Dashboard/UserDashboard";
-import BalancesView from "./components/Balances/BalancesView";
-import DepositsView from "./components/Deposits/DepositsView";
-import QRCodeGenerator from "./components/QRCode/QRCodeGenerator";
-import WithdrawView from "./components/Withdraw/WithdrawView";
-import SwapView from "./components/Swap/SwapView";
-import BillsView from "./components/Bills/BillsView";
-import SplitPaymentView from "./components/Split/SplitPaymentView";
-import MultiCurrencyView from "./components/MultiCurrency/MultiCurrencyView";
-import SettingsView from "./components/Settings/SettingsView";
-
-// Admin pages
-import AdminDashboard from "./components/Admin/AdminDashboard";
-import AdminUsers from "./components/Admin/AdminUsers";
-import AdminPayouts from "./components/Admin/AdminPayouts";
-import KYCForm from "./components/KYC/KYCForm";
-import ApiTest from "./components/Test/ApiTest";
 import { apiClient } from "./utils/api";
 
-// Private app layout with auth guard
+// ── Lazy-loaded route-level views ────────────────────────────────────────────
+// Public
+const AuthPage = React.lazy(
+  () => import("./components/Auth/AuthPage")
+);
+
+// User routes
+const UserDashboard = React.lazy(
+  () => import("./components/Dashboard/UserDashboard")
+);
+const BalancesView = React.lazy(
+  () => import("./components/Balances/BalancesView")
+);
+const DepositsView = React.lazy(
+  () => import("./components/Deposits/DepositsView")
+);
+const QRCodeGenerator = React.lazy(
+  () => import("./components/QRCode/QRCodeGenerator")
+);
+const WithdrawView = React.lazy(
+  () => import("./components/Withdraw/WithdrawView")
+);
+const SwapView = React.lazy(
+  () => import("./components/Swap/SwapView")
+);
+const BillsView = React.lazy(
+  () => import("./components/Bills/BillsView")
+);
+const SplitPaymentView = React.lazy(
+  () => import("./components/Split/SplitPaymentView")
+);
+const MultiCurrencyView = React.lazy(
+  () => import("./components/MultiCurrency/MultiCurrencyView")
+);
+const SettingsView = React.lazy(
+  () => import("./components/Settings/SettingsView")
+);
+const KYCForm = React.lazy(
+  () => import("./components/KYC/KYCForm")
+);
+const ApiTest = React.lazy(
+  () => import("./components/Test/ApiTest")
+);
+
+// Admin routes — their own chunk so non-admin users never load them
+const AdminDashboard = React.lazy(
+  () => import("./components/Admin/AdminDashboard")
+);
+const AdminUsers = React.lazy(
+  () => import("./components/Admin/AdminUsers")
+);
+const AdminPayouts = React.lazy(
+  () => import("./components/Admin/AdminPayouts")
+);
+const AdminKyc = React.lazy(
+  () => import("./components/Admin/AdminKyc")
+);
+const AdminDisputes = React.lazy(
+  () => import("./components/Admin/AdminDisputes")
+);
+const AdminTransactions = React.lazy(
+  () => import("./components/Admin/AdminTransactions")
+);
+const AdminHealth = React.lazy(
+  () => import("./components/Admin/AdminHealth")
+);
+
+// ── Shared suspense fallback ─────────────────────────────────────────────────
+function RouteLoader() {
+  return (
+    <div className="min-h-[60vh] grid place-items-center">
+      <LoadingSpinner />
+    </div>
+  );
+}
+
+// ── Private app layout with auth guard ──────────────────────────────────────
 const PrivateLayout: React.FC = () => {
   const { user, isLoading } = useAuth();
   const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   useEffect(() => {
     if (!user) {
@@ -94,7 +154,16 @@ const PrivateLayout: React.FC = () => {
             </div>
           )}
           <div className="p-4 lg:p-6">
-            <Outlet />
+            {/*
+             * Route-level error boundary (#524):
+             * A render failure inside any lazy-loaded view renders a safe
+             * fallback for that route only — the sidebar/header remain usable.
+             */}
+            <RouteErrorBoundary name="main-outlet">
+              <Suspense fallback={<RouteLoader />}>
+                <Outlet />
+              </Suspense>
+            </RouteErrorBoundary>
           </div>
         </main>
       </div>
@@ -102,15 +171,56 @@ const PrivateLayout: React.FC = () => {
   );
 };
 
-// Guard for admin-only sections
+// ── Guard for admin-only sections ────────────────────────────────────────────
 const AdminGuard: React.FC = () => {
-  const { user } = useAuth();
-  if (user?.role !== "admin") {
+  const { user, refreshUser } = useAuth();
+  const [status, setStatus] = useState<"checking" | "authorized" | "denied">(
+    "checking"
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const verify = async () => {
+      try {
+        const freshUser = await refreshUser();
+        if (cancelled) return;
+        const isAdmin =
+          freshUser?.role === "admin" || freshUser?.role === "super_admin";
+        setStatus(isAdmin ? "authorized" : "denied");
+      } catch {
+        // Token invalid/expired or claims fetch failed — treat as revoked.
+        if (!cancelled) setStatus("denied");
+      }
+    };
+
+    verify();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  if (status === "checking") {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (status === "denied") {
     return <Navigate to="/" replace />;
   }
+
   return <Outlet />;
 };
 
+// ── App routes ───────────────────────────────────────────────────────────────
 function AppRoutes() {
   return (
     <Routes>
@@ -119,7 +229,12 @@ function AppRoutes() {
         path="/auth"
         element={
           <PublicRoute>
-            <AuthPage />
+            {/* Route-level boundary for the auth page (#524) */}
+            <RouteErrorBoundary name="auth">
+              <Suspense fallback={<RouteLoader />}>
+                <AuthPage />
+              </Suspense>
+            </RouteErrorBoundary>
           </PublicRoute>
         }
       />
@@ -227,11 +342,64 @@ function AppRoutes() {
         />
         <Route path="test/api" element={<ApiTest />} />
 
-        {/* Admin-only routes */}
+        {/* Admin-only routes — wrapped in their own boundary (#524) */}
         <Route path="admin" element={<AdminGuard />}>
-          <Route path="overview" element={<AdminDashboard />} />
-          <Route path="users" element={<AdminUsers />} />
-          <Route path="payouts" element={<AdminPayouts />} />
+          <Route
+            path="overview"
+            element={
+              <RouteErrorBoundary name="admin-overview">
+                <AdminDashboard />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="users"
+            element={
+              <RouteErrorBoundary name="admin-users">
+                <AdminUsers />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="kyc"
+            element={
+              <RouteErrorBoundary name="admin-kyc">
+                <AdminKyc />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="disputes"
+            element={
+              <RouteErrorBoundary name="admin-disputes">
+                <AdminDisputes />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="transactions"
+            element={
+              <RouteErrorBoundary name="admin-transactions">
+                <AdminTransactions />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="health"
+            element={
+              <RouteErrorBoundary name="admin-health">
+                <AdminHealth />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="payouts"
+            element={
+              <RouteErrorBoundary name="admin-payouts">
+                <AdminPayouts />
+              </RouteErrorBoundary>
+            }
+          />
           <Route
             path="analytics"
             element={
@@ -249,11 +417,16 @@ function AppRoutes() {
   );
 }
 
+// ── Root component ───────────────────────────────────────────────────────────
+// Top-level error boundary (#524): catches any error that escapes route-level
+// boundaries (e.g. a broken AuthProvider) and prevents a completely blank page.
 function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <ErrorBoundary name="app-root">
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

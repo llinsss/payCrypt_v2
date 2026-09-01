@@ -1,0 +1,143 @@
+# Backend CI
+# Stable check name: ci/backend
+#
+# Runs on pull_request when backend source files or their workflow change.
+# Jobs:
+#   detect   – path filter (always runs, ~5 s)
+#   quality  – lint · dependency audit · jest test suite
+#
+# Services: PostgreSQL 14, Redis 6 (mirrors production services)
+# Artifacts: jest-results-<sha> retained 14 days
+
+name: Backend CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  # ── 1. Path filter ─────────────────────────────────────────────────────────
+  detect:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - "backend/**"
+
+  # ── 2. Lint · Audit · Test ─────────────────────────────────────────────────
+  quality:
+    name: ci/backend
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: taggedpay_test
+          POSTGRES_USER: taggedpay_test
+          POSTGRES_PASSWORD: taggedpay_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taggedpay_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: taggedpay_test
+      DB_USER: taggedpay_test
+      DB_PASSWORD: taggedpay_test
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci_test_jwt_secret_minimum_32_characters_long
+      BULL_ADMIN_USER: ci_admin
+      BULL_ADMIN_PASS: ci_admin_password
+      SWAGGER_ADMIN_USER: ci_admin
+      SWAGGER_ADMIN_PASS: ci_admin_password
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Lint ──────────────────────────────────────────────────────────────
+      - name: Lint
+        run: npm run lint
+
+      # ── Security audit (high/critical only, non-blocking for moderate) ────
+      - name: Dependency security audit
+        run: npm audit --audit-level=high
+        # Annotate but don't fail on moderate-severity findings; critical/high
+        # findings cause a non-zero exit and block the PR.
+        continue-on-error: false
+
+      # ── Tests ─────────────────────────────────────────────────────────────
+      - name: Run tests
+        run: npm test -- --json --outputFile=/tmp/jest-results.json
+        continue-on-error: false
+
+      # ── Upload results ────────────────────────────────────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-results-${{ github.sha }}
+          path: /tmp/jest-results.json
+          retention-days: 14
+          if-no-files-found: warn

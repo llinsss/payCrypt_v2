@@ -1,28 +1,78 @@
+/**
+ * User model — wraps database access for the `users` table.
+ *
+ * Issue #459: `phone_number` is encrypted with AES-256-GCM before write and
+ * decrypted transparently on read.
+ */
 import db from "../config/database.js";
 import bcrypt from "bcrypt";
 import NotificationPreference from "./NotificationPreference.js";
+import { encrypt, decrypt, isEncrypted } from "../utils/encryption.js";
+
+/** PII fields stored encrypted. */
+const PII_FIELDS = ["phone_number"];
+
+/**
+ * Encrypt PII fields in user data before writing to the database.
+ *
+ * @param {Record<string, unknown>} data
+ * @returns {Record<string, unknown>}
+ */
+function encryptPii(data) {
+  if (!data) return data;
+  const result = { ...data };
+  for (const field of PII_FIELDS) {
+    if (result[field] !== undefined) {
+      result[field] = encrypt(result[field]);
+    }
+  }
+  return result;
+}
+
+/**
+ * Decrypt PII fields in a user record returned from the database.
+ * Values not matching our encrypted format are returned unchanged so that
+ * pre-migration plaintext rows degrade gracefully.
+ *
+ * @param {Record<string, unknown>|null} record
+ * @returns {Record<string, unknown>|null}
+ */
+function decryptPii(record) {
+  if (!record) return record;
+  const result = { ...record };
+  for (const field of PII_FIELDS) {
+    if (result[field] !== undefined && result[field] !== null) {
+      if (isEncrypted(result[field])) {
+        result[field] = decrypt(result[field]);
+      }
+    }
+  }
+  return result;
+}
 
 const User = {
   async findByEmail(email) {
-    return await db("users").where({ email }).first();
+    return decryptPii(await db("users").where({ email }).first());
   },
 
   async findByEntity(entity) {
-    return await db("users")
-      .where("email", entity)
-      .orWhere("tag", entity)
-      .first();
+    return decryptPii(
+      await db("users")
+        .where("email", entity)
+        .orWhere("tag", entity)
+        .first()
+    );
   },
   async findByTag(tag) {
-    return await db("users").where({ tag }).first();
+    return decryptPii(await db("users").where({ tag }).first());
   },
 
   async findByAddress(address) {
-    return await db("users").where({ address }).first();
+    return decryptPii(await db("users").where({ address }).first());
   },
 
   async findById(id) {
-    return await db("users").where({ id }).first();
+    return decryptPii(await db("users").where({ id }).first());
   },
 
   async setTwoFactorSecret(id, secret) {
@@ -75,13 +125,14 @@ const User = {
   },
 
   async findByIds(ids) {
-    return await db("users").whereIn("id", ids);
+    const records = await db("users").whereIn("id", ids);
+    return records.map(decryptPii);
   },
 
   async create(userData) {
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     const [id] = await db("users").insert({
-      ...userData,
+      ...encryptPii(userData),
       password: hashedPassword,
       two_factor_secret: null,
       two_factor_enabled: false,
@@ -95,7 +146,7 @@ const User = {
   },
 
   async getAll(limit = 10, offset = 0) {
-    return await db("users")
+    const records = await db("users")
       .select(
         "id",
         "tag",
@@ -110,6 +161,7 @@ const User = {
       .limit(limit)
       .offset(offset)
       .orderBy("created_at", "desc");
+    return records.map(decryptPii);
   },
 
   async update(id, userData) {
@@ -120,7 +172,7 @@ const User = {
     await db("users")
       .where({ id })
       .update({
-        ...userData,
+        ...encryptPii(userData),
         updated_at: db.fn.now(),
       });
 

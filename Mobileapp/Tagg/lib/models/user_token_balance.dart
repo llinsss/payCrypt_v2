@@ -21,6 +21,11 @@ class UserTokenBalance {
   final String tokenLogoUrl;
   final double tokenPrice;
 
+  // Chain info
+  final int? chainId;
+  final String? chainName;
+  final String? chainSymbol;
+
   UserTokenBalance({
     required this.id,
     required this.userId,
@@ -38,6 +43,9 @@ class UserTokenBalance {
     required this.tokenSymbol,
     required this.tokenLogoUrl,
     required this.tokenPrice,
+    this.chainId,
+    this.chainName,
+    this.chainSymbol,
   });
 
   factory UserTokenBalance.fromJson(Map<String, dynamic> json) {
@@ -58,6 +66,9 @@ class UserTokenBalance {
       tokenSymbol: json['token_symbol'] ?? '',
       tokenLogoUrl: json['token_logo_url'] ?? '',
       tokenPrice: _parseDouble(json['token_price']) ?? 0.0,
+      chainId: json['chain_id'],
+      chainName: json['chain_name'],
+      chainSymbol: json['chain_symbol'],
     );
   }
 
@@ -78,6 +89,9 @@ class UserTokenBalance {
         'token_symbol': tokenSymbol,
         'token_logo_url': tokenLogoUrl,
         'token_price': tokenPrice,
+        'chain_id': chainId,
+        'chain_name': chainName,
+        'chain_symbol': chainSymbol,
       };
 
   static double _parseDouble(dynamic value) {

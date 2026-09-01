@@ -14,14 +14,29 @@ async function bootstrap() {
   // Enable validation pipes for DTOs
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Strip properties not in DTO
-      forbidNonWhitelisted: true, // Throw error for unknown properties
-      transform: true, // Auto-transform payloads to DTO instances
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
       transformOptions: {
-        enableImplicitConversion: true, // Allow implicit type conversion
+        enableImplicitConversion: true,
       },
     }),
   );
+
+  // Optional: Swagger documentation setup
+  // Uncomment when @nestjs/swagger is installed
+  // import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+  // const config = new DocumentBuilder()
+  //   .setTitle('TaggedPay Stellar API')
+  //   .setDescription('Stellar blockchain integration for TaggedPay')
+  //   .setVersion('1.0.0')
+  //   .addTag('stellar', 'Stellar operations')
+  //   .addTag('accounts', 'Account management')
+  //   .addTag('payments', 'Payment operations')
+  //   .addTag('tags', 'Tag resolution and management')
+  //   .build();
+  // const document = SwaggerModule.createDocument(app, config);
+  // SwaggerModule.setup('docs', app, document);
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

@@ -161,4 +161,68 @@ describe("createUserRateLimiter — Issue #222 fail-safe behaviour", () => {
     const r2 = await request(app).get("/test");
     expect(r2.status).toBe(429);
   });
+
+  // ── 6. Automatic Recovery: degraded Redis → recovered Redis ──────────────
+  it("non-strict: automatically recovers when Redis becomes available again", async () => {
+    // Start with degraded Redis (no sorted-set methods)
+    let redisMock = {};
+
+    const app = await buildApp(redisMock, {
+      windowMs: 60_000,
+      max: 2,
+      type: "test-recovery",
+      strict: false,
+    });
+
+    // First request falls back (Redis unavailable)
+    const r1 = await request(app).get("/test");
+    expect(r1.status).toBe(200);
+    expect(r1.headers["x-ratelimit-fallback"]).toBe("in-memory");
+
+    // Now "upgrade" the Redis mock to have sorted-set methods
+    redisMock = makeHealthyRedis(2);
+
+    // Re-import to pick up the upgraded mock
+    jest.resetModules();
+    jest.unstable_mockModule("../config/redis.js", () => ({
+      default: redisMock,
+    }));
+
+    const { createUserRateLimiter: createUserRateLimiterRecovered } = await import("../config/rateLimiting.js");
+    const limiterRecovered = createUserRateLimiterRecovered({
+      windowMs: 60_000,
+      max: 2,
+      type: "test-recovery-2",
+      strict: false,
+    });
+
+    const appRecovered = express();
+    appRecovered.get("/test", limiterRecovered, (req, res) => res.status(200).json({ ok: true }));
+
+    // Request with recovered Redis should NOT have fallback header
+    const r2 = await request(appRecovered).get("/test");
+    expect(r2.status).toBe(200);
+    expect(r2.headers["x-ratelimit-fallback"]).toBeUndefined(); // No fallback = Redis working
+  });
+
+  // ── 7. Observable Fallback Metrics: in-memory violations tracked ─────────
+  it("non-strict: tracks in-memory violations and fallback activation", async () => {
+    const degradedRedis = {}; // no Redis
+
+    const app = await buildApp(degradedRedis, {
+      windowMs: 60_000,
+      max: 1,
+      type: "test-metrics",
+      strict: false,
+    });
+
+    // First request OK
+    const r1 = await request(app).get("/test");
+    expect(r1.status).toBe(200);
+
+    // Second request hits in-memory limit (violation)
+    const r2 = await request(app).get("/test");
+    expect(r2.status).toBe(429);
+    expect(r2.headers["x-ratelimit-fallback"]).toBe("in-memory");
+  });
 });

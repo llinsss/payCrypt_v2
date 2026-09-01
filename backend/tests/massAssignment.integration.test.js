@@ -27,7 +27,17 @@ jest.unstable_mockModule('../middleware/audit.js', () => ({
     auditLog: () => (req, res, next) => next()
 }));
 
+jest.unstable_mockModule('../middleware/rateLimiter.js', () => ({
+    rateLimit: () => (req, res, next) => next(),
+    default: () => (req, res, next) => next()
+}));
+
 jest.unstable_mockModule('../config/rateLimiting.js', () => ({
+    RATE_LIMIT_TIERS: { FREE: 'FREE', PREMIUM: 'PREMIUM', ENTERPRISE: 'ENTERPRISE' },
+    TIER_LIMITS: { FREE: 100, PREMIUM: 1000, ENTERPRISE: 10000 },
+    ENDPOINT_TIER_LIMITS: { FREE: { api: 100 }, PREMIUM: { api: 1000 }, ENTERPRISE: { api: 10000 } },
+    createTierRateLimiter: () => (req, res, next) => next(),
+    createUserRateLimiter: () => (req, res, next) => next(),
     paymentLimiter: (req, res, next) => next(),
     exportLimiter: (req, res, next) => next(),
     downloadLimiter: (req, res, next) => next(),

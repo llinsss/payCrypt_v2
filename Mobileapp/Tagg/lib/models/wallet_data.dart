@@ -6,6 +6,7 @@ class WalletData {
   final double lockedBalance; // Locked balance (pending transactions, etc.)
   final DateTime createdAt;
   final DateTime updatedAt;
+  final double ngnRate; // Live NGN/USD exchange rate
 
   WalletData({
     required this.id,
@@ -14,9 +15,10 @@ class WalletData {
     required this.lockedBalance,
     required this.createdAt,
     required this.updatedAt,
+    this.ngnRate = 1600, // Default fallback rate
   });
 
-  factory WalletData.fromJson(Map<String, dynamic> json) {
+  factory WalletData.fromJson(Map<String, dynamic> json, {double ngnRate = 1600}) {
     return WalletData(
       id: json['id'] ?? 0,
       userId: json['user_id'] ?? 0,
@@ -24,6 +26,7 @@ class WalletData {
       lockedBalance: _parseDouble(json['locked_balance']) ?? 0.0,
       createdAt: _parseDateTime(json['created_at']),
       updatedAt: _parseDateTime(json['updated_at']),
+      ngnRate: ngnRate,
     );
   }
 
@@ -34,19 +37,20 @@ class WalletData {
         'locked_balance': lockedBalance,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
+        'ngn_rate': ngnRate,
       };
 
   /// Get total balance (available + locked)
   double get totalBalance => availableBalance + lockedBalance;
 
   /// Get NGN value of available balance
-  double get availableBalanceNgn => availableBalance * 1550;
+  double get availableBalanceNgn => availableBalance * ngnRate;
 
   /// Get NGN value of locked balance
-  double get lockedBalanceNgn => lockedBalance * 1550;
+  double get lockedBalanceNgn => lockedBalance * ngnRate;
 
   /// Get total NGN balance
-  double get totalBalanceNgn => totalBalance * 1550;
+  double get totalBalanceNgn => totalBalance * ngnRate;
 
   static double _parseDouble(dynamic value) {
     if (value == null) return 0.0;

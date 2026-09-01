@@ -96,7 +96,7 @@ export interface AuthUser {
   kyc_status: "none" | "pending" | "verified" | "rejected";
   created_at: string;
   last_login: string;
-  role: "user" | "admin";
+  role: "user" | "admin" | "super_admin";
 }
 
 export interface KYCData {

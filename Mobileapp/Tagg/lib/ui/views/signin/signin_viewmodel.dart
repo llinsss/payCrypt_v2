@@ -58,17 +58,18 @@ class SigninViewModel extends BaseViewModel {
     setBusy(true);
 
     try {
-      // TODO: Implement Google Sign In
-      await Future.delayed(const Duration(seconds: 1));
+      final authResponse = await _authService.loginWithGoogle();
 
       _snackbarService.showSnackbar(
-        message: 'Google Sign In coming soon!',
+        message: 'Signed in successfully with Google!',
         duration: const Duration(seconds: 2),
       );
+
+      await _navigationService.replaceWith(Routes.bottomnavView);
     } catch (e) {
       _dialogService.showDialog(
-        title: 'Error',
-        description: 'Failed to sign in with Google. Please try again.',
+        title: 'Google Sign In Failed',
+        description: e.toString().replaceFirst('Exception: ', ''),
       );
     } finally {
       setBusy(false);

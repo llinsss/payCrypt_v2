@@ -15,6 +15,18 @@ const CATALOG = catalogCache.CATALOGS.TOKENS;
  * preventing mass-assignment of undocumented or sensitive columns.
  */
 
+/**
+ * Token controller
+ *
+ * Pagination is validated upstream by the validate(paginationSchema, "query")
+ * middleware wired in tokens.js routes -- req.query.page and req.query.limit
+ * are guaranteed to be safe integers when they reach these handlers.
+ *
+ * Body fields for create/update are validated and stripped by
+ * validate(createTokenSchema) / validate(updateTokenSchema) middleware,
+ * preventing mass-assignment of undocumented or sensitive columns.
+ */
+
 export const createToken = async (req, res) => {
   try {
     // req.body has already been validated and unknown fields stripped by

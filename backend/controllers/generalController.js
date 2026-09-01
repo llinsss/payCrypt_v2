@@ -5,6 +5,7 @@ import redis from "../config/redis.js";
 import * as contract from "../contracts/index.js";
 import { ethers } from "ethers";
 import ExchangeRateService from "../services/exchange-rate-api.js";
+import { validateAddress } from "../utils/validateAddress.js";
 
 const CACHE_TTL_LONG = 60 * 24 * 30;
 const CACHE_TTL_SHORT = 60 * 24;
@@ -65,6 +66,13 @@ export const send_to_tag = async (req, res, next) => {
 export const send_to_wallet = async (req, res, next) => {
   try {
     const { chain, sender_tag, receiver_address, amount } = req.body;
+
+    // Reject wrong-chain / malformed addresses before submitting any on-chain tx.
+    const addressCheck = validateAddress(receiver_address, chain);
+    if (!addressCheck.valid) {
+      return failure(res, addressCheck.error, null, 400);
+    }
+
     const data = await contract.send_via_wallet({
       chain,
       sender_tag,
@@ -286,8 +294,23 @@ export const bill_verify_customer = async (req, res, next) => {
 
 export const get_exchange_rates = async (req, res, next) => {
   try {
-    const rates = await ExchangeRateService.getRates();
+    const { rates, fetchedAt, freshness } =
+      await ExchangeRateService.getRatesDetailed();
+
+    // Expose freshness without changing the response body shape.
+    res.set("X-Exchange-Rate-Freshness", freshness);
+    if (fetchedAt) res.set("X-Exchange-Rate-Fetched-At", fetchedAt);
+
     return success(res, "Exchange rates fetched successfully", rates, 200);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const get_exchange_rate_freshness = async (req, res, next) => {
+  try {
+    const freshness = await ExchangeRateService.getFreshness();
+    return success(res, "Exchange rate freshness", freshness, 200);
   } catch (err) {
     next(err);
   }
