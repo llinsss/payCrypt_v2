@@ -126,7 +126,12 @@ npm run db:reset               # Reset database (rollback, migrate, seed)
 - `POST /api/users/profile` - Edit user profile
 
 ### Health Check
-- `GET /health` - Server health status
+- `GET /health` - Liveness probe (process up, no dependency checks)
+- `GET /api/health/live` - Liveness probe (versioned alias of `/health`)
+- `GET /api/health/ready` - Readiness probe (checks database + Redis; returns 503 if either is down)
+- `GET /api/health` - Full dependency status (database, Redis, Stellar Horizon)
+
+See `backend/docs/OBSERVABILITY.md` for the full liveness/readiness contract.
 
 ## 🔐 Authentication
 
