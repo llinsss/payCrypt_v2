@@ -12,10 +12,13 @@ import basicAuth from "express-basic-auth";
 import mongoSanitize from "express-mongo-sanitize";
 
 import indexRoutes from "./routes/index.js";
+import { getDeploymentStatus } from "./services/deploymentValidator.js";
 import generalRoutes from "./routes/general.js";
+import { getLiveness } from "./controllers/healthController.js";
 import bullBoardRouter from "./bullboard.js";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
+import { buildSwaggerServers } from "./config/swagger.js";
 
 import {
   SIX_HOURS,
@@ -205,11 +208,23 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check endpoint (no rate limiting)
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
+// Liveness probe (no rate limiting): confirms only that this process is up
+// and the event loop is responsive. It deliberately performs NO dependency
+// checks (DB/Redis/Stellar) — a slow or down dependency must never cause an
+// orchestrator to kill/restart an otherwise-healthy process.
+//
+// This is the unversioned/root alias of GET /api/health/live, kept for
+// load balancers and container orchestrators that expect a liveness probe
+// at the conventional root path. For readiness (safe to receive traffic)
+// use GET /api/health/ready; for a full dependency status report use
+// GET /api/health. See backend/docs/OBSERVABILITY.md for the full contract.
+app.get("/health", getLiveness);
+
+// Test route for user verification of Sentry. Never expose this deliberately
+// failing endpoint to production traffic.
+if (process.env.NODE_ENV !== "production") {
+  app.get("/test-error", (req, res) => {
+    throw new Error("Sentry Test Error manually triggered");
   });
 });
 
@@ -258,24 +273,7 @@ const swaggerOptions = {
         "**Getting Started:** See the [Getting Started guide](https://taggedpay.xyz/docs/api/getting-started) for a complete walkthrough: " +
         "register → get JWT → create wallet → send payment.",
     },
-    servers: [
-      {
-        url: `http://localhost:${process.env.PORT || 5002}/api/v2`,
-        description: "Current version (v2)",
-      },
-      {
-        url: `http://localhost:${process.env.PORT || 5002}/api/v1`,
-        description: "Deprecated version (v1)",
-      },
-      {
-        url: `http://localhost:${process.env.PORT || 5002}`,
-        description: "Development Server (unversioned root)",
-      },
-      {
-        url: "https://taggedpay.xyz/api/v2",
-        description: "Production (v2)",
-      },
-    ],
+    servers: buildSwaggerServers(),
     components: {
       securitySchemes: {
         bearerAuth: {

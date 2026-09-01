@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:Tagg/services/api_service.dart';
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/ui/common/api_constants.dart';
@@ -10,8 +11,10 @@ class WebSocketService {
   WebSocketChannel? _channel;
   Timer? _reconnectTimer;
   Timer? _pollingTimer;
+  Timer? _expiryTimer;
   int _reconnectAttempts = 0;
   static const int _maxReconnectAttempts = 10;
+  static const Duration _expiryRefreshLead = Duration(seconds: 30);
   bool _isConnected = false;
   bool _isDisposed = false;
 
@@ -33,16 +36,39 @@ class WebSocketService {
       await _apiService.initializeToken();
       if (!_apiService.isAuthenticated) return;
 
-      final token = await _getToken();
-      if (token == null) return;
+      final token = _apiService.authToken;
+      if (token == null || token.isEmpty) return;
+
+      final expiresAt = _decodeTokenExpiry(token);
+      if (expiresAt != null && !expiresAt.isAfter(DateTime.now())) {
+        // Stale token: don't spin the socket up with credentials that will
+        // be rejected immediately.
+        _connectionStateController.add(false);
+        return;
+      }
 
       final wsUrl = ApiConstants.baseUrl
           .replaceFirst('https://', 'wss://')
           .replaceFirst('http://', 'ws://');
 
+      if (kReleaseMode && !wsUrl.startsWith('wss://')) {
+        if (kDebugMode) {
+          debugPrint('Refusing insecure WebSocket connection in release build');
+        }
+        _connectionStateController.add(false);
+        return;
+      }
+
       _channel = WebSocketChannel.connect(
         Uri.parse('$wsUrl?token=$token'),
       );
+
+      // Explicit auth handshake for servers that expect a first message
+      // rather than (or in addition to) the query-string token.
+      _channel!.sink.add(json.encode({
+        'event': 'authenticate',
+        'data': {'token': token},
+      }));
 
       _channel!.stream.listen(
         (data) {
@@ -54,7 +80,9 @@ class WebSocketService {
           _scheduleReconnect();
         },
         onError: (error) {
-          print('WebSocket error: $error');
+          if (kDebugMode) {
+            debugPrint('WebSocket error: ${error.runtimeType}');
+          }
           _isConnected = false;
           _connectionStateController.add(false);
           _scheduleReconnect();
@@ -64,39 +92,108 @@ class WebSocketService {
       _isConnected = true;
       _reconnectAttempts = 0;
       _connectionStateController.add(true);
-      print('WebSocket connected successfully');
+      if (expiresAt != null) {
+        _scheduleExpiryRefresh(expiresAt);
+      }
+      if (kDebugMode) {
+        debugPrint('WebSocket connected successfully');
+      }
     } catch (e) {
-      print('WebSocket connection failed: $e');
+      if (kDebugMode) {
+        debugPrint('WebSocket connection failed: ${e.runtimeType}');
+      }
       _scheduleReconnect();
       _startPollingFallback();
     }
   }
 
+  /// Decode the `exp` claim (seconds since epoch) from a JWT without
+  /// validating its signature — used only to avoid connecting with a
+  /// token we already know is stale, and to schedule a proactive refresh.
+  DateTime? _decodeTokenExpiry(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final normalized = base64Url.normalize(parts[1]);
+      final payload = json.decode(utf8.decode(base64Url.decode(normalized)));
+      if (payload is! Map<String, dynamic>) return null;
+      final exp = payload['exp'];
+      if (exp is! num) return null;
+      return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Proactively refresh the connection shortly before the token expires,
+  /// instead of waiting for the server to reject it.
+  void _scheduleExpiryRefresh(DateTime expiresAt) {
+    _expiryTimer?.cancel();
+    var delay = expiresAt.difference(DateTime.now()) - _expiryRefreshLead;
+    if (delay.isNegative) delay = Duration.zero;
+
+    _expiryTimer = Timer(delay, () async {
+      if (_isDisposed) return;
+      _isConnected = false;
+      await _channel?.sink.close();
+      connect();
+    });
+  }
+
   /// Handle incoming WebSocket messages
   void _handleMessage(dynamic data) {
     try {
-      final message = json.decode(data as String);
-      final event = message['event'] as String?;
-      final payload = message['data'] as Map<String, dynamic>?;
+      if (data is! String) return;
 
-      if (event == null || payload == null) return;
+      final decoded = json.decode(data);
+      if (decoded is! Map<String, dynamic>) return;
+
+      final event = decoded['event'];
+      final payload = decoded['data'];
+      if (event is! String || event.isEmpty) return;
 
       switch (event) {
         case 'balance_updated':
-          _balanceUpdateController.add(payload);
-          break;
-        case 'transaction:update':
-          _transactionUpdateController.add(payload);
-          // Also emit balance update since transactions affect balance
-          if (payload['balance'] != null) {
-            _balanceUpdateController.add(payload['balance']);
+          if (payload is Map<String, dynamic>) {
+            _balanceUpdateController.add(payload);
           }
           break;
+        case 'transaction:update':
+          if (payload is Map<String, dynamic>) {
+            _transactionUpdateController.add(payload);
+            final balance = payload['balance'];
+            if (balance is Map<String, dynamic>) {
+              _balanceUpdateController.add(balance);
+            }
+          }
+          break;
+        case 'unauthorized':
+        case 'token_expired':
+          _handleAuthExpired();
+          break;
         default:
-          print('Unknown event: $event');
+          if (kDebugMode) {
+            debugPrint('Unknown WebSocket event: $event');
+          }
       }
     } catch (e) {
-      print('Error handling WebSocket message: $e');
+      if (kDebugMode) {
+        debugPrint('Error handling WebSocket message: ${e.runtimeType}');
+      }
+    }
+  }
+
+  /// Server rejected (or is about to reject) our credentials: drop the
+  /// socket, pull the latest token, and reconnect immediately rather than
+  /// waiting out the exponential backoff.
+  void _handleAuthExpired() async {
+    if (_isDisposed) return;
+    _isConnected = false;
+    _connectionStateController.add(false);
+    await _channel?.sink.close();
+    await _apiService.initializeToken();
+    if (_apiService.isAuthenticated) {
+      connect();
     }
   }
 
@@ -115,7 +212,9 @@ class WebSocketService {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(delay, () {
       _reconnectAttempts++;
-      print('WebSocket reconnecting (attempt $_reconnectAttempts)...');
+      if (kDebugMode) {
+        debugPrint('WebSocket reconnecting (attempt $_reconnectAttempts)...');
+      }
       connect();
     });
   }
@@ -134,7 +233,9 @@ class WebSocketService {
           _balanceUpdateController.add({'balances': response});
         }
       } catch (e) {
-        print('Polling error: $e');
+        if (kDebugMode) {
+          debugPrint('Polling error: ${e.runtimeType}');
+        }
       }
     });
   }
@@ -145,13 +246,9 @@ class WebSocketService {
     _isDisposed = true;
     _reconnectTimer?.cancel();
     _pollingTimer?.cancel();
+    _expiryTimer?.cancel();
     await _channel?.sink.close();
     _connectionStateController.add(false);
-  }
-
-  Future<String?> _getToken() async {
-    // Token is stored in ApiService
-    return ''; // ApiService will handle via headers
   }
 
   /// Clean up resources
@@ -159,6 +256,7 @@ class WebSocketService {
     _isDisposed = true;
     _reconnectTimer?.cancel();
     _pollingTimer?.cancel();
+    _expiryTimer?.cancel();
     _channel?.sink.close();
     _balanceUpdateController.close();
     _transactionUpdateController.close();

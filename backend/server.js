@@ -3,7 +3,7 @@ dotenv.config();
 
 import http from "http";
 import { validateEnv } from "./config/env.validation.js";
-import stellarStreamService from "./services/StellarStreamService.js";
+import { validateStartup } from "./services/deploymentValidator.js";
 
 let validatedEnv;
 try {
@@ -14,14 +14,13 @@ try {
   process.exit(1);
 }
 
-const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: AuditLog }, { default: ExportService }, { default: SocketService }, { initApollo }] = await Promise.all([
+const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: HousekeepingService }, { default: SocketService }, { initApollo }] = await Promise.all([
   import("./app.js"),
   import("./config/database.js"),
   import("./config/redis.js"),
   import("./listeners.js"),
   import("./workers.js"),
-  import("./models/AuditLog.js"),
-  import("./services/ExportService.js"),
+  import("./services/HousekeepingService.js"),
   import("./services/SocketService.js"),
   import("./graphql/apollo.js"),
 ]);
@@ -161,20 +160,35 @@ const isProduction = process.env.NODE_ENV === "production";
   process.once("SIGTERM", () => shutdown("SIGTERM"));
   process.once("SIGINT", () => shutdown("SIGINT"));
 
+  // Validate deployments before listening. In production, fail startup on missing deployments.
+  try {
+    const deployResult = await validateStartup({ failOnMissing: isProduction });
+    if (!deployResult.ok) {
+      console.warn("One or more deployments are missing or mismatched:", deployResult.missing.map((m) => m.chain));
+      if (isProduction) {
+        console.error("Exiting: missing deployments in production environment");
+        process.exit(1);
+      }
+    }
+  } catch (err) {
+    console.error("Deployment validation failed:", err.message);
+    if (isProduction) process.exit(1);
+  }
+
   httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT} (with WebSockets)`);
     console.log(`Bull Board: http://localhost:${PORT}/admin/running-queues`);
 
     const retentionDays = parseInt(process.env.AUDIT_LOG_RETENTION_DAYS) || 90;
 
+    // Housekeeping jobs run on every replica's timer, but HousekeepingService
+    // wraps each run in a distributed lease (see backend/services/
+    // HousekeepingService.js) so only one replica actually executes the work
+    // per tick; the rest observe the lease held and skip. See
+    // backend/docs/housekeeping-jobs.md for details.
     activeTimers.push(setInterval(async () => {
       try {
-        const deleted = await AuditLog.deleteOlderThan(retentionDays);
-        if (deleted > 0) {
-          console.log(
-            `Audit log cleanup: deleted ${deleted} entries older than ${retentionDays} days`
-          );
-        }
+        await HousekeepingService.runAuditLogCleanup(retentionDays);
       } catch (err) {
         console.error("Audit log cleanup failed:", err.message);
       }
@@ -184,10 +198,7 @@ const isProduction = process.env.NODE_ENV === "production";
 
     activeTimers.push(setInterval(async () => {
       try {
-        const deleted = await ExportService.cleanupExpiredExports();
-        if (deleted > 0) {
-          console.log(`Export cleanup: deleted ${deleted} expired export files`);
-        }
+        await HousekeepingService.runExportCleanup();
       } catch (err) {
         console.error("Export cleanup failed:", err.message);
       }

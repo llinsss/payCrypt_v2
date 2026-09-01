@@ -1,4 +1,25 @@
+/**
+ * ════════════════════════════════════════════════════════════════════════════════
+ * CANONICAL RATE-LIMITING MODULE
+ *
+ * This module is the single source of rate-limit policy. All routes, services,
+ * and middleware import rate limiters and constants from this module only.
+ *
+ * Routes that import from here:
+ *   - balances.js → balanceQueryLimiter, TIER_LIMITS
+ *   - apiKeys.js → strictLimiter
+ *   - batchPayments.js → paymentLimiter
+ *   - transactionSearch.js → createUserRateLimiter
+ *   - scheduledPayments.js → paymentLimiter
+ *
+ * DO NOT create duplicate rate-limiting modules. If adding a new limiter or
+ * constant, add it to this module and update backend/tests/rateLimitingModuleContract.test.js
+ * to verify the export is tested. See RATE_LIMITING_ARCHITECTURE.md for details.
+ * ════════════════════════════════════════════════════════════════════════════════
+ */
+
 import redis from "./redis.js";
+import logger from "../utils/logger.js";
 
 export const RATE_LIMIT_TIERS = {
   FREE: "FREE",
@@ -30,6 +51,15 @@ export const TIER_LIMITS = {
 export const ENDPOINT_TIER_LIMITS = TIER_LIMITS;
 
 const fallbackStores = new Map();
+
+// Track Redis availability for recovery detection and metrics
+const rateLimitingState = {
+  redisUnavailable: false,
+  lastFailureTime: null,
+  recoveryTime: null,
+  fallbackActivationCount: 0,
+  inMemoryLimitViolations: 0,
+};
 
 const clientIp = (req) =>
   (req.ip || req.headers?.["x-forwarded-for"] || req.connection?.remoteAddress || "unknown")
@@ -117,9 +147,21 @@ export const createUserRateLimiter = (options = {}) => {
     const key = `ratelimit:${endpointName}:${identifier}`;
 
     const useFallback = async () => {
+      // Emit metric when falling back to in-memory (only on first fallback per failure event)
+      if (!rateLimitingState.redisUnavailable) {
+        rateLimitingState.redisUnavailable = true;
+        rateLimitingState.lastFailureTime = now;
+        rateLimitingState.fallbackActivationCount += 1;
+        logger.warn("Rate limiter falling back to in-memory due to Redis unavailability", {
+          fallbackCount: rateLimitingState.fallbackActivationCount,
+          endpoint: endpointName,
+          mode: strict ? "strict-rejected" : "in-memory-fallback",
+        });
+      }
       const result = consumeInMemory({ key, now, windowMs, max });
       setHeaders(res, { limit: max, remaining: result.remaining, reset, fallback: "in-memory" });
       if (!result.allowed) {
+        rateLimitingState.inMemoryLimitViolations += 1;
         res.setHeader("Retry-After", String(Math.ceil(windowMs / 1000)));
         return res.status(429).json({ error: message, limit: max });
       }
@@ -128,12 +170,31 @@ export const createUserRateLimiter = (options = {}) => {
 
     if (!hasRedisSortedSet()) {
       if (strict) {
+        if (!rateLimitingState.redisUnavailable) {
+          rateLimitingState.redisUnavailable = true;
+          rateLimitingState.lastFailureTime = now;
+          logger.warn("Rate limiter Redis check failed, strict mode blocking request", {
+            endpoint: endpointName,
+            reason: "missing_sorted_set_methods",
+          });
+        }
         return res.status(503).json({ error: "Rate limiter unavailable" });
       }
       return useFallback();
     }
 
     try {
+      // Redis is available — check if we're recovering
+      if (rateLimitingState.redisUnavailable) {
+        rateLimitingState.redisUnavailable = false;
+        rateLimitingState.recoveryTime = now;
+        logger.info("Rate limiter Redis recovered, resuming normal operation", {
+          downtime: now - rateLimitingState.lastFailureTime,
+          fallbackActivations: rateLimitingState.fallbackActivationCount,
+          inMemoryViolations: rateLimitingState.inMemoryLimitViolations,
+        });
+      }
+
       const windowStart = now - windowMs;
       await redis.zRemRangeByScore(key, 0, windowStart);
       const count = await redis.zCard(key);
@@ -148,8 +209,21 @@ export const createUserRateLimiter = (options = {}) => {
       return next();
     } catch (error) {
       if (strict) {
+        if (!rateLimitingState.redisUnavailable) {
+          rateLimitingState.redisUnavailable = true;
+          rateLimitingState.lastFailureTime = now;
+          logger.error("Rate limiter Redis error, strict mode blocking request", {
+            endpoint: endpointName,
+            error: error.message,
+            strict: true,
+          });
+        }
         return res.status(503).json({ error: "Rate limiter unavailable" });
       }
+      logger.warn("Rate limiter Redis error, falling back to in-memory", {
+        endpoint: endpointName,
+        error: error.message,
+      });
       return useFallback();
     }
   };
@@ -193,6 +267,16 @@ export const downloadLimiter = createUserRateLimiter({
   max: 10,
 });
 
+// Export internal state for testing and observability
+export const getRateLimiterState = () => ({ ...rateLimitingState });
+export const resetRateLimiterState = () => {
+  rateLimitingState.redisUnavailable = false;
+  rateLimitingState.lastFailureTime = null;
+  rateLimitingState.recoveryTime = null;
+  rateLimitingState.fallbackActivationCount = 0;
+  rateLimitingState.inMemoryLimitViolations = 0;
+};
+
 export default {
   RATE_LIMIT_TIERS,
   TIER_LIMITS,
@@ -203,4 +287,6 @@ export default {
   strictLimiter,
   paymentLimiter,
   downloadLimiter,
+  getRateLimiterState,
+  resetRateLimiterState,
 };
