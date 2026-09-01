@@ -9,7 +9,7 @@ export interface AuthUser {
   created_at: string;
   updated_at: string;
   last_login: string;
-  role: "user" | "admin";
+  role: "user" | "admin" | "super_admin";
 }
 
 export interface AuthContextType {
@@ -17,6 +17,7 @@ export interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (userData: RegisterData) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<AuthUser | null>;
   loading: boolean;
   isLoading: boolean; // For form loading states
   isAuthenticated: boolean;

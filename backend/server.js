@@ -79,6 +79,18 @@ const isProduction = process.env.NODE_ENV === "production";
     }
   }
 
+  // Start only after migrations complete, so the stream never races the
+  // stellar account/tag tables at boot. It reconnects internally on Horizon
+  // outages and restores each account's Redis cursor after a restart.
+  if (connectionResult.ok) {
+    try {
+      await stellarStreamService.start();
+    } catch (error) {
+      console.error("Stellar payment stream failed to start:", error.message);
+      if (isProduction) process.exit(1);
+    }
+  }
+
   const httpServer = http.createServer(app);
 
   SocketService.init(httpServer);

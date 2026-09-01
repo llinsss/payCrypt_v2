@@ -1,6 +1,6 @@
 import 'package:Tagg/ui/common/app_assets.dart';
 import 'package:Tagg/services/theme_service.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:stacked/stacked.dart';
@@ -317,19 +317,45 @@ class SettingsView extends StackedView<SettingsViewModel> {
         _buildSettingItem(
           icon: Icons.headset_mic_outlined,
           title: 'Contact Support',
-          subtitle: 'Reach us via email',
-          onTap: () {},
+          subtitle: 'Submit a support ticket',
+          onTap: () => viewModel.onContactSupportTap(),
         ),
+        const SizedBox(height: 12),
+        _buildLanguageSelector(viewModel),
         const SizedBox(height: 12),
         _buildAppearanceSelector(viewModel),
         const SizedBox(height: 12),
         _buildCurrencySelector(viewModel),
         const SizedBox(height: 12),
-        _buildSettingItem(
-          icon: Icons.notifications_outlined,
-          title: 'Notifications',
-          subtitle: 'Manage push notifications',
-          onTap: () => viewModel.onNotificationTap(),
+        const SizedBox(height: 24),
+        const Text(
+          'Notifications',
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            fontSize: 18,
+            color: Color(0xFFE2E2E2),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildBiometricToggle(
+          title: 'Push Notifications',
+          subtitle: 'Receive alerts on your device',
+          value: viewModel.pushEnabled,
+          onChanged: (value) => viewModel.togglePushNotifications(value),
+        ),
+        const SizedBox(height: 12),
+        _buildBiometricToggle(
+          title: 'Email Alerts',
+          subtitle: 'Receive updates via email',
+          value: viewModel.emailEnabled,
+          onChanged: (value) => viewModel.toggleEmailNotifications(value),
+        ),
+        const SizedBox(height: 12),
+        _buildBiometricToggle(
+          title: 'In-App Notifications',
+          subtitle: 'Show alerts inside the app',
+          value: viewModel.inAppEnabled,
+          onChanged: (value) => viewModel.toggleInAppNotifications(value),
         ),
       ],
     );
@@ -441,6 +467,71 @@ class SettingsView extends StackedView<SettingsViewModel> {
             color: isSelected ? Colors.white : const Color(0xFF867EA5),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLanguageSelector(SettingsViewModel viewModel) {
+    final languages = viewModel.availableLanguages;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF181027), Color(0xFF110F20)],
+        ),
+        border: Border.all(color: const Color(0xFF262140)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF120D1E),
+                  border: Border.all(color: const Color(0xFF262140)),
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: const Icon(Icons.language, size: 18, color: Color(0xFFE2E2E2)),
+              ),
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Language', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 16, color: Colors.white)),
+                  SizedBox(height: 4),
+                  Text('Choose your preferred language', style: TextStyle(fontWeight: FontWeight.w400, fontSize: 14, color: Color(0xFF867EA5))),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: languages.entries.map((entry) {
+              final selected = viewModel.currentLanguage == entry.key;
+              return GestureDetector(
+                onTap: () => viewModel.setLanguage(entry.key),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: selected ? const Color(0xFF674AA6) : const Color(0xFF120D1E),
+                    border: Border.all(color: selected ? const Color(0xFF674AA6) : const Color(0xFF262140)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(entry.value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: selected ? Colors.white : const Color(0xFF867EA5))),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

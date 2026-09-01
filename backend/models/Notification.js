@@ -11,7 +11,7 @@ const Notification = {
       return null;
     }
 
-    const [id] = await db("notifications").insert(notificationData);
+    const [{ id }] = await db("notifications").insert(notificationData).returning("id");
     return this.findById(id);
   },
 

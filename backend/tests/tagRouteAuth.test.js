@@ -44,10 +44,10 @@ function createRes() {
 
 describe("tag route guards", () => {
   it("requires authenticate and userRateLimiter on both tag routes", () => {
-    const src = fs.readFileSync("backend/routes/transactions.js", "utf8");
+    const src = fs.readFileSync("routes/transactions.js", "utf8");
 
-    expect(src).toContain('router.get("/tag/:tag", authenticate, userRateLimiter');
-    expect(src).toContain('router.get("/tag/:tag/history", authenticate, userRateLimiter');
+    expect(src).toContain('router.get("/tag/:tag", authenticateJwtOrApiKey, userRateLimiter');
+    expect(src).toContain('router.get("/tag/:tag/history", authenticateJwtOrApiKey, userRateLimiter');
   });
 });
 

@@ -18,6 +18,7 @@ import performanceRoutes from "./performance.js";
 import analyticsRoutes from "./analytics.js";
 import webhookRoutes from "./webhooks.js";
 import webhookAdminRoutes from "./webhookAdmin.js";
+import disputeAdminRoutes from "./disputeAdmin.js";
 import backupAdminRoutes from "./backupAdmin.js";
 import exportRoutes from "./exports.js";
 import ussdRoutes from "./ussd.js";
@@ -25,6 +26,12 @@ import batchPaymentRoutes from "./batchPayments.js";
 import keyRoutes from "./keys.js";
 import tagRoutes from "./tagRoutes.js";
 import withdrawalRoutes from "./withdrawals.js";
+import swapRoutes from "./swapRoutes.js";
+import accountRoutes from "./account.js"; // #460 NDPR compliance
+import supportTicketRoutes from "./supportTickets.js";
+import indexerAdminRoutes from "./indexerAdmin.js";
+import referralRoutes from "./referrals.js";
+import circuitBreakerRoutes from "./circuitBreaker.js";
 import { versionHeaders, CURRENT_VERSION, DEPRECATIONS } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -49,13 +56,20 @@ const registerRoutes = (router) => {
   router.use("/analytics", analyticsRoutes);
   router.use("/webhooks", webhookRoutes);
   router.use("/admin/webhooks", webhookAdminRoutes);
+  router.use("/admin/disputes", disputeAdminRoutes);
   router.use("/admin/backups", backupAdminRoutes);
+  router.use("/admin/indexer", indexerAdminRoutes);
   router.use("/exports", exportRoutes);
   router.use("/ussd", ussdRoutes);
   router.use("/batches", batchPaymentRoutes);
   router.use("/keys", keyRoutes);
   router.use("/tags", tagRoutes);
   router.use("/withdrawals", withdrawalRoutes);
+  router.use("/swap", swapRoutes);
+  router.use("/account", accountRoutes); // #460 NDPR: data export & account deletion
+  router.use("/support-tickets", supportTicketRoutes);
+  router.use("/referrals", referralRoutes);
+  router.use("/circuit-breaker", circuitBreakerRoutes);
 };
 
 /**

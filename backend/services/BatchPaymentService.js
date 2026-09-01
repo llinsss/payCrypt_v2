@@ -7,12 +7,26 @@ import Transaction from "../models/Transaction.js";
 import pLimit from "p-limit";
 import batchPaymentQueue from "../queues/batchPaymentQueue.js";
 import KeyVaultService from "./KeyVaultService.js";
+import { buildMerkleTree, getProof, verifyLeaf } from "../utils/merkle.js";
 
 const { TransactionBuilder, Operation, Asset, Keypair, Memo } = StellarSdk;
 
 const STELLAR_ADDRESS_REGEX = /^G[A-Z0-9]{55}$/;
 const STELLAR_CHAIN_ID = 6;
 const STELLAR_BASE_FEE = 100;
+
+// Batches larger than this are handed off to the background queue instead of
+// being processed inline on the request (issue #506: "small batches process
+// immediately; large batches queue once").
+const BATCH_QUEUE_THRESHOLD =
+  Math.max(1, parseInt(process.env.BATCH_QUEUE_THRESHOLD, 10) || 20);
+
+// Bounded concurrency for non-atomic batch items: a p-limit semaphore caps how
+// many payments run at once so a large batch can't fan out unboundedly against
+// the payment provider (issue #506: "parallel execution never exceeds the
+// configured concurrency"). Configurable via env for load tuning/tests.
+const BATCH_PAYMENT_CONCURRENCY =
+  Math.max(1, parseInt(process.env.BATCH_PAYMENT_CONCURRENCY, 10) || 10);
 
 const BATCH_STATUS = {
   PENDING: "pending",
@@ -21,6 +35,29 @@ const BATCH_STATUS = {
   PARTIAL_FAILED: "partial_failed",
   FAILED: "failed",
 };
+
+// Stable, provider-agnostic outcome shape layered on top of the existing
+// `success`/`httpStatus`/`data` response (issue #506). Kept additive so
+// existing callers/tests that only read `success`/`httpStatus`/`data` are
+// unaffected, while new/updated callers get a normalized
+// `status`/`results`/`succeededCount`/`failedCount` contract for full
+// success, partial failure, and total failure alike.
+const RESULT_STATUS = {
+  SUCCESS: "success",
+  PARTIAL: "partial",
+  FAILED: "failed",
+};
+
+function toResultStatus(batchStatus) {
+  switch (batchStatus) {
+    case BATCH_STATUS.COMPLETED:
+      return RESULT_STATUS.SUCCESS;
+    case BATCH_STATUS.PARTIAL_FAILED:
+      return RESULT_STATUS.PARTIAL;
+    default:
+      return RESULT_STATUS.FAILED;
+  }
+}
 
 class BatchProcessingError extends Error {
   constructor(message, { results = [], statusCode = 400 } = {}) {
@@ -32,6 +69,18 @@ class BatchProcessingError extends Error {
 }
 
 class BatchPaymentService {
+  /**
+   * Upper bound on concurrently in-flight payments within a non-atomic
+   * batch (issue #506: "parallel execution never exceeds the configured
+   * concurrency"). Configurable via env for load tuning; overridable
+   * directly (`BatchPaymentService.PARALLEL_CONCURRENCY = n`) in tests that
+   * need to assert the bound is actually respected.
+   */
+  static PARALLEL_CONCURRENCY = Math.max(
+    1,
+    parseInt(process.env.BATCH_PAYMENT_CONCURRENCY, 10) || 10,
+  );
+
   async createBatchPayment({
     userId,
     senderTag,
@@ -146,19 +195,23 @@ class BatchPaymentService {
         memo,
       });
     } catch (error) {
-      const failedBatch = await this.failBatch(
-        batch.id,
-        error.message,
+      const results =
         error.results && error.results.length > 0
           ? error.results
-          : payments.map((payment, index) => this.buildFailedResult(index, payment, error.message))
-      );
+          : payments.map((payment, index) => this.buildFailedResult(index, payment, error.message));
+      const failedBatch = await this.failBatch(batch.id, error.message, results);
 
       return {
         success: false,
         httpStatus: this.getFailureStatusCode(error),
         message: error.message,
         data: failedBatch,
+        // Stable outcome shape (issue #506): a batch that never got past
+        // validation/preparation is a total failure — every item is failed.
+        status: RESULT_STATUS.FAILED,
+        results,
+        succeededCount: 0,
+        failedCount: results.length,
       };
     }
   }
@@ -215,6 +268,25 @@ class BatchPaymentService {
       }
     }
 
+    // Compute a Merkle root over the valid payment leaves (recipient + amount +
+    // token) so the batch's integrity can be verified before each payment runs.
+    let merkleRoot = null;
+    if (validItems.length > 0) {
+      const leaves = validItems.map((item) => ({
+        recipient: item.recipientAddress,
+        amount: item.amount,
+        token: asset,
+      }));
+      const { tree } = buildMerkleTree(leaves);
+      merkleRoot = tree.getHexRoot();
+      // Attach each leaf + its Merkle proof so it can be re-verified against the
+      // persisted root immediately before execution.
+      validItems.forEach((item, i) => {
+        item.leaf = leaves[i];
+        item.merkleProof = getProof(tree, leaves[i]);
+      });
+    }
+
     return {
       senderAddress,
       validItems,
@@ -241,6 +313,27 @@ class BatchPaymentService {
     };
   }
 
+  /**
+   * Verify a prepared batch item's Merkle proof against the batch root.
+   * Throws a BatchProcessingError (integrity failure) if the leaf does not
+   * belong to the committed root — this indicates the batch was tampered with
+   * after the root was computed.
+   */
+  assertLeafIntegrity(item, merkleRoot) {
+    if (!merkleRoot) return;
+    const ok = verifyLeaf({
+      root: merkleRoot,
+      leaf: item.leaf,
+      proof: item.merkleProof,
+    });
+    if (!ok) {
+      throw new BatchProcessingError(
+        `Batch integrity check failed for item ${item.index}: Merkle proof does not match committed root`,
+        { statusCode: 409 },
+      );
+    }
+  }
+
   async processAtomicBatch({
     batch,
     preparedBatch,
@@ -250,7 +343,7 @@ class BatchPaymentService {
     assetIssuer,
     memo,
   }) {
-    const { senderAddress, validItems, failures, token, totalAmount, totalFees, totalCost } = preparedBatch;
+    const { senderAddress, validItems, failures, token, totalAmount, totalFees, totalCost, merkleRoot } = preparedBatch;
 
     if (failures.length > 0) {
       throw new BatchProcessingError("Batch validation failed", {
@@ -276,7 +369,10 @@ class BatchPaymentService {
       );
     }
 
-    await BatchPayment.update(batch.id, { status: BATCH_STATUS.PROCESSING });
+    await BatchPayment.update(batch.id, {
+      status: BATCH_STATUS.PROCESSING,
+      merkle_root: merkleRoot,
+    });
 
     const trx = await db.transaction();
 
@@ -284,6 +380,10 @@ class BatchPaymentService {
       const transactionIds = [];
 
       for (const item of validItems) {
+        // Integrity gate: verify this leaf against the committed Merkle root
+        // before creating the DB record or including it in the on-chain tx.
+        this.assertLeafIntegrity(item, merkleRoot);
+
         const inserted = await trx("transactions").insert({
           user_id: userId,
           token_id: token.id,
@@ -373,6 +473,7 @@ class BatchPaymentService {
         message: "Batch payment processed successfully",
         data: {
           ...updatedBatch,
+          merkleRoot,
           transactions,
           total_fees: totalFees,
         },
@@ -454,7 +555,7 @@ class BatchPaymentService {
     assetIssuer,
     memo,
   }) {
-    const { senderAddress, validItems, failures } = preparedBatch;
+    const { senderAddress, validItems, failures, merkleRoot } = preparedBatch;
     const results = Array(batch.total_items).fill(null);
     let successfulItems = 0;
     let failedItems = 0;
@@ -481,13 +582,14 @@ class BatchPaymentService {
 
     await BatchPayment.update(batch.id, {
       status: BATCH_STATUS.PROCESSING,
+      merkle_root: merkleRoot,
       processed_items: processedItems,
       successful_items: successfulItems,
       failed_items: failedItems,
       results: results.filter(Boolean),
     });
 
-    const limit = pLimit(10);
+    const limit = pLimit(BatchPaymentService.PARALLEL_CONCURRENCY);
     const tasks = validItems.map((item) => {
       return limit(async () => {
         const remainingBalanceStroops = PaymentService.parseAmountToStroops(remainingBalance);
@@ -501,6 +603,7 @@ class BatchPaymentService {
           processedItems += 1;
           return;
         }
+        remainingBalance -= item.totalCost;
 
         try {
           const paymentResult = await PaymentService.processPayment({
@@ -545,6 +648,9 @@ class BatchPaymentService {
           );
           successfulItems += 1;
         } catch (error) {
+          // The reservation taken above was never spent — return it to the
+          // pool so a later item in the batch can still use it.
+          remainingBalance += item.totalCost;
           results[item.index] = this.buildFailedResult(item.index, item, error.message);
           failedItems += 1;
         }

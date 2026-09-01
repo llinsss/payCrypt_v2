@@ -5,6 +5,7 @@ import 'package:Tagg/services/api_service.dart';
 import 'package:Tagg/services/biometric_service.dart';
 import 'package:Tagg/services/auth_service.dart';
 import 'package:Tagg/services/deep_link_service.dart';
+import 'package:Tagg/services/onboarding_service.dart';
 import 'package:stacked_services/stacked_services.dart';
 
 class StartupViewModel extends BaseViewModel {
@@ -23,6 +24,17 @@ class StartupViewModel extends BaseViewModel {
 
     // Check if user has an active session
     final hasActiveSession = _authService.isAuthenticated();
+
+    // First-time users (no session yet) see the onboarding carousel before
+    // being routed to sign-in. Returning users never see it again.
+    if (!hasActiveSession) {
+      final onboardingComplete = await OnboardingService.isOnboardingComplete();
+      if (!onboardingComplete) {
+        await Future.delayed(const Duration(seconds: 1));
+        _navigationService.replaceWithOnboardingView();
+        return;
+      }
+    }
 
     if (hasActiveSession) {
       // Check if biometric unlock is enabled

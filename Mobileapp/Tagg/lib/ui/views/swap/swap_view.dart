@@ -192,23 +192,25 @@ class SwapView extends StackedView<SwapViewModel> {
           children: [
             // From Token
             _buildTokenCard(
-              value: "0.00",
-              usdValue: "\$0.00",
+              value: "",
+              usdValue: viewModel.statusMessage ?? "\$0.00",
               tokenSymbol: viewModel.selectedFromToken,
               isFrom: true,
               maxValue: "MAX",
-              onTokenTap: () => viewModel.showFromTokenDialog(), // Updated
+              onTokenTap: () => viewModel.showFromTokenDialog(),
+              amountController: viewModel.amountController,
+              onAmountChanged: viewModel.onAmountChanged,
             ),
             const SizedBox(height: 8),
 
             // To Token
             _buildTokenCard(
-              value: "0.00",
-              usdValue: "\$0.00",
+              value: viewModel.estimatedToAmount,
+              usdValue: viewModel.lastTxHash != null ? "Swap complete" : "Estimated",
               tokenSymbol: viewModel.selectedToToken,
               isFrom: false,
               maxValue: "0",
-              onTokenTap: () => viewModel.showToTokenDialog(), // Updated
+              onTokenTap: () => viewModel.showToTokenDialog(),
             ),
           ],
         ),
@@ -246,6 +248,8 @@ class SwapView extends StackedView<SwapViewModel> {
     required bool isFrom,
     required String maxValue,
     required VoidCallback onTokenTap,
+    TextEditingController? amountController,
+    ValueChanged<String>? onAmountChanged,
   }) {
     return Container(
       height: 136,
@@ -268,11 +272,34 @@ class SwapView extends StackedView<SwapViewModel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(value,
-                    style: GoogleFonts.instrumentSans(
-                        color: Color(0xFFE2E2E2),
-                        fontSize: 32,
-                        fontWeight: FontWeight.w500)),
+                isFrom && amountController != null
+                    ? SizedBox(
+                        width: 150,
+                        child: TextField(
+                          controller: amountController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: onAmountChanged,
+                          style: GoogleFonts.instrumentSans(
+                            color: const Color(0xFFE2E2E2),
+                            fontSize: 32,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            hintText: "0.00",
+                            hintStyle: GoogleFonts.instrumentSans(
+                              color: const Color(0xFF867EA5),
+                              fontSize: 32,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Text(value,
+                        style: GoogleFonts.instrumentSans(
+                            color: Color(0xFFE2E2E2),
+                            fontSize: 32,
+                            fontWeight: FontWeight.w500)),
                 Text(usdValue,
                     style: GoogleFonts.instrumentSans(
                         color: Color(0xFF867EA5),
@@ -474,35 +501,58 @@ class SwapView extends StackedView<SwapViewModel> {
 
   Widget _buildSwapButton(SwapViewModel viewModel) {
     return Tooltip(
-      message: viewModel.isOffline ? 'Offline' : '',
+      message: viewModel.isOffline
+          ? 'Offline'
+          : viewModel.isBusy
+              ? 'Swap in progress'
+              : '',
       child: IgnorePointer(
-        ignoring: viewModel.isOffline,
+        ignoring: viewModel.isOffline || viewModel.isBusy,
         child: Opacity(
           opacity: viewModel.isOffline ? 0.5 : 1.0,
           child: GestureDetector(
             onTap: () => viewModel.performSwap(),
             child: Container(
-        width: double.infinity,
-        height: 60,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [Color(0xFF674AA6), Color(0xFF2E235C)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter),
-          borderRadius: BorderRadius.circular(48),
-        ),
-        child: Center(
-          child: Text("Swap",
-              style: GoogleFonts.instrumentSans(
-                  color: Color(0xFFE2E2E2),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500)),
-        ),
+              width: double.infinity,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF674AA6), Color(0xFF2E235C)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+                borderRadius: BorderRadius.circular(48),
+              ),
+              child: Center(
+                child: viewModel.isBusy
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFFE2E2E2),
+                          ),
+                        ),
+                      )
+                    : Text(
+                        "Swap",
+                        style: GoogleFonts.instrumentSans(
+                          color: const Color(0xFFE2E2E2),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
+
+  @override
+  void onViewModelReady(SwapViewModel viewModel) => viewModel.initialize();
 
   @override
   SwapViewModel viewModelBuilder(BuildContext context) => SwapViewModel();

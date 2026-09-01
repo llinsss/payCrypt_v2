@@ -22,7 +22,7 @@ jest.unstable_mockModule('../../config/redis.js', () => ({
     recordCacheHit: jest.fn(),
     recordCacheMiss: jest.fn(),
     getCacheMetrics: jest.fn(),
-    IDEMPOTENCY_PREFIX: 'idempotency:'
+    IDEMPOTENCY_PREFIX: 'idem:v1:'
 }));
 
 jest.unstable_mockModule("../../config/database.js", () => ({

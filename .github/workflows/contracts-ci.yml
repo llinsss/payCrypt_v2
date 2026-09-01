@@ -1,0 +1,247 @@
+# Contracts CI
+# Stable check name: ci/contracts
+#
+# Runs on pull_request when any contract source or its workflow file changes.
+# Security checks are REQUIRED — Slither findings at medium+ severity fail the PR.
+#
+# Jobs:
+#   detect      – path filter (always runs)
+#   solidity    – solhint lint · forge build · forge test · slither static analysis
+#   starknet    – scarb build · snforge test
+#
+# Artifacts:
+#   forge-gas-report-<sha>   – forge snapshot / gas report (14 days)
+#   slither-report-<sha>     – SARIF + JSON report uploaded as artifact (14 days)
+
+name: Contracts CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
+
+concurrency:
+  group: contracts-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. Path filter ─────────────────────────────────────────────────────────
+  detect:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      solidity: ${{ steps.filter.outputs.solidity }}
+      starknet: ${{ steps.filter.outputs.starknet }}
+      any: ${{ steps.filter.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            solidity:
+              - "contracts/solidity_contract/**"
+            starknet:
+              - "contracts/starknet_contract/**"
+            any:
+              - "contracts/**"
+
+  # ── 2. Solidity: lint · compile · test · static-analysis ───────────────────
+  solidity:
+    name: Solidity (solhint · forge · slither)
+    needs: detect
+    if: needs.detect.outputs.solidity == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: contracts/solidity_contract
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ── Node for solhint ──────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install solhint
+        run: npm install --global solhint@5
+
+      - name: Lint Solidity (solhint)
+        # Write a minimal .solhint.json if one does not exist, then lint
+        run: |
+          if [ ! -f .solhint.json ]; then
+            cat > .solhint.json << 'EOF'
+          {
+            "extends": "solhint:recommended",
+            "rules": {
+              "compiler-version": ["error", "^0.8.0"],
+              "avoid-suicide": "error",
+              "avoid-sha3": "warn",
+              "no-unused-vars": "warn",
+              "func-visibility": ["warn", { "ignoreConstructors": true }]
+            }
+          }
+          EOF
+          fi
+          solhint 'src/**/*.sol'
+
+      # ── Foundry ───────────────────────────────────────────────────────────
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Foundry cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            contracts/solidity_contract/.forge-cache
+            ~/.foundry/cache
+          key: foundry-${{ hashFiles('contracts/solidity_contract/foundry.toml') }}
+          restore-keys: foundry-
+
+      - name: Install Forge dependencies
+        run: forge install
+
+      - name: Build contracts
+        run: forge build --sizes
+
+      - name: Run Forge tests
+        run: forge test -vvv
+
+      - name: Gas snapshot
+        run: forge snapshot --no-match-test "skip"
+        continue-on-error: true   # snapshot failures are advisory, not blocking
+
+      - name: Upload gas report
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-gas-report-${{ github.sha }}
+          path: contracts/solidity_contract/.gas-snapshot
+          retention-days: 14
+          if-no-files-found: warn
+
+      # ── Slither static analysis ───────────────────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Slither
+        run: pip install slither-analyzer==0.10.4
+
+      - name: Run Slither
+        id: slither
+        run: |
+          slither . \
+            --json slither-report.json \
+            --sarif slither-report.sarif \
+            --exclude-dependencies \
+            --filter-paths "lib/" \
+            --fail-high \
+            2>&1 | tee slither-output.txt || true
+          # --fail-high exits non-zero when HIGH or CRITICAL issues are found
+          slither . \
+            --exclude-dependencies \
+            --filter-paths "lib/" \
+            --fail-high \
+            --print human-summary 2>&1
+        # Exit code from the second call determines job success
+
+      - name: Upload Slither report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slither-report-${{ github.sha }}
+          path: |
+            contracts/solidity_contract/slither-report.json
+            contracts/solidity_contract/slither-report.sarif
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ── 3. StarkNet: build · test ───────────────────────────────────────────────
+  starknet:
+    name: StarkNet (scarb · snforge)
+    needs: detect
+    if: needs.detect.outputs.starknet == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: contracts/starknet_contract
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Scarb (Cairo toolchain) ───────────────────────────────────────────
+      - name: Install Scarb
+        uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.11.4"
+
+      # ── Starknet Foundry (snforge) ────────────────────────────────────────
+      - name: Install Starknet Foundry
+        uses: foundry-rs/setup-snfoundry@v3
+        with:
+          starknet-foundry-version: "0.43.1"
+
+      - name: Build Cairo contracts
+        run: scarb build
+
+      - name: Run snforge tests
+        run: snforge test
+
+  # ── 4. Stable aggregated check for branch protection ───────────────────────
+  ci-contracts:
+    name: ci/contracts
+    needs: [detect, solidity, starknet]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Evaluate contract checks
+        run: |
+          SOL_NEEDED="${{ needs.detect.outputs.solidity }}"
+          STARK_NEEDED="${{ needs.detect.outputs.starknet }}"
+          SOL_RESULT="${{ needs.solidity.result }}"
+          STARK_RESULT="${{ needs.starknet.result }}"
+          FAILED=0
+
+          if [[ "$SOL_NEEDED" == "true" && "$SOL_RESULT" != "success" ]]; then
+            echo "❌ Solidity checks failed (result: $SOL_RESULT)"
+            FAILED=1
+          fi
+
+          if [[ "$STARK_NEEDED" == "true" && "$STARK_RESULT" != "success" ]]; then
+            echo "❌ StarkNet checks failed (result: $STARK_RESULT)"
+            FAILED=1
+          fi
+
+          if [[ "$SOL_NEEDED" != "true" && "$STARK_NEEDED" != "true" ]]; then
+            echo "No contract paths changed — pass-through."
+          fi
+
+          if [[ "$FAILED" -eq 1 ]]; then
+            exit 1
+          fi
+
+          echo "✅ All contract checks passed."

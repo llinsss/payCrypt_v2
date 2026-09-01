@@ -1,3 +1,14 @@
+# Backend CI
+# Stable check name: ci/backend
+#
+# Runs on pull_request when backend source files or their workflow change.
+# Jobs:
+#   detect   – path filter (always runs, ~5 s)
+#   quality  – lint · dependency audit · jest test suite
+#
+# Services: PostgreSQL 14, Redis 6 (mirrors production services)
+# Artifacts: jest-results-<sha> retained 14 days
+
 name: Backend CI
 
 on:
@@ -12,15 +23,43 @@ on:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
 
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     working-directory: backend
 
 jobs:
-  lint-and-test:
-    name: Lint & Test
+  # ── 1. Path filter ─────────────────────────────────────────────────────────
+  detect:
+    name: Detect changed paths
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - "backend/**"
+
+  # ── 2. Lint · Audit · Test ─────────────────────────────────────────────────
+  quality:
+    name: ci/backend
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -70,15 +109,35 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
+      # ── Lint ──────────────────────────────────────────────────────────────
       - name: Lint
-        run: npx --yes eslint .
+        run: npm run lint
 
-      - name: Test
-        run: npm test
+      # ── Security audit (high/critical only, non-blocking for moderate) ────
+      - name: Dependency security audit
+        run: npm audit --audit-level=high
+        # Annotate but don't fail on moderate-severity findings; critical/high
+        # findings cause a non-zero exit and block the PR.
+        continue-on-error: false
+
+      # ── Tests ─────────────────────────────────────────────────────────────
+      - name: Run tests
+        run: npm test -- --json --outputFile=/tmp/jest-results.json
+        continue-on-error: false
+
+      # ── Upload results ────────────────────────────────────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-results-${{ github.sha }}
+          path: /tmp/jest-results.json
+          retention-days: 14
+          if-no-files-found: warn

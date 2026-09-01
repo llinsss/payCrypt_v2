@@ -1,0 +1,521 @@
+{
+  "info": {
+    "name": "PayCrypt API",
+    "description": "PayCrypt API Collection with automated JWT authentication.\n\n## Automated Auth Setup\n1. Set `baseUrl`, `email`, and `password` collection variables.\n2. Run the **Login** request under the Authentication folder.\n3. The response script automatically sets the `token` variable.\n\n## Base URL\n- Local: http://localhost:5002\n\n## Auth Flow\n- Register a new user or Login with existing credentials.\n- Protected endpoints use the Bearer token set by the Login flow.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "paycrypt"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5002", "type": "string" },
+    { "key": "email", "value": "user@example.com", "type": "string" },
+    { "key": "password", "value": "", "type": "string" },
+    { "key": "token", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "description": "Register, login, and 2FA management. Login auto-stores the JWT into the `token` collection variable.",
+      "item": [
+        {
+          "name": "Register",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "if (pm.response.code === 201) {",
+                "    var json = pm.response.json();",
+                "    pm.collectionVariables.set('token', json.token);",
+                "    pm.collectionVariables.set('email', pm.request.body.urlencoded.email || pm.request.body.raw.email);",
+                "}"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"tag\": \"testuser\",\n  \"address\": \"0x0000000000000000000000000000000000000000\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "description": "Register a new user account. Returns JWT token + user profile."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "if (pm.response.code === 200) {",
+                "    var json = pm.response.json();",
+                "    pm.collectionVariables.set('token', json.token);",
+                "} else {",
+                "    console.log('Login failed: ' + pm.response.text());",
+                "}"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "description": "Login with email/password. Auto-sets the `token` variable for all subsequent requests."
+          }
+        },
+        {
+          "name": "Google Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"YOUR_GOOGLE_ID_TOKEN\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/google", "host": ["{{baseUrl}}"], "path": ["api", "auth", "google"] },
+            "description": "Login/register with Google OAuth."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/users/profile", "host": ["{{baseUrl}}"], "path": ["api", "users", "profile"] }
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/users/profile", "host": ["{{baseUrl}}"], "path": ["api", "users", "profile"] }
+          }
+        },
+        {
+          "name": "Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/users/dashboard-summary", "host": ["{{baseUrl}}"], "path": ["api", "users", "dashboard-summary"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Balances",
+      "item": [
+        {
+          "name": "Get My Balances",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/balances", "host": ["{{baseUrl}}"], "path": ["api", "balances"] }
+          }
+        },
+        {
+          "name": "Get Balance Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/balances/summary", "host": ["{{baseUrl}}"], "path": ["api", "balances", "summary"] }
+          }
+        },
+        {
+          "name": "Sync Balance",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/balances/sync", "host": ["{{baseUrl}}"], "path": ["api", "balances", "sync"] }
+          }
+        },
+        {
+          "name": "Get Balance by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/balances/1", "host": ["{{baseUrl}}"], "path": ["api", "balances", "1"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wallets",
+      "item": [
+        {
+          "name": "Get Wallets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/wallets", "host": ["{{baseUrl}}"], "path": ["api", "wallets"] }
+          }
+        },
+        {
+          "name": "Send to Tag",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"tag\": \"recipient_tag\",\n  \"amount\": \"10.00\",\n  \"asset\": \"USDC\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/wallets/send-to-tag", "host": ["{{baseUrl}}"], "path": ["api", "wallets", "send-to-tag"] }
+          }
+        },
+        {
+          "name": "Send to Wallet",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"address\": \"0xRecipientAddress\",\n  \"amount\": \"10.00\",\n  \"asset\": \"USDC\",\n  \"chain\": \"base\",\n  \"twoFactorToken\": \"TOTP_IF_2FA_ENABLED\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/wallets/send-to-wallet", "host": ["{{baseUrl}}"], "path": ["api", "wallets", "send-to-wallet"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Get Transactions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/transactions", "host": ["{{baseUrl}}"], "path": ["api", "transactions"] }
+          }
+        },
+        {
+          "name": "Search Transactions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions/search?q=keyword&startDate=2024-01-01&endDate=2024-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transactions", "search"],
+              "query": [
+                { "key": "q", "value": "keyword" },
+                { "key": "startDate", "value": "2024-01-01" },
+                { "key": "endDate", "value": "2024-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Process Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"recipient\": \"recipient_tag_or_address\",\n  \"amount\": \"50.00\",\n  \"asset\": \"USDC\",\n  \"description\": \"Payment for services\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/transactions/payment", "host": ["{{baseUrl}}"], "path": ["api", "transactions", "payment"] }
+          }
+        },
+        {
+          "name": "Get Payment Limits",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/transactions/payment/limits", "host": ["{{baseUrl}}"], "path": ["api", "transactions", "payment", "limits"] }
+          }
+        },
+        {
+          "name": "Get Transaction by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/transactions/1", "host": ["{{baseUrl}}"], "path": ["api", "transactions", "1"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tags",
+      "item": [
+        {
+          "name": "Search Tags",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/tags/search?q=my", "host": ["{{baseUrl}}"], "path": ["api", "tags", "search"], "query": [{ "key": "q", "value": "my" }] }
+          }
+        },
+        {
+          "name": "Check Tag Availability",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/tags/check/mytag", "host": ["{{baseUrl}}"], "path": ["api", "tags", "check", "mytag"] }
+          }
+        },
+        {
+          "name": "Resolve Tag",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/tags/mytag", "host": ["{{baseUrl}}"], "path": ["api", "tags", "mytag"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "KYC",
+      "item": [
+        {
+          "name": "Get KYC Status",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/kycs/status", "host": ["{{baseUrl}}"], "path": ["api", "kycs", "status"] }
+          }
+        },
+        {
+          "name": "Create KYC",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"dateOfBirth\": \"1990-01-15\",\n  \"documentType\": \"passport\",\n  \"documentNumber\": \"AB123456\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/kycs", "host": ["{{baseUrl}}"], "path": ["api", "kycs"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Withdrawals",
+      "item": [
+        {
+          "name": "Initiate Withdrawal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"50.00\",\n  \"asset\": \"USDC\",\n  \"bankAccountId\": 1\n}" },
+            "url": { "raw": "{{baseUrl}}/api/withdrawals/initiate", "host": ["{{baseUrl}}"], "path": ["api", "withdrawals", "initiate"] }
+          }
+        },
+        {
+          "name": "Get My Withdrawals",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/withdrawals/my", "host": ["{{baseUrl}}"], "path": ["api", "withdrawals", "my"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scheduled Payments",
+      "item": [
+        {
+          "name": "Create Scheduled Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"recipient\": \"recipient_tag\",\n  \"amount\": \"100.00\",\n  \"asset\": \"USDC\",\n  \"frequency\": \"weekly\",\n  \"startDate\": \"2024-01-01T00:00:00Z\",\n  \"endDate\": \"2024-12-31T00:00:00Z\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/scheduled-payments", "host": ["{{baseUrl}}"], "path": ["api", "scheduled-payments"] }
+          }
+        },
+        {
+          "name": "Get Scheduled Payments",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/scheduled-payments", "host": ["{{baseUrl}}"], "path": ["api", "scheduled-payments"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "API Keys",
+      "item": [
+        {
+          "name": "Create API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"My API Key\",\n  \"scopes\": [\"transactions:read\", \"transactions:write\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/api/api-keys", "host": ["{{baseUrl}}"], "path": ["api", "api-keys"] }
+          }
+        },
+        {
+          "name": "List API Keys",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/api-keys", "host": ["{{baseUrl}}"], "path": ["api", "api-keys"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/notifications", "host": ["{{baseUrl}}"], "path": ["api", "notifications"] }
+          }
+        },
+        {
+          "name": "Get Unread Notifications",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/notifications/unread", "host": ["{{baseUrl}}"], "path": ["api", "notifications", "unread"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Disputes",
+      "item": [
+        {
+          "name": "Create Dispute",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"transactionId\": 1,\n  \"reason\": \"Incorrect amount charged\",\n  \"description\": \"I was charged twice for the same transaction\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/disputes", "host": ["{{baseUrl}}"], "path": ["api", "disputes"] }
+          }
+        },
+        {
+          "name": "List Disputes",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/disputes", "host": ["{{baseUrl}}"], "path": ["api", "disputes"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Register Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"url\": \"https://myapp.com/webhook\",\n  \"events\": [\"payment.completed\", \"payment.failed\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/api/webhooks", "host": ["{{baseUrl}}"], "path": ["api", "webhooks"] }
+          }
+        },
+        {
+          "name": "List Webhooks",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/webhooks", "host": ["{{baseUrl}}"], "path": ["api", "webhooks"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health & System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health/live", "host": ["{{baseUrl}}"], "path": ["health", "live"] }
+          }
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health/ready", "host": ["{{baseUrl}}"], "path": ["health", "ready"] }
+          }
+        },
+        {
+          "name": "List API Versions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/versions", "host": ["{{baseUrl}}"], "path": ["api", "versions"] }
+          }
+        },
+        {
+          "name": "Exchange Rates",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/exchange-rates", "host": ["{{baseUrl}}"], "path": ["exchange-rates"] }
+          }
+        },
+        {
+          "name": "List Tokens",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/tokens", "host": ["{{baseUrl}}"], "path": ["api", "tokens"] }
+          }
+        },
+        {
+          "name": "List Chains",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/chains", "host": ["{{baseUrl}}"], "path": ["api", "chains"] }
+          }
+        },
+        {
+          "name": "Bills Categories",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/bills/categories", "host": ["{{baseUrl}}"], "path": ["api", "bills", "categories"] }
+          }
+        },
+        {
+          "name": "Bill Providers",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/bills/providers/electricity", "host": ["{{baseUrl}}"], "path": ["api", "bills", "providers", "electricity"] }
+          }
+        }
+      ]
+    }
+  ]
+}

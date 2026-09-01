@@ -37,6 +37,10 @@ import {
 } from "./middleware/validation.js";
 
 import { rateLimit } from "./middleware/rateLimiter.js";
+import {
+  applyPayloadLimits,
+  payloadTooLargeHandler,
+} from "./middleware/payloadLimits.js";
 import { initSentry } from "./observability/sentry.js";
 
 dotenv.config();
@@ -57,26 +61,63 @@ app.use((req, res, next) => {
 // ===== SECURITY MIDDLEWARE =====
 
 // Helmet for HTTP security headers
+// Configured to OWASP recommendations for financial APIs (issue #458).
 app.use(
   helmet({
+    // Content-Security-Policy: tightly restrict where resources can be loaded from.
+    // This is an API backend — no inline scripts or external CDN sources are needed.
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'", "data:"],
+        fontSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        mediaSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        upgradeInsecureRequests: [],
       },
     },
+    // HSTS: 2 years, includeSubDomains, preload — required for HSTS preload list
     hsts: {
-      maxAge: 31536000, // 1 year
+      maxAge: 63072000, // 2 years in seconds
       includeSubDomains: true,
       preload: true,
     },
+    // Prevent clickjacking — no framing allowed
     frameguard: { action: "deny" },
-    xssFilter: true,
+    // Prevent MIME-type sniffing
     noSniff: true,
+    // Referrer policy — only send origin on same-origin, omit cross-origin
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    // Cross-Origin-Opener-Policy: prevent cross-origin attacks via window references
+    crossOriginOpenerPolicy: { policy: "same-origin" },
+    // Cross-Origin-Resource-Policy: block cross-origin reads of our resources
+    crossOriginResourcePolicy: { policy: "same-origin" },
+    // Cross-Origin-Embedder-Policy: require CORP for embedded resources
+    crossOriginEmbedderPolicy: { policy: "require-corp" },
+    // DNS prefetch control
+    dnsPrefetchControl: { allow: false },
+    // Disable IE compatibility mode
+    ieNoOpen: true,
+    // Disable X-Powered-By header (also done via helmet default)
+    hidePoweredBy: true,
   }),
 );
+
+// Permissions-Policy: restrict access to sensitive browser features not needed by this API
+app.use((_req, res, next) => {
+  res.setHeader(
+    "Permissions-Policy",
+    "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()",
+  );
+  next();
+});
 
 // CORS configuration — origin and credentials resolved from config/cors.js.
 // In production CORS_ORIGIN must be set; the app will not start without it.
@@ -115,18 +156,16 @@ app.use(
   }),
 );
 
-// Request body parsing with size limits.
-// Capture the raw request buffer so webhook handlers (e.g. Paystack) can verify
-// HMAC signatures against the exact bytes received, not the re-serialized JSON.
-app.use(
-  express.json({
-    limit: "10mb",
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  }),
-);
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+// Request body parsing with tiered size limits.
+//
+// A single 10mb limit applied everywhere meant any endpoint could be used to
+// buffer 10mb of attacker-supplied JSON. Limits are now scoped per route class
+// (10kb auth / 50kb default / 10mb upload) — see middleware/payloadLimits.js.
+//
+// Each parser preserves the raw request buffer so webhook handlers (e.g.
+// Paystack) can verify HMAC signatures against the exact bytes received rather
+// than the re-serialized JSON.
+applyPayloadLimits(app);
 
 // Detect SQL Injection attempts
 app.use(detectSqlInjection);
@@ -186,10 +225,13 @@ app.get("/health", async (req, res) => {
   });
 });
 
-// Test route for user verification of Sentry
-app.get("/test-error", (req, res) => {
-  throw new Error("Sentry Test Error manually triggered");
-});
+// Test route for user verification of Sentry. Never expose this deliberately
+// failing endpoint to production traffic.
+if (process.env.NODE_ENV !== "production") {
+  app.get("/test-error", (req, res) => {
+    throw new Error("Sentry Test Error manually triggered");
+  });
+}
 
 import rateLimitRoutes from "./routes/rateLimit.js";
 
@@ -220,8 +262,13 @@ const swaggerOptions = {
       title: "Tagg@d API",
       version: "1.0.0",
       description:
-        "API documentation for the Tagg@d backend. Routes are available under /api (current version alias), " +
-        "/api/v2 (current), and /api/v1 (deprecated — see GET /api/versions for sunset details).",
+        "API documentation for the Tagg@d backend — a crypto payment platform for Africa. " +
+        "Routes are available under /api (current version alias), " +
+        "/api/v2 (current), and /api/v1 (deprecated — see GET /api/versions for sunset details).\n\n" +
+        "**Authentication:** Most endpoints require a JWT Bearer token obtained via `POST /api/auth/login`. " +
+        "Alternatively, API keys can be used for third-party integrations (see `POST /api/api-keys`).\n\n" +
+        "**Getting Started:** See the [Getting Started guide](https://taggedpay.xyz/docs/api/getting-started) for a complete walkthrough: " +
+        "register → get JWT → create wallet → send payment.",
     },
     servers: [
       {
@@ -236,6 +283,10 @@ const swaggerOptions = {
         url: `http://localhost:${process.env.PORT || 5002}`,
         description: "Development Server (unversioned root)",
       },
+      {
+        url: "https://taggedpay.xyz/api/v2",
+        description: "Production (v2)",
+      },
     ],
     components: {
       securitySchemes: {
@@ -243,6 +294,15 @@ const swaggerOptions = {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
+          description:
+            "JWT token obtained from POST /api/auth/login. Send as `Authorization: Bearer <token>`.",
+        },
+        apiKeyAuth: {
+          type: "apiKey",
+          in: "header",
+          name: "x-api-key",
+          description:
+            "API key for third-party integrations. Send as `x-api-key: <key>`. Create via POST /api/api-keys.",
         },
       },
     },
@@ -252,6 +312,23 @@ const swaggerOptions = {
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 
+// ===== PUBLIC API SPEC ENDPOINT (unauthenticated, rate-limited) =====
+// Expose the full OpenAPI 3.0 spec as JSON for third-party developers,
+// Postman collection generation, and static doc site builds.
+app.get(
+  "/api/docs-json",
+  rateLimit({ endpointName: "docs-json", windowMs: 60 * 60 * 1000, max: 100 }),
+  (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      process.env.CORS_ORIGIN || "*",
+    );
+    res.status(200).json(swaggerDocs);
+  },
+);
+
+// ===== SWAGGER UI (protected with basic auth) =====
 if (!process.env.SWAGGER_ADMIN_USER || !process.env.SWAGGER_ADMIN_PASS) {
   throw new Error(
     "SWAGGER_ADMIN_USER and SWAGGER_ADMIN_PASS env vars must be set",
@@ -279,6 +356,9 @@ app.all("*", (req, res, next) => {
 
 // Setup Sentry error handler
 Sentry.setupExpressErrorHandler(app);
+
+// Oversized request bodies get a described 413 rather than a bare status.
+app.use(payloadTooLargeHandler);
 
 // Global error handler
 app.use((error, req, res, next) => {

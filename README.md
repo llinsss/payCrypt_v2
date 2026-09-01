@@ -22,6 +22,14 @@ Tagged makes crypto as simple as mobile money, but with global reach and lower f
  Payments: Paystack, Monnify 
  Auth: OAuth 2.0 + KYC provider
 
+## API Documentation
+
+- **Interactive API Docs (Redoc):** [docs/api/](docs/api/) — Browse the full API reference online
+- **OpenAPI Spec (JSON):** `GET /api/docs-json` — Fetch the OpenAPI 3.0 spec programmatically (rate-limited, no auth required)
+- **Postman Collection:** [docs/Tagged_API.postman_collection.json](docs/Tagged_API.postman_collection.json) — Import into Postman to start testing all endpoints immediately
+- **Getting Started Guide:** [docs/api/getting-started.md](docs/api/getting-started.md) — Step-by-step walkthrough: register → get JWT → create wallet → send payment
+- **Swagger UI (internal):** `/api-docs` — Protected admin-only Swagger UI (requires basic auth)
+
 Tagged is currently deployed on testnest on the following chains. 
 
 flow - Flow Sepolia

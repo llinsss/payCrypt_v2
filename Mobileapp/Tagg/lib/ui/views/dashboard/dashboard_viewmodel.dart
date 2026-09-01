@@ -1,27 +1,38 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:Tagg/app/app.locator.dart';
 import 'package:Tagg/models/dashboard_summary.dart';
+import 'package:Tagg/models/scheduled_payment_model.dart';
 import 'package:Tagg/models/transaction_model.dart';
 import 'package:Tagg/models/user_token_balance.dart';
 import 'package:Tagg/models/wallet_data.dart';
 import 'package:Tagg/models/chains_models.dart';
+import 'package:Tagg/services/language_service.dart';
+import 'package:Tagg/services/scheduled_payment_service.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
 import 'package:Tagg/services/connectivity_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/services/exchange_rate_service.dart';
+import 'package:Tagg/services/websocket_service.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
+import 'package:Tagg/app/app.router.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/widgets.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class DashboardViewModel extends BaseViewModel {
   final ScrollController transactionScrollController = ScrollController();
+
+  /// Guard so the first-visit coach marks are only triggered once per mount.
+  bool coachMarksChecked = false;
+
   final _dialogService = locator<DialogService>();
   final _snackbarService = locator<SnackbarService>();
   final _userService = locator<UserService>();
@@ -29,12 +40,19 @@ class DashboardViewModel extends BaseViewModel {
   final _transactionService = locator<TransactionService>();
   final _chainsService = locator<ChainsService>();
   final _exchangeRateService = locator<ExchangeRateService>();
+  final _connectivityService = locator<ConnectivityService>();
+  final _websocketService = locator<WebSocketService>();
+  final _navigationService = locator<NavigationService>();
+  final _scheduledPaymentService = locator<ScheduledPaymentService>();
+  final _languageService = locator<LanguageService>();
+  StreamSubscription? _balanceUpdateSubscription;
 
   // Dashboard Data - matching web version structure
   DashboardSummary? _dashboardSummary;
   WalletData? _walletData;
   List<UserTokenBalance> _tokenBalances = [];
   List<Chain> _chains = [];
+  List<ScheduledPayment> _upcomingPayments = [];
 
   // Computed balances
   double _totalBalance = 0.00; // Total balance in USD (from dashboard summary)
@@ -47,13 +65,15 @@ class DashboardViewModel extends BaseViewModel {
   // UI State
   int _selectedTabIndex = 0;
   int selectedFilterIndex = 0;
+  bool _isOffline = false;
 
   // Getters
   DashboardSummary? get dashboardSummary => _dashboardSummary;
   WalletData? get walletData => _walletData;
   List<UserTokenBalance> get tokenBalances => _tokenBalances;
   List<Chain> get chains => _chains;
-
+  List<ScheduledPayment> get upcomingPayments => _upcomingPayments;
+  bool get hasUpcomingPayments => _upcomingPayments.isNotEmpty;
   double get totalBalance => _totalBalance;
   double get nairaBalance => _nairaBalance;
   double get availableBalance => _availableBalance;
@@ -63,9 +83,7 @@ class DashboardViewModel extends BaseViewModel {
   double get totalWithdrawals => _dashboardSummary?.totalWithdrawal ?? 0.0;
   double get portfolioGrowth => _dashboardSummary?.portfolioGrowth ?? 0.0;
   double get ngnRate => _ngnRate;
-
   int get selectedTabIndex => _selectedTabIndex;
-
   bool get isOffline => _isOffline;
   bool get hasData => _dashboardSummary != null;
 
@@ -75,15 +93,30 @@ class DashboardViewModel extends BaseViewModel {
       if (!_isOffline) {
         // Retry when connectivity restores
         _loadDashboardData();
+        _websocketService.connect();
       }
       notifyListeners();
     });
     _loadDashboardData();
+    _setupWebSocketListener();
+  }
+
+  void _setupWebSocketListener() {
+    _balanceUpdateSubscription = _websocketService.onBalanceUpdate.listen((data) {
+      print('🔔 WebSocket balance update received');
+      _loadDashboardData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _balanceUpdateSubscription?.cancel();
+    _searchDebounceTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadDashboardData() async {
     setBusy(true);
-
     try {
       // Load chains first
       print('🔗 Loading chains...');
@@ -113,9 +146,17 @@ class DashboardViewModel extends BaseViewModel {
       );
       print('✅ Transactions loaded: ${_transactions.length} transactions');
 
+      // Load upcoming scheduled payments
+      try {
+        _upcomingPayments = await _scheduledPaymentService.getUpcomingPayments();
+        print('✅ Upcoming payments loaded: ${_upcomingPayments.length}');
+      } catch (e) {
+        print('⚠️ Could not load upcoming payments: $e');
+        _upcomingPayments = [];
+      }
+
       // Calculate balances with live exchange rate
       await _calculateBalances();
-
       notifyListeners();
     } catch (e, stackTrace) {
       print('❌ Error loading dashboard data: $e');
@@ -186,10 +227,12 @@ class DashboardViewModel extends BaseViewModel {
     if (currency == 'NGN') {
       return formatCurrencyToNGN(amount);
     }
+
     final formatter = NumberFormat.currency(
       symbol: '',
       decimalDigits: 2,
     );
+
     return formatter.format(amount);
   }
 
@@ -247,6 +290,7 @@ class DashboardViewModel extends BaseViewModel {
       _showError('You are offline. Please connect to the internet.');
       return;
     }
+
     setBusy(true);
 
     try {
@@ -307,7 +351,6 @@ class DashboardViewModel extends BaseViewModel {
       message: 'Refreshing dashboard...',
       duration: const Duration(seconds: 1),
     );
-
     await _loadDashboardData();
   }
 
@@ -340,19 +383,154 @@ class DashboardViewModel extends BaseViewModel {
   bool _hasMore = true;
   bool _isLoadingMore = false;
 
+  // Search & filter state (issue #456)
+  String _searchQuery = '';
+  String? _statusFilter;   // 'completed', 'pending', 'failed', or null (all)
+  String? _typeFilter;     // 'credit', 'debit', or null (all)
+  DateTime? _dateRangeStart;
+  DateTime? _dateRangeEnd;
+  Set<String> _selectedTokens = {};  // Selected token symbols for filtering
+  Set<String> _selectedChains = {};  // Selected chain names for filtering
+  Timer? _searchDebounceTimer;
+
+  String get searchQuery => _searchQuery;
+  String? get statusFilter => _statusFilter;
+  String? get typeFilter => _typeFilter;
+  DateTime? get dateRangeStart => _dateRangeStart;
+  DateTime? get dateRangeEnd => _dateRangeEnd;
+  Set<String> get selectedTokens => _selectedTokens;
+  Set<String> get selectedChains => _selectedChains;
+  bool get hasActiveFilters => _searchQuery.isNotEmpty || _statusFilter != null ||
+      _typeFilter != null || _dateRangeStart != null ||
+      _selectedTokens.isNotEmpty || _selectedChains.isNotEmpty;
+
   List<Transaction> get transactions => _transactions;
   bool get hasMore => _hasMore;
   bool get isLoadingMore => _isLoadingMore;
 
-  List<Transaction> get filteredTransactions {
-    switch (selectedFilterIndex) {
-      case 1: // Credit
-        return _transactions.where((t) => t.type == 'credit').toList();
-      case 2: // Debit
-        return _transactions.where((t) => t.type == 'debit').toList();
-      default: // All
-        return _transactions;
+  /// Update search query with 300ms debounce and filter the in-memory list.
+  void onSearchChanged(String query) {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _searchQuery = query.trim().toLowerCase();
+      notifyListeners();
+    });
+  }
+
+  /// Set status filter ('completed', 'pending', 'failed', or null for all).
+  void setStatusFilter(String? status) {
+    _statusFilter = status;
+    notifyListeners();
+  }
+
+  /// Set type filter ('credit', 'debit', or null for all).
+  void setTypeFilter(String? type) {
+    _typeFilter = type;
+    notifyListeners();
+  }
+
+  /// Set date range for filtering transactions.
+  void setDateRange(DateTime? start, DateTime? end) {
+    _dateRangeStart = start;
+    _dateRangeEnd = end;
+    notifyListeners();
+  }
+
+  /// Toggle token selection for multi-select filtering.
+  void toggleTokenFilter(String token) {
+    if (_selectedTokens.contains(token)) {
+      _selectedTokens.remove(token);
+    } else {
+      _selectedTokens.add(token);
     }
+    notifyListeners();
+  }
+
+  /// Toggle chain selection for multi-select filtering.
+  void toggleChainFilter(String chain) {
+    if (_selectedChains.contains(chain)) {
+      _selectedChains.remove(chain);
+    } else {
+      _selectedChains.add(chain);
+    }
+    notifyListeners();
+  }
+
+  /// Clear all search/filter state.
+  void clearSearchFilters() {
+    _searchQuery = '';
+    _statusFilter = null;
+    _typeFilter = null;
+    _dateRangeStart = null;
+    _dateRangeEnd = null;
+    _selectedTokens.clear();
+    _selectedChains.clear();
+    selectedFilterIndex = 0;
+    notifyListeners();
+  }
+
+  List<Transaction> get filteredTransactions {
+    var list = _transactions;
+
+    // Apply type quick-filter (tab buttons)
+    switch (selectedFilterIndex) {
+      case 1:
+        list = list.where((t) => t.type == 'credit').toList();
+        break;
+      case 2:
+        list = list.where((t) => t.type == 'debit').toList();
+        break;
+    }
+
+    // Apply status filter
+    if (_statusFilter != null) {
+      list = list.where((t) => t.status == _statusFilter).toList();
+    }
+
+    // Apply type filter (overrides tab if set)
+    if (_typeFilter != null) {
+      list = list.where((t) => t.type == _typeFilter).toList();
+    }
+
+    // Apply date range filter
+    if (_dateRangeStart != null) {
+      list = list.where((t) {
+        final txDate = DateTime.tryParse(t.createdAt ?? '')?.toLocal() ?? DateTime.now();
+        return txDate.isAfter(_dateRangeStart!);
+      }).toList();
+    }
+    if (_dateRangeEnd != null) {
+      list = list.where((t) {
+        final txDate = DateTime.tryParse(t.createdAt ?? '')?.toLocal() ?? DateTime.now();
+        return txDate.isBefore(_dateRangeEnd!.add(const Duration(days: 1)));
+      }).toList();
+    }
+
+    // Apply token filter (AND semantics: only show if token matches)
+    if (_selectedTokens.isNotEmpty) {
+      list = list.where((t) => _selectedTokens.contains(t.tokenSymbol)).toList();
+    }
+
+    // Apply chain filter (AND semantics: only show if chain matches)
+    if (_selectedChains.isNotEmpty) {
+      list = list.where((t) => _selectedChains.contains(t.chainName)).toList();
+    }
+
+    // Apply search query
+    if (_searchQuery.isNotEmpty) {
+      list = list.where((t) {
+        final q = _searchQuery;
+        return t.reference.toLowerCase().contains(q) ||
+            t.userTag.toLowerCase().contains(q) ||
+            (t.receiverTag?.toLowerCase().contains(q) ?? false) ||
+            t.amount.toLowerCase().contains(q) ||
+            t.tokenSymbol.toLowerCase().contains(q) ||
+            (t.notes?.toLowerCase().contains(q) ?? false) ||
+            (t.description?.toLowerCase().contains(q) ?? false);
+      }).toList();
+    }
+
+    return list;
   }
 
   /// Share a receipt for a completed transaction.
@@ -371,6 +549,7 @@ class DashboardViewModel extends BaseViewModel {
       final receiptBytes = await _transactionService.getTransactionReceipt(transaction.id);
       final file = await _saveReceiptToFile(receiptBytes, transaction.id);
       await Share.shareXFiles([XFile(file.path)], subject: 'Transaction Receipt');
+
       _snackbarService.showSnackbar(
         message: 'Receipt ready to share',
         duration: const Duration(seconds: 2),
@@ -402,7 +581,6 @@ class DashboardViewModel extends BaseViewModel {
   /// Load more transactions for infinite scroll
   Future<void> loadMoreTransactions() async {
     if (_isLoadingMore || !_hasMore) return;
-
     _isLoadingMore = true;
     notifyListeners();
 
@@ -418,7 +596,6 @@ class DashboardViewModel extends BaseViewModel {
       } else {
         _transactions.addAll(nextTransactions);
         _currentPage++;
-
         // Check if there are more transactions
         if (nextTransactions.length < _pageSize) {
           _hasMore = false;
@@ -433,6 +610,11 @@ class DashboardViewModel extends BaseViewModel {
     }
 
     _isLoadingMore = false;
+  }
+
+  /// Navigate to scheduled payments view
+  void navigateToScheduledPayments() {
+    _navigationService.navigateToScheduledPaymentsView();
   }
 
   /// Reset transaction pagination
