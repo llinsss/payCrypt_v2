@@ -18,6 +18,8 @@ export interface TaggedStellarConfig {
   retryDelay?: number;
   /** Multiplier for exponential backoff (default: 2) */
   retryBackoffMultiplier?: number;
+  /** Upper bound on any single retry delay, in milliseconds (default: 30000) */
+  maxRetryDelay?: number;
 }
 
 /**
@@ -30,6 +32,8 @@ export interface HttpClientConfig {
   retries?: number;
   retryDelay?: number;
   retryBackoffMultiplier?: number;
+  /** Upper bound on any single retry delay, in milliseconds (default: 30000) */
+  maxRetryDelay?: number;
 }
 
 /**
@@ -44,6 +48,20 @@ export interface RequestOptions {
   timeout?: number;
   /** Override default retry count */
   retries?: number;
+  /**
+   * Idempotency key sent as an `Idempotency-Key` header. Providing one
+   * marks an otherwise-unsafe mutation (POST/PATCH) as safe to retry after
+   * an ambiguous network failure, since the server can dedupe by the key.
+   */
+  idempotencyKey?: string;
+  /**
+   * Explicitly opt a POST/PATCH request into retries even without an
+   * idempotency key. Use only when the operation is known to be safe to
+   * repeat (e.g. it's already naturally idempotent server-side).
+   */
+  idempotent?: boolean;
+  /** Abort signal that can cancel an in-flight request or retry wait */
+  signal?: AbortSignal;
 }
 
 // ============================================================================

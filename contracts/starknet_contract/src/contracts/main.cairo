@@ -152,6 +152,10 @@ pub mod PayCrypt {
         token_addresses: Map<felt252, ContractAddress>,
         is_token_supported: Map<ContractAddress, bool>,
         reentrancy_guard: bool,
+        // #616: monotonically increasing id used to reconcile a deposit/withdrawal
+        // event emitted here with the corresponding event emitted by the Wallet
+        // contract for the same operation.
+        operation_nonce: u256,
     }
 
     #[event]
@@ -169,17 +173,34 @@ pub mod PayCrypt {
         pub wallet_address: ContractAddress,
     }
 
+    /// #616: `operation_id` is a stable, per-contract-unique id for reconciling
+    /// this deposit off-chain; `wallet` is the destination wallet address (the
+    /// tag's wallet, distinct from `sender` which is the depositor).
     #[derive(Drop, starknet::Event)]
     pub struct DepositReceived {
+        #[key]
+        pub operation_id: u256,
         pub tag: felt252,
+        pub wallet: ContractAddress,
         pub sender: ContractAddress,
         pub amount: u256,
         pub token: ContractAddress,
     }
 
+    /// #616: `operation_id` is a stable, per-contract-unique id for reconciling
+    /// this withdrawal off-chain (it also gets forwarded to the Wallet
+    /// contract's own `WithdrawalCompleted` event for user-initiated
+    /// withdrawals, so the two can be correlated). `wallet` is the source
+    /// wallet (zero for admin/contract-level withdrawals, which have no tag);
+    /// `recipient` is who actually received the funds.
     #[derive(Drop, starknet::Event)]
     pub struct WithdrawalCompleted {
+        #[key]
+        pub operation_id: u256,
+        pub tag: felt252,
+        pub wallet: ContractAddress,
         pub sender: ContractAddress,
+        pub recipient: ContractAddress,
         pub amount: u256,
         pub token: ContractAddress,
     }
@@ -199,6 +220,17 @@ pub mod PayCrypt {
         assert(admin_address != zero_address, 'Invalid admin address');
         self.admin_address.write(admin_address);
         self.wallet_class_hash.write(wallet_class_hash);
+    }
+
+    #[generate_trait]
+    impl InternalImpl of InternalTrait {
+        /// #616: hands out a fresh, monotonically increasing operation id used
+        /// to correlate deposit/withdrawal events for off-chain reconciliation.
+        fn next_operation_id(ref self: ContractState) -> u256 {
+            let id = self.operation_nonce.read() + 1;
+            self.operation_nonce.write(id);
+            id
+        }
     }
 
     #[abi(embed_v0)]
@@ -285,7 +317,18 @@ pub mod PayCrypt {
                 .transfer_from(sender_address, user_profile.user_wallet, amount);
             assert(success, 'Token transfer failed');
 
-            self.emit(DepositReceived { tag, sender: sender_address, amount, token });
+            let operation_id = self.next_operation_id();
+            self
+                .emit(
+                    DepositReceived {
+                        operation_id,
+                        tag,
+                        wallet: user_profile.user_wallet,
+                        sender: sender_address,
+                        amount,
+                        token,
+                    },
+                );
             self.reentrancy_guard.write(false);
         }
 
@@ -327,10 +370,23 @@ pub mod PayCrypt {
                 .balance_of(user_profile.user_wallet);
             assert(wallet_balance >= amount, 'Insufficient wallet balance');
 
-            let success = wallet_dispatcher.withdraw(token, recipient_address, amount);
+            let operation_id = self.next_operation_id();
+            let success = wallet_dispatcher
+                .withdraw(operation_id, token, recipient_address, amount);
             assert(success, 'Wallet withdrawal failed');
 
-            self.emit(WithdrawalCompleted { sender: sender_address, amount, token });
+            self
+                .emit(
+                    WithdrawalCompleted {
+                        operation_id,
+                        tag,
+                        wallet: user_profile.user_wallet,
+                        sender: sender_address,
+                        recipient: recipient_address,
+                        amount,
+                        token,
+                    },
+                );
             self.reentrancy_guard.write(false);
         }
 
@@ -368,7 +424,20 @@ pub mod PayCrypt {
             let success = erc20_dispatcher.transfer(recipient_address, amount);
             assert(success, 'Token transfer failed');
 
-            self.emit(WithdrawalCompleted { sender: sender_address, amount, token });
+            // Admin/contract-level withdrawal: not tied to a tag or wallet.
+            let operation_id = self.next_operation_id();
+            self
+                .emit(
+                    WithdrawalCompleted {
+                        operation_id,
+                        tag: 0,
+                        wallet: zero_address,
+                        sender: sender_address,
+                        recipient: recipient_address,
+                        amount,
+                        token,
+                    },
+                );
             self.reentrancy_guard.write(false);
             true
         }

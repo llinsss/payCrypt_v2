@@ -76,6 +76,7 @@ export class TaggedStellar {
       retries: config.retries,
       retryDelay: config.retryDelay,
       retryBackoffMultiplier: config.retryBackoffMultiplier,
+      maxRetryDelay: config.maxRetryDelay,
     });
 
     // Initialize resources

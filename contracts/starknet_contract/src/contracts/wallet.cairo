@@ -3,12 +3,16 @@ use starknet::ContractAddress;
 #[starknet::interface]
 pub trait IWallet<ContractState> {
     /// Withdraws tokens from the wallet (only callable by the TagRouter contract).
+    /// @param operation_id Stable id (#616), assigned by the router, used to
+    ///   correlate this withdrawal's event with the router's own event for the
+    ///   same operation.
     /// @param token The address of the token contract.
     /// @param recipient_address The address to receive the withdrawn tokens.
     /// @param amount The amount of tokens to withdraw.
     /// @return True if the withdrawal is successful.
     fn withdraw(
         ref self: ContractState,
+        operation_id: u256,
         token: ContractAddress,
         recipient_address: ContractAddress,
         amount: u256,
@@ -62,9 +66,17 @@ pub mod Wallet {
         amount: u256,
     }
 
+    /// #616: `operation_id` correlates this event with the router's own
+    /// `WithdrawalCompleted` event for the same withdrawal. `caller` is the
+    /// TagRouter contract that invoked this withdrawal (previously misleadingly
+    /// named `sender`); `recipient` is who actually received the funds, which
+    /// this event previously omitted entirely.
     #[derive(Drop, starknet::Event)]
     struct WithdrawalCompleted {
-        sender: ContractAddress,
+        #[key]
+        operation_id: u256,
+        caller: ContractAddress,
+        recipient: ContractAddress,
         token: ContractAddress,
         amount: u256,
     }
@@ -99,6 +111,7 @@ pub mod Wallet {
         /// @return True if the withdrawal is successful.
         fn withdraw(
             ref self: ContractState,
+            operation_id: u256,
             token: ContractAddress,
             recipient_address: ContractAddress,
             amount: u256,
@@ -123,7 +136,12 @@ pub mod Wallet {
             let success = erc20_dispatcher.transfer(recipient_address, amount);
             assert(success, 'Token transfer failed');
 
-            self.emit(WithdrawalCompleted { sender: caller, token, amount });
+            self
+                .emit(
+                    WithdrawalCompleted {
+                        operation_id, caller, recipient: recipient_address, token, amount,
+                    },
+                );
             self.reentrancy_guard.write(false);
             true
         }
