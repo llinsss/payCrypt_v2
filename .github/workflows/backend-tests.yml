@@ -1,0 +1,151 @@
+name: Backend Extended Tests
+
+# Runs comprehensive backend tests including:
+# - Standard unit and integration tests
+# - Database migration tests
+# - Regression test: verify demo data never loads in production scripts
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  # ── 1. Path filter ─────────────────────────────────────────────────────────
+  detect:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - "backend/**"
+
+  # ── 2. Migration Tests ─────────────────────────────────────────────────────
+  migration-tests:
+    name: Migration Tests
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: paycrypt_test_migrations
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test_migrations
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: paycrypt_test_migrations
+      DB_NAME_TEST_MIGRATIONS: paycrypt_test_migrations
+      DB_USER: test_user
+      DB_PASSWORD: test_pass
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run migration tests
+        run: npm run test:migrations
+
+  # ── 3. Production Script Regression Tests ──────────────────────────────────
+  regression-tests:
+    name: Production Script Regression Tests
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: paycrypt_regression
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: paycrypt_regression
+      DB_USER: test_user
+      DB_PASSWORD: test_pass
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run production seed regression test
+        run: npm run test -- --testPathPattern='tests/production-seed-regression' --forceExit
+        continue-on-error: false
+
+      - name: Verify no demo data in production seeds
+        run: node scripts/verify-no-demo-data.js
+        continue-on-error: false
+

@@ -133,6 +133,33 @@ Failed deliveries (non-2xx response or connection error) are retried automatical
 
 After 4 attempts with no success the delivery is marked **failed** and will not be retried.
 
+### Retryable vs. non-retryable failures
+
+Not every failure is retried. Deterministic problems go straight to the
+dead-letter queue instead of consuming the retry budget:
+
+| Failure                                              | Behaviour       |
+|-----------------------------------------------------|-----------------|
+| Connection error, timeout, aborted/slow stream, `429`, `5xx` | Retried (backoff schedule above) |
+| `4xx` other than `429`                               | Dead-lettered immediately (non-retryable) |
+| Response body larger than the size cap (see below)   | Dead-lettered immediately (non-retryable) |
+
+---
+
+## Response Limits
+
+To protect delivery-worker capacity, the sender enforces hard bounds on every
+attempt regardless of how your endpoint behaves:
+
+| Bound                     | Value    | On breach |
+|---------------------------|----------|-----------|
+| Socket inactivity timeout | 10 s     | Attempt aborted, retried |
+| Overall delivery deadline | 15 s     | Attempt aborted even if bytes are still trickling in, retried |
+| Maximum response body     | 1 MiB    | Response stream aborted, delivery **dead-lettered (non-retryable)** |
+
+Your endpoint only needs to return a small `2xx` acknowledgement — response
+bodies are never used for anything except logging (first 1 000 characters).
+
 ---
 
 ## Delivery Logs
@@ -178,6 +205,32 @@ Webhook deliveries are rate-limited to **100 per minute per user** to protect yo
 | `PUT`    | `/api/webhooks/:id`               | Update a webhook        |
 | `DELETE` | `/api/webhooks/:id`               | Remove a webhook        |
 | `GET`    | `/api/webhooks/:id/deliveries`    | View delivery logs      |
+
+---
+
+## Admin: Dead-Letter Queue
+
+Events that exhaust their retries (or hit a non-retryable failure) land in the
+dead-letter queue. Admins can inspect and manually re-drive them:
+
+| Method | Path                                          | Description            |
+|--------|-----------------------------------------------|------------------------|
+| `GET`  | `/api/admin/webhooks/dlq`                      | List dead-letter events |
+| `POST` | `/api/admin/webhooks/dlq/:event_id/retry`      | Manually retry one event |
+
+### Idempotency & audit contract
+
+Manual retries are safe to trigger concurrently:
+
+- The retry endpoint atomically moves the event out of the dead-letter queue
+  (`dead_letter → retrying`) before dispatching. Exactly one caller wins that
+  transition; any concurrent retry for the same event gets **`409 Conflict`**
+  (`"A retry for this dead letter event is already in progress."`).
+- Every attempt — delivered, re-queued, rejected as a duplicate, or errored —
+  writes one `webhook_dlq_retry` row to the audit log recording the acting
+  admin (`user_id`), the `event_id`, the outcome, IP and user agent.
+- If the dispatch throws before an outcome is recorded, the event is returned
+  to the dead-letter queue so it can be retried again later.
 
 ---
 

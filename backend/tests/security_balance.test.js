@@ -43,8 +43,9 @@ jest.unstable_mockModule("../middleware/auth.js", () => ({
 }));
 
 jest.unstable_mockModule("../models/index.js", () => ({
-  User: { findById: jest.fn() },
+  User: { findById: jest.fn().mockResolvedValue({ id: "user-alice", tag: "alice" }) },
   Balance: {
+    findByUserId: jest.fn().mockResolvedValue([]),
     getByUser: jest.fn().mockResolvedValue([
       { token_symbol: "USDT", amount: "100.00", usd_value: "100.00" },
     ]),
@@ -76,6 +77,40 @@ app.use(express.json());
 app.use("/api/balances", balancesRouter);
 
 describe("Security: Balance Lookup by Tag", () => {
+  it("registers exactly one validated handler for each balance detail method", () => {
+    const detailRoutes = balancesRouter.stack
+      .filter((layer) => layer.route?.path === "/:id")
+      .map((layer) => Object.keys(layer.route.methods)[0]);
+
+    expect(detailRoutes.sort()).toEqual(["delete", "get", "put"]);
+  });
+
+  it("rejects invalid balance IDs before the controller", async () => {
+    const res = await request(app)
+      .get("/api/balances/not-a-number")
+      .set("Authorization", "Bearer valid-token-alice");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("VALIDATION_ERROR");
+  });
+
+  it("requires POST and makes duplicate sync requests converge", async () => {
+    const first = await request(app)
+      .post("/api/balances/sync")
+      .set("Authorization", "Bearer valid-token-alice");
+    const second = await request(app)
+      .post("/api/balances/sync")
+      .set("Authorization", "Bearer valid-token-alice");
+    const legacy = await request(app)
+      .get("/api/balances/sync")
+      .set("Authorization", "Bearer valid-token-alice");
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(first.status);
+    expect(second.body).toEqual(first.body);
+    expect(legacy.status).toBe(400);
+  });
+
   it("should block unauthenticated access (401)", async () => {
     const res = await request(app).get("/api/balances/tag/alice");
     expect(res.status).toBe(401);
