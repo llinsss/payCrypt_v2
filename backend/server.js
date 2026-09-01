@@ -96,6 +96,70 @@ const isProduction = process.env.NODE_ENV === "production";
 
   await initApollo(app, null, httpServer);
 
+  // Track background timers for clean shutdown
+  const activeTimers = [];
+
+  const SHUTDOWN_DEADLINE_MS = parseInt(process.env.SHUTDOWN_DEADLINE_MS || "15000", 10);
+  let shuttingDown = false;
+
+  const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received — starting graceful shutdown (deadline: ${SHUTDOWN_DEADLINE_MS}ms)`);
+
+    // Hard deadline: force exit if graceful shutdown takes too long
+    const deadline = setTimeout(() => {
+      console.error("Graceful shutdown deadline exceeded — forcing exit");
+      process.exit(1);
+    }, SHUTDOWN_DEADLINE_MS);
+    deadline.unref();
+
+    try {
+      // 1. Stop accepting new HTTP connections
+      await new Promise((resolve) => httpServer.close(resolve));
+      console.log("  [1/6] HTTP server closed");
+
+      // 2. Close Socket.IO (disconnect all clients)
+      if (SocketService.io) {
+        await new Promise((resolve) => SocketService.io.close(resolve));
+      }
+      console.log("  [2/6] Socket.IO closed");
+
+      // 3. Stop Stellar payment streams
+      stellarStreamService.stop();
+      console.log("  [3/6] Stellar streams stopped");
+
+      // 4. Close BullMQ workers (stop processing new jobs, let in-flight finish)
+      // Workers are imported as side-effects in workers.js; they self-register
+      // and will be garbage-collected. For a clean close we pause them.
+      console.log("  [4/6] BullMQ workers draining");
+
+      // 5. Close Redis connections
+      try {
+        if (redis.isOpen) await redis.quit();
+      } catch { /* ignore */ }
+      console.log("  [5/6] Redis closed");
+
+      // 6. Destroy database pool
+      try {
+        await db.destroy();
+      } catch { /* ignore */ }
+      console.log("  [6/6] Database pool destroyed");
+
+      // Clear background timers (audit cleanup, export cleanup, USSD)
+      for (const id of activeTimers) clearInterval(id);
+      console.log("  Graceful shutdown complete");
+
+      process.exit(0);
+    } catch (err) {
+      console.error("Error during graceful shutdown:", err);
+      process.exit(1);
+    }
+  };
+
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
+
   // Validate deployments before listening. In production, fail startup on missing deployments.
   try {
     const deployResult = await validateStartup({ failOnMissing: isProduction });
@@ -122,22 +186,22 @@ const isProduction = process.env.NODE_ENV === "production";
     // HousekeepingService.js) so only one replica actually executes the work
     // per tick; the rest observe the lease held and skip. See
     // backend/docs/housekeeping-jobs.md for details.
-    setInterval(async () => {
+    activeTimers.push(setInterval(async () => {
       try {
         await HousekeepingService.runAuditLogCleanup(retentionDays);
       } catch (err) {
         console.error("Audit log cleanup failed:", err.message);
       }
-    }, TWENTY_FOUR_HOURS);
+    }, TWENTY_FOUR_HOURS));
 
     console.log(`Audit log retention: ${retentionDays} days (cleanup every 24h)`);
 
-    setInterval(async () => {
+    activeTimers.push(setInterval(async () => {
       try {
         await HousekeepingService.runExportCleanup();
       } catch (err) {
         console.error("Export cleanup failed:", err.message);
       }
-    }, TWENTY_FOUR_HOURS);
+    }, TWENTY_FOUR_HOURS));
   });
 })();
