@@ -1,6 +1,7 @@
 /**
- * Seed file for Stellar SDK example data
- * This creates sample tags and accounts for testing
+ * Demo-only seed: Stellar example data
+ * This creates sample tags and accounts for development and testing.
+ * DO NOT use in production.
  */
 export const seed = async (knex) => {
   // Check if stellar_tags table has data

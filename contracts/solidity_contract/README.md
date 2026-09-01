@@ -64,3 +64,13 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+## Contracts Overview
+
+### AssetDecay
+The `AssetDecay` contract (`src/AssetDecay.sol`) enables time-based native asset deposits with decay durations specified in seconds.
+- **Time Units**: Uses `block.timestamp` (in seconds) rather than block numbers to ensure consistent wall-clock decay durations across any EVM chain.
+- **Bounds**:
+  - `MIN_DECAY_DURATION`: 1 second.
+  - `MAX_DECAY_DURATION`: 365 days.
+- **Eligibility**: An asset is eligible while `(block.timestamp - depositTimestamp) < decayDurationSeconds`. Once expired or withdrawn, it is ineligible.

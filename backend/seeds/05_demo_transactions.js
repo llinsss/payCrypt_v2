@@ -1,3 +1,8 @@
+/**
+ * Demo-only seed: Demo transaction and scheduled payment data
+ * Creates sample transactions and scheduled payments for development and testing.
+ * DO NOT use in production.
+ */
 import { DEMO_USERS, DEMO_TOKEN_SEEDS } from "../utils/demoSeedData.js";
 
 export const seed = async (knex) => {
