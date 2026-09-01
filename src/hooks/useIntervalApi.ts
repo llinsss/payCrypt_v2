@@ -1,12 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { apiClient } from "../utils/api";
-import { createDebugLogger } from "../utils/debugLog";
-
-// Opt-in and dev-only: import.meta.env.DEV is statically stripped by Vite,
-// so this (and the payload it would log) never ships in production bundles.
-const debugLog = createDebugLogger(
-  import.meta.env.DEV && import.meta.env.VITE_DEBUG_API_LOGGING === "true"
-);
+import { startIntervalPoller } from "../utils/intervalPoller";
 
 /**
  * Custom hook to repeatedly call an API endpoint at a given interval.
@@ -14,36 +8,21 @@ const debugLog = createDebugLogger(
  * @param intervalMs Interval in milliseconds (default: 10s).
  */
 export function useIntervalApi(endpoint: string, intervalMs = 10_000) {
-  const isMounted = useRef(true);
-
   useEffect(() => {
-    isMounted.current = true;
+    const { stop } = startIntervalPoller({
+      fetcher: (signal) => apiClient.get(endpoint, { signal }),
+      onSuccess: (res) => {
+        console.log("✅ API call successful:", endpoint, res);
+      },
+      onError: (err) => {
+        console.error("❌ API call failed:", err);
+      },
+      intervalMs,
+    });
 
-    const fetchData = async () => {
-      try {
-        const res = await apiClient.get(endpoint);
-        if (isMounted.current) {
-          debugLog("API call successful:", endpoint, res);
-        }
-      } catch (err) {
-        if (isMounted.current) {
-          console.error(
-            "API call failed:",
-            endpoint,
-            err instanceof Error ? err.message : err
-          );
-        }
-      }
-    };
-
-    // Initial call and interval
-    fetchData();
-    const intervalId = setInterval(fetchData, intervalMs);
-
-    // Cleanup
-    return () => {
-      isMounted.current = false;
-      clearInterval(intervalId);
-    };
+    // Aborts any in-flight request and stops the timer; stale responses
+    // that resolve afterward (or after endpoint/intervalMs change and a new
+    // effect starts) are dropped by the poller instead of updating state.
+    return stop;
   }, [endpoint, intervalMs]);
 }
