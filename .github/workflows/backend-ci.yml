@@ -8,6 +8,13 @@
 #
 # Services: PostgreSQL 14, Redis 6 (mirrors production services)
 # Artifacts: jest-results-<sha> retained 14 days
+#
+# MIGRATION & SEED STRATEGY:
+# - Tests use pre-configured test database; no migrations run in CI
+# - No seed data is loaded during CI; tests use fixtures or in-memory setup
+# - This prevents demo data from ever being included in CI artifacts
+# - Production deployments handle migrations & seeding separately at runtime
+# See: backend/docs/SEED_CATEGORIZATION.md for seed categorization details
 
 name: Backend CI
 

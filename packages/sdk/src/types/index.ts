@@ -3,6 +3,7 @@
 export interface TaggedSDKConfig {
   baseUrl?: string;
   apiKey?: string;
+  token?: string;
   timeout?: number;
 }
 

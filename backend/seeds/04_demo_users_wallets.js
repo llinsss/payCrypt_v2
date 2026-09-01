@@ -1,3 +1,8 @@
+/**
+ * Demo-only seed: Demo user and wallet data
+ * Creates reference accounts for development and testing.
+ * DO NOT use in production.
+ */
 import bcrypt from "bcrypt";
 import { DEMO_PASSWORD, DEMO_USERS, DEMO_TOKEN_SEEDS } from "../utils/demoSeedData.js";
 
