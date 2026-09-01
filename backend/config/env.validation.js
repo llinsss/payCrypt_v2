@@ -25,10 +25,11 @@ export const envSchema = Joi.object({
     if (invalidOrigin) return helpers.error("string.corsOrigin");
     return origins.join(",");
   }).messages({ "string.corsOrigin": "must be a comma-separated list of absolute URLs" }),
-  SENTRY_DSN: uri.allow(""),
-  RPC_URL: uri.allow(""),
-  STARKNET_CONTRACT_ADDRESS: Joi.string().pattern(/^0x[0-9a-fA-F]{1,64}$/).allow(""),
-  WEBHOOK_SECRET: Joi.string().min(16).allow(""),
+  SENTRY_DSN: uri,
+  RPC_URL: uri,
+  STARKNET_CONTRACT_ADDRESS: Joi.string().pattern(/^0x[0-9a-fA-F]{1,64}$/),
+  WEBHOOK_SECRET: Joi.string().min(16),
+  PUBLIC_BASE_URL: Joi.string().uri({ allowRelative: false }).optional(),
 }).unknown(true);
 
 export function validateEnv(environment = process.env) {

@@ -18,6 +18,7 @@ import { getLiveness } from "./controllers/healthController.js";
 import bullBoardRouter from "./bullboard.js";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
+import { buildSwaggerServers } from "./config/swagger.js";
 
 import {
   SIX_HOURS,
@@ -38,7 +39,11 @@ import {
 } from "./middleware/validation.js";
 
 import { rateLimit } from "./middleware/rateLimiter.js";
-import { parseCookies, csrfProtection } from "./middleware/cookies.js";
+import {
+  applyPayloadLimits,
+  payloadTooLargeHandler,
+} from "./middleware/payloadLimits.js";
+import { initSentry } from "./observability/sentry.js";
 
 dotenv.config();
 
@@ -153,11 +158,16 @@ app.use(
   }),
 );
 
-// Request body parsing with size limits
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-app.use(parseCookies);
-app.use(csrfProtection);
+// Request body parsing with tiered size limits.
+//
+// A single 10mb limit applied everywhere meant any endpoint could be used to
+// buffer 10mb of attacker-supplied JSON. Limits are now scoped per route class
+// (10kb auth / 50kb default / 10mb upload) — see middleware/payloadLimits.js.
+//
+// Each parser preserves the raw request buffer so webhook handlers (e.g.
+// Paystack) can verify HMAC signatures against the exact bytes received rather
+// than the re-serialized JSON.
+applyPayloadLimits(app);
 
 // Detect SQL Injection attempts
 app.use(detectSqlInjection);
@@ -216,6 +226,14 @@ if (process.env.NODE_ENV !== "production") {
   app.get("/test-error", (req, res) => {
     throw new Error("Sentry Test Error manually triggered");
   });
+});
+
+// Test route for user verification of Sentry. Never expose this deliberately
+// failing endpoint to production traffic.
+if (process.env.NODE_ENV !== "production") {
+  app.get("/test-error", (req, res) => {
+    throw new Error("Sentry Test Error manually triggered");
+  });
 }
 
 import rateLimitRoutes from "./routes/rateLimit.js";
@@ -255,24 +273,7 @@ const swaggerOptions = {
         "**Getting Started:** See the [Getting Started guide](https://taggedpay.xyz/docs/api/getting-started) for a complete walkthrough: " +
         "register → get JWT → create wallet → send payment.",
     },
-    servers: [
-      {
-        url: `http://localhost:${process.env.PORT || 5002}/api/v2`,
-        description: "Current version (v2)",
-      },
-      {
-        url: `http://localhost:${process.env.PORT || 5002}/api/v1`,
-        description: "Deprecated version (v1)",
-      },
-      {
-        url: `http://localhost:${process.env.PORT || 5002}`,
-        description: "Development Server (unversioned root)",
-      },
-      {
-        url: "https://taggedpay.xyz/api/v2",
-        description: "Production (v2)",
-      },
-    ],
+    servers: buildSwaggerServers(),
     components: {
       securitySchemes: {
         bearerAuth: {
