@@ -1,10 +1,11 @@
-import React, { Suspense, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
 import LoadingSpinner from "./components/LoadingSpinner";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { resolveWebSocketUrl } from "./utils/wsUrl";
 import { Toaster } from "react-hot-toast";
 
 // Layout — loaded eagerly (always visible)
@@ -96,7 +97,18 @@ function RouteLoader() {
 // ── Private app layout with auth guard ──────────────────────────────────────
 const PrivateLayout: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const { isConnected } = useWebSocket("ws://localhost:3001", user?.id);
+  const wsUrl = useMemo(() => {
+    try {
+      return resolveWebSocketUrl(import.meta.env.VITE_WS_URL);
+    } catch (error) {
+      console.error(
+        "[WebSocket] Real-time updates disabled:",
+        error instanceof Error ? error.message : error
+      );
+      return null;
+    }
+  }, []);
+  const { isConnected } = useWebSocket(wsUrl ?? "", wsUrl ? user?.id : undefined);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
