@@ -1,7 +1,9 @@
 import { Queue } from "bullmq";
 import queueConfig from "./index.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 export const starknetQueue = queueConfig ? new Queue("starknet-transactions", queueConfig) : null;
+attachRedisErrorAlert(starknetQueue, "starknet-transactions-queue");
 
 if (starknetQueue) {
   starknetQueue.on("waiting", (job) =>

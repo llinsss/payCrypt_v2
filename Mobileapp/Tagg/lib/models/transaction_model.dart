@@ -7,12 +7,16 @@ class Transaction {
   final String type; // "debit" or "credit"
   final String status; // "completed", "pending", "failed"
   final String? txHash;
+  final String? explorerLink;
+  final String? fee;
   final String usdValue;
   final String amount;
   final String timestamp;
   final String fromAddress;
   final String toAddress;
   final String? description;
+  final String? notes;
+  final dynamic metadata;
   final dynamic extra;
   final String createdAt;
   final String updatedAt;
@@ -23,6 +27,7 @@ class Transaction {
   final String tokenLogoUrl;
   final String? chainName;
   final String? chainSymbol;
+  final String? receiverTag;
 
   Transaction({
     required this.id,
@@ -33,12 +38,16 @@ class Transaction {
     required this.type,
     required this.status,
     this.txHash,
+    this.explorerLink,
+    this.fee,
     required this.usdValue,
     required this.amount,
     required this.timestamp,
     required this.fromAddress,
     required this.toAddress,
     this.description,
+    this.notes,
+    this.metadata,
     this.extra,
     required this.createdAt,
     required this.updatedAt,
@@ -49,9 +58,11 @@ class Transaction {
     required this.tokenLogoUrl,
     this.chainName,
     this.chainSymbol,
+    this.receiverTag,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
+    final destination = json['to_address']?.toString() ?? '';
     return Transaction(
       id: json['id'],
       userId: json['user_id'],
@@ -61,12 +72,16 @@ class Transaction {
       type: json['type'] ?? '',
       status: json['status'] ?? '',
       txHash: json['tx_hash'],
+      explorerLink: json['explorer_link'],
+      fee: json['fee']?.toString(),
       usdValue: json['usd_value'] ?? '',
       amount: json['amount'] ?? '',
       timestamp: json['timestamp'] ?? '',
       fromAddress: json['from_address'] ?? '',
       toAddress: json['to_address'] ?? '',
       description: json['description'],
+      notes: json['notes'],
+      metadata: json['metadata'],
       extra: json['extra'],
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
@@ -77,6 +92,9 @@ class Transaction {
       tokenLogoUrl: json['token_logo_url'] ?? '',
       chainName: json['chain_name'],
       chainSymbol: json['chain_symbol'],
+        receiverTag: json['receiver_tag'] ??
+          json['recipient_tag'] ??
+          (destination.startsWith('@') ? destination : null),
     );
   }
 
@@ -90,12 +108,16 @@ class Transaction {
       'type': type,
       'status': status,
       'tx_hash': txHash,
+      'explorer_link': explorerLink,
+      'fee': fee,
       'usd_value': usdValue,
       'amount': amount,
       'timestamp': timestamp,
       'from_address': fromAddress,
       'to_address': toAddress,
       'description': description,
+      'notes': notes,
+      'metadata': metadata,
       'extra': extra,
       'created_at': createdAt,
       'updated_at': updatedAt,
@@ -106,6 +128,7 @@ class Transaction {
       'token_logo_url': tokenLogoUrl,
       'chain_name': chainName,
       'chain_symbol': chainSymbol,
+      'receiver_tag': receiverTag,
     };
   }
 

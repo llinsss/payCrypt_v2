@@ -45,7 +45,9 @@ function sanitizeBody(body) {
  */
 function extractResourceId(params) {
   if (!params) return null;
-  return params.id || params.keyId || params.tag || null;
+  // `serviceKey` is captured so admin reset/audit trails name the affected
+  // circuit-breaker service (issue #553).
+  return params.id || params.keyId || params.tag || params.serviceKey || null;
 }
 
 /**

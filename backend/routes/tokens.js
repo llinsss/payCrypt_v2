@@ -6,7 +6,12 @@ import {
   updateToken,
   deleteToken,
 } from "../controllers/tokenController.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { publicCache } from "../middleware/cacheControl.js";
+import validate from "../middleware/validate.js";
+import { paginationSchema } from "../validators/paginationValidator.js";
+import { createTokenSchema, updateTokenSchema } from "../validators/tokenSchemas.js";
+
 const router = express.Router();
 
 /**
@@ -22,20 +27,42 @@ const router = express.Router();
  *   get:
  *     summary: Get all tokens
  *     tags: [Tokens]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 10000
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
  *     responses:
  *       200:
  *         description: List of tokens
+ *       422:
+ *         description: Validation error (invalid page or limit)
  *   post:
  *     summary: Create a new token
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     responses:
  *       201:
  *         description: Token created
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  */
-router.post("/", createToken);
-router.get("/", getTokens);
+router.post("/", authenticate, requireAdmin, createToken);
+router.get("/", publicCache(3600), getTokens);
 
 /**
  * @swagger
@@ -52,11 +79,14 @@ router.get("/", getTokens);
  *     responses:
  *       200:
  *         description: Token details
+ *       404:
+ *         description: Token not found
  *   put:
  *     summary: Update token
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     parameters:
  *       - in: path
  *         name: id
@@ -66,11 +96,16 @@ router.get("/", getTokens);
  *     responses:
  *       200:
  *         description: Token updated
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  *   delete:
  *     summary: Delete token
  *     tags: [Tokens]
  *     security:
  *       - bearerAuth: []
+ *     description: Requires an authenticated admin (bearer token with role admin or super_admin).
  *     parameters:
  *       - in: path
  *         name: id
@@ -80,9 +115,13 @@ router.get("/", getTokens);
  *     responses:
  *       200:
  *         description: Token deleted
+ *       401:
+ *         description: Access token required
+ *       403:
+ *         description: Admin access required
  */
 router.get("/:id", getTokenById);
-router.put("/:id", updateToken);
-router.delete("/:id", deleteToken);
+router.put("/:id", authenticate, requireAdmin, updateToken);
+router.delete("/:id", authenticate, requireAdmin, deleteToken);
 
 export default router;

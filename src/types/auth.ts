@@ -9,14 +9,14 @@ export interface AuthUser {
   created_at: string;
   updated_at: string;
   last_login: string;
-  role: "user" | "admin";
+  role: "user" | "admin" | "super_admin";
 }
 
 export interface AuthContextType {
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<void>;
   register: (userData: RegisterData) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   loading: boolean;
   isLoading: boolean; // For form loading states
   isAuthenticated: boolean;

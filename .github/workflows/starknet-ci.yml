@@ -1,0 +1,43 @@
+name: Starknet CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "contracts/starknet_contract/**"
+      - "scripts/build-starknet.sh"
+      - "scripts/check-versions.sh"
+      - ".tool-versions"
+      - ".github/workflows/starknet-ci.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "contracts/starknet_contract/**"
+      - "scripts/build-starknet.sh"
+      - "scripts/check-versions.sh"
+      - ".tool-versions"
+      - ".github/workflows/starknet-ci.yml"
+
+jobs:
+  build:
+    name: Build Starknet contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned toolchain (asdf)
+        uses: asdf-vm/actions/install@v3
+
+      - name: Verify pinned tool versions
+        run: bash scripts/check-versions.sh
+
+      - name: Build Starknet contracts (project-owned cache)
+        run: bash scripts/build-starknet.sh
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: starknet-build
+          path: target/starknet
+          if-no-files-found: ignore

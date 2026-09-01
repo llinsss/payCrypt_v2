@@ -44,22 +44,48 @@ class WalletService {
     }
   }
 
+  Future<dynamic> initiateBankWithdrawal({
+    required int tokenId,
+    required int bankAccountId,
+    required double amountCrypto,
+  }) async {
+    try {
+      final response = await _apiService.post(
+        '/withdrawals/initiate',
+        {
+          'tokenId': tokenId,
+          'bankAccountId': bankAccountId,
+          'amountCrypto': amountCrypto,
+        },
+      );
+      return response;
+    } catch (e) {
+      print('Error initiating bank withdrawal: $e');
+      rethrow;
+    }
+  }
+
   /// Withdraw to another user's tag
   Future<WithdrawalResponse> withdrawToTag({
     required int balanceId,
     required String amount,
     required String receiverTag,
+    String? notes,
   }) async {
     try {
-      final request = WithdrawToTagRequest(
+      final requestBody = WithdrawToTagRequest(
         balanceId: balanceId,
         amount: amount,
         receiverTag: receiverTag,
-      );
+      ).toJson();
+
+      if (notes != null && notes.trim().isNotEmpty) {
+        requestBody['notes'] = notes.trim();
+      }
 
       final response = await _apiService.post(
         ApiConstants.sendToTag,
-        request.toJson(),
+        requestBody,
       );
 
       return WithdrawalResponse.fromJson(response);

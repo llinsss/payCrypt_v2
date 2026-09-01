@@ -1,5 +1,42 @@
 use starknet::ContractAddress;
 
+/// Canonicalizes a `felt252` tag for storage/comparison (#514).
+///
+/// `felt252` tags are packed short strings (up to 31 ASCII bytes, big-endian
+/// byte-per-limb). This walks those bytes, lowercases 'A'-'Z', and requires
+/// every byte to be in the allow-list [a-z0-9_-]; anything else — including
+/// any multi-byte UTF-8/confusable-Unicode sequence, which can't be packed
+/// as plain ASCII bytes in the first place — is rejected with a revert
+/// before any storage write. The returned canonical (lowercased) felt252 is
+/// what is actually used as the map key everywhere tags are stored or
+/// looked up; the caller's original `tag` is still what gets stored on
+/// `UserProfile.tag` and emitted in events, purely for off-chain display.
+pub fn normalize_tag(tag: felt252) -> felt252 {
+    assert(tag != 0, 'Tag cannot be empty');
+    let mut value: u256 = tag.into();
+    let mut canonical: u256 = 0;
+    let mut multiplier: u256 = 1;
+    loop {
+        if value == 0 {
+            break;
+        }
+        let byte = value % 256;
+        value = value / 256;
+        let mut normalized_byte = byte;
+        if byte >= 65 && byte <= 90 {
+            // 'A'-'Z' -> 'a'-'z'
+            normalized_byte = byte + 32;
+        }
+        let is_lower = normalized_byte >= 97 && normalized_byte <= 122; // 'a'-'z'
+        let is_digit = normalized_byte >= 48 && normalized_byte <= 57; // '0'-'9'
+        let is_allowed_punct = normalized_byte == 95 || normalized_byte == 45; // '_' or '-'
+        assert(is_lower || is_digit || is_allowed_punct, 'Invalid tag character');
+        canonical = canonical + normalized_byte * multiplier;
+        multiplier = multiplier * 256;
+    };
+    canonical.try_into().unwrap()
+}
+
 
 #[derive(Drop, Serde, PartialEq, starknet::Store)]
 pub struct UserProfile {
@@ -18,8 +55,8 @@ pub trait IPayCrypt<TContractState> {
 
     /// Deposits tokens to a user's wallet associated with a tag.
     /// @param tag The unique identifier for the user.
-    /// @param amount The amount of tokens to deposit.
-    /// @param token The address of the token contract.
+    /// @param amount The amount of tokens to deposit (must be > 0).
+    /// @param token The address of the token contract (must be allowlisted).
     fn deposit_to_tag(ref self: TContractState, tag: felt252, amount: u256, token: ContractAddress);
 
     /// Retrieves the wallet address associated with a tag.
@@ -39,10 +76,10 @@ pub trait IPayCrypt<TContractState> {
     fn get_contract_token_balance(self: @TContractState, token: ContractAddress) -> u256;
 
     /// Withdraws tokens from a user's wallet associated with a tag.
-    /// @param token The address of the token contract.
+    /// @param token The address of the token contract (must be allowlisted).
     /// @param tag The unique identifier for the user.
     /// @param recipient_address The address to receive the withdrawn tokens.
-    /// @param amount The amount of tokens to withdraw.
+    /// @param amount The amount of tokens to withdraw (must be > 0).
     fn withdraw_from_wallet(
         ref self: TContractState,
         token: ContractAddress,
@@ -52,9 +89,9 @@ pub trait IPayCrypt<TContractState> {
     );
 
     /// Withdraws tokens from the contract (admin only).
-    /// @param token The address of the token contract.
+    /// @param token The address of the token contract (must be allowlisted).
     /// @param recipient_address The address to receive the withdrawn tokens.
-    /// @param amount The amount of tokens to withdraw.
+    /// @param amount The amount of tokens to withdraw (must be > 0).
     /// @return True if the withdrawal is successful.
     fn withdraw(
         ref self: TContractState,
@@ -72,12 +109,22 @@ pub trait IPayCrypt<TContractState> {
     /// @return The address of the contract admin.
     fn get_admin_address(self: @TContractState) -> ContractAddress;
 
-    /// Sets the token address for a given key (admin only).
+    /// Sets the token address for a given key and updates allowlist (admin only).
     /// @param token_key The key identifying the token (e.g., 'STRK', 'USDC').
     /// @param token_address The address of the token contract.
     fn set_token_address(
         ref self: TContractState, token_key: felt252, token_address: ContractAddress,
     );
+
+    /// Checks if a token address is configured and allowlisted.
+    /// @param token The address of the token contract to check.
+    /// @return True if the token is supported.
+    fn is_token_supported(self: @TContractState, token: ContractAddress) -> bool;
+
+    /// Retrieves the token address associated with a given key.
+    /// @param token_key The key identifying the token (e.g., 'STRK', 'USDC').
+    /// @return The address of the token contract.
+    fn get_token_address(self: @TContractState, token_key: felt252) -> ContractAddress;
 }
 
 #[starknet::contract]
@@ -103,6 +150,7 @@ pub mod PayCrypt {
         wallet_class_hash: ClassHash,
         user_profiles: Map<felt252, UserProfile>,
         token_addresses: Map<felt252, ContractAddress>,
+        is_token_supported: Map<ContractAddress, bool>,
         reentrancy_guard: bool,
     }
 
@@ -116,37 +164,38 @@ pub mod PayCrypt {
     }
 
     #[derive(Drop, starknet::Event)]
-    struct TagRegistered {
-        tag: felt252,
-        wallet_address: ContractAddress,
+    pub struct TagRegistered {
+        pub tag: felt252,
+        pub wallet_address: ContractAddress,
     }
 
     #[derive(Drop, starknet::Event)]
-    struct DepositReceived {
-        tag: felt252,
-        sender: ContractAddress,
-        amount: u256,
-        token: ContractAddress,
+    pub struct DepositReceived {
+        pub tag: felt252,
+        pub sender: ContractAddress,
+        pub amount: u256,
+        pub token: ContractAddress,
     }
 
     #[derive(Drop, starknet::Event)]
-    struct WithdrawalCompleted {
-        sender: ContractAddress,
-        amount: u256,
-        token: ContractAddress,
+    pub struct WithdrawalCompleted {
+        pub sender: ContractAddress,
+        pub amount: u256,
+        pub token: ContractAddress,
     }
 
     #[derive(Drop, starknet::Event)]
-    struct TokenAddressUpdated {
-        token_key: felt252,
-        token_address: ContractAddress,
+    pub struct TokenAddressUpdated {
+        pub token_key: felt252,
+        pub previous_token_address: ContractAddress,
+        pub new_token_address: ContractAddress,
     }
 
     #[constructor]
     fn constructor(
         ref self: ContractState, admin_address: ContractAddress, wallet_class_hash: ClassHash,
     ) {
-        let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+        let zero_address: ContractAddress = contract_address_const::<0>();
         assert(admin_address != zero_address, 'Invalid admin address');
         self.admin_address.write(admin_address);
         self.wallet_class_hash.write(wallet_class_hash);
@@ -158,13 +207,18 @@ pub mod PayCrypt {
         /// @param tag The unique identifier for the user.
         /// @return The address of the deployed wallet.
         fn register_tag(ref self: ContractState, tag: felt252) -> ContractAddress {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             assert(!self.reentrancy_guard.read(), 'Reentrancy detected');
             self.reentrancy_guard.write(true);
 
-            let is_tag_registered = self.is_tag_registered.read(tag);
+            // #514: register under the canonical (lowercased, charset-checked)
+            // form of the tag so case/confusable variants can't collide with
+            // or duplicate an existing registration. `tag` itself (as passed
+            // in) is still what is stored/emitted for display below.
+            let canonical_tag = normalize_tag(tag);
+            let is_tag_registered = self.is_tag_registered.read(canonical_tag);
             assert(!is_tag_registered, 'Tag already taken');
-            self.is_tag_registered.write(tag, true);
+            self.is_tag_registered.write(canonical_tag, true);
 
             let owner_address = get_caller_address();
             assert(owner_address != zero_address, 'Invalid owner address');
@@ -191,7 +245,7 @@ pub mod PayCrypt {
             let user_profile = UserProfile {
                 tag, owner: owner_address, user_wallet: wallet_address, exists: true,
             };
-            self.user_profiles.write(tag, user_profile);
+            self.user_profiles.write(canonical_tag, user_profile);
             self.emit(TagRegistered { tag, wallet_address });
 
             self.reentrancy_guard.write(false);
@@ -200,17 +254,21 @@ pub mod PayCrypt {
 
         /// Deposits tokens to a user's wallet associated with a tag.
         /// @param tag The unique identifier for the user.
-        /// @param amount The amount of tokens to deposit.
-        /// @param token The address of the token contract.
+        /// @param amount The amount of tokens to deposit (must be > 0).
+        /// @param token The address of the token contract (must be allowlisted).
         fn deposit_to_tag(
             ref self: ContractState, tag: felt252, amount: u256, token: ContractAddress,
         ) {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             assert(!self.reentrancy_guard.read(), 'Reentrancy detected');
             self.reentrancy_guard.write(true);
 
+            assert(amount > 0, 'Amount must be positive');
             assert(token != zero_address, 'Invalid token address');
+            assert(self.is_token_supported.read(token), 'Token not supported');
+
             let user_profile = self.user_profiles.read(tag);
+            let user_profile = self.user_profiles.read(normalize_tag(tag));
             assert(user_profile.exists, 'User profile does not exist');
 
             let sender_address = get_caller_address();
@@ -232,7 +290,7 @@ pub mod PayCrypt {
         }
 
         /// Withdraws tokens from a user's wallet associated with a tag.
-        /// @param token The address of the token contract.
+        /// @param token The address of the token contract (must be allowlisted).
         /// @param tag The unique identifier for the user.
         /// @param recipient_address The address to receive the withdrawn tokens.
         /// @param amount The amount of tokens to withdraw.
@@ -243,19 +301,25 @@ pub mod PayCrypt {
             recipient_address: ContractAddress,
             amount: u256,
         ) {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             assert(!self.reentrancy_guard.read(), 'Reentrancy detected');
             self.reentrancy_guard.write(true);
 
-            assert(token != zero_address, 'Invalid token address');
-            assert(recipient_address != zero_address, 'Invalid recipient address');
             assert(amount > 0, 'Amount must be positive');
+            assert(token != zero_address, 'Invalid token address');
+            assert(self.is_token_supported.read(token), 'Token not supported');
+            assert(recipient_address != zero_address, 'Invalid recipient address');
 
-            let user_profile = self.user_profiles.read(tag);
+            let user_profile = self.user_profiles.read(normalize_tag(tag));
             assert(user_profile.exists, 'Tag not registered');
             let sender_address = get_caller_address();
             assert(sender_address == user_profile.owner, 'Unauthorized: Not profile owner');
 
+            // Audit (#513): `reentrancy_guard` (set true above, cleared below
+            // after the external call) makes this function itself
+            // non-reentrant; `wallet_dispatcher.withdraw` is the external
+            // call, and no state here is written after it besides clearing
+            // this guard.
             let wallet_dispatcher = IWalletDispatcher {
                 contract_address: user_profile.user_wallet,
             };
@@ -271,7 +335,7 @@ pub mod PayCrypt {
         }
 
         /// Withdraws tokens from the contract (admin only).
-        /// @param token The address of the token contract.
+        /// @param token The address of the token contract (must be allowlisted).
         /// @param recipient_address The address to receive the withdrawn tokens.
         /// @param amount The amount of tokens to withdraw.
         /// @return True if the withdrawal is successful.
@@ -281,18 +345,22 @@ pub mod PayCrypt {
             recipient_address: ContractAddress,
             amount: u256,
         ) -> bool {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             assert(!self.reentrancy_guard.read(), 'Reentrancy detected');
             self.reentrancy_guard.write(true);
 
-            assert(token != zero_address, 'Invalid token address');
-            assert(recipient_address != zero_address, 'Invalid recipient address');
             assert(amount > 0, 'Amount must be positive');
+            assert(token != zero_address, 'Invalid token address');
+            assert(self.is_token_supported.read(token), 'Token not supported');
+            assert(recipient_address != zero_address, 'Invalid recipient address');
 
             let sender_address = get_caller_address();
             let admin_address: ContractAddress = self.admin_address.read();
             assert(sender_address == admin_address, 'Unauthorized: Not admin');
 
+            // Audit (#513): guarded by `reentrancy_guard` above/below; the
+            // balance check is re-read live and nothing is written after the
+            // external `transfer` call except clearing the guard.
             let erc20_dispatcher = IERC20Dispatcher { contract_address: token };
             let contract_balance = erc20_dispatcher.balance_of(get_contract_address());
             assert(contract_balance >= amount, 'Insufficient contract balance');
@@ -305,27 +373,47 @@ pub mod PayCrypt {
             true
         }
 
-        /// Sets the token address for a given key (admin only).
+        /// Sets the token address for a given key and updates allowlist (admin only).
         /// @param token_key The key identifying the token (e.g., 'STRK', 'USDC').
         /// @param token_address The address of the token contract.
         fn set_token_address(
             ref self: ContractState, token_key: felt252, token_address: ContractAddress,
         ) {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             let sender_address = get_caller_address();
             let admin_address = self.admin_address.read();
             assert(sender_address == admin_address, 'Unauthorized: Not admin');
             assert(token_address != zero_address, 'Invalid token address');
 
+            let previous_token_address = self.token_addresses.read(token_key);
+            if previous_token_address != zero_address && previous_token_address != token_address {
+                self.is_token_supported.write(previous_token_address, false);
+            }
+
             self.token_addresses.write(token_key, token_address);
-            self.emit(TokenAddressUpdated { token_key, token_address });
+            self.is_token_supported.write(token_address, true);
+            self.emit(TokenAddressUpdated { token_key, previous_token_address, new_token_address: token_address });
+        }
+
+        /// Checks if a token address is configured and allowlisted.
+        /// @param token The address of the token contract to check.
+        /// @return True if the token is supported.
+        fn is_token_supported(self: @ContractState, token: ContractAddress) -> bool {
+            self.is_token_supported.read(token)
+        }
+
+        /// Retrieves the token address associated with a given key.
+        /// @param token_key The key identifying the token (e.g., 'STRK', 'USDC').
+        /// @return The address of the token contract.
+        fn get_token_address(self: @ContractState, token_key: felt252) -> ContractAddress {
+            self.token_addresses.read(token_key)
         }
 
         /// Retrieves the wallet address associated with a tag.
         /// @param tag The unique identifier for the user.
         /// @return The wallet address associated with the tag.
         fn get_tag_wallet_address(self: @ContractState, tag: felt252) -> ContractAddress {
-            let user_profile = self.user_profiles.read(tag);
+            let user_profile = self.user_profiles.read(normalize_tag(tag));
             assert(user_profile.exists, 'User profile does not exist');
             user_profile.user_wallet
         }
@@ -337,9 +425,11 @@ pub mod PayCrypt {
         fn get_tag_wallet_balance(
             self: @ContractState, tag: felt252, token: ContractAddress,
         ) -> u256 {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             assert(token != zero_address, 'Invalid token address');
+            assert(self.is_token_supported.read(token), 'Token not supported');
             let user_profile = self.user_profiles.read(tag);
+            let user_profile = self.user_profiles.read(normalize_tag(tag));
             assert(user_profile.exists, 'User profile does not exist');
 
             let erc20_dispatcher = IERC20Dispatcher { contract_address: token };
@@ -350,8 +440,9 @@ pub mod PayCrypt {
         /// @param token The address of the token contract.
         /// @return The balance of the specified token in the contract.
         fn get_contract_token_balance(self: @ContractState, token: ContractAddress) -> u256 {
-            let zero_address: ContractAddress = contract_address_const::<'0x0'>();
+            let zero_address: ContractAddress = contract_address_const::<0>();
             assert(token != zero_address, 'Invalid token address');
+            assert(self.is_token_supported.read(token), 'Token not supported');
             let erc20_dispatcher = IERC20Dispatcher { contract_address: token };
             erc20_dispatcher.balance_of(get_contract_address())
         }
@@ -360,7 +451,7 @@ pub mod PayCrypt {
         /// @param tag The unique identifier for the user.
         /// @return The user profile associated with the tag.
         fn get_user_profile(self: @ContractState, tag: felt252) -> UserProfile {
-            let user_profile = self.user_profiles.read(tag);
+            let user_profile = self.user_profiles.read(normalize_tag(tag));
             assert(user_profile.exists, 'User profile does not exist');
             user_profile
         }

@@ -45,6 +45,7 @@ export const registrationTagField = () =>
  */
 export const cryptoAmountField = () =>
   Joi.number()
+    .unsafe()
     .positive()
     .precision(18)
     .messages({
@@ -186,12 +187,12 @@ export const strongPasswordField = () =>
   Joi.string()
     .min(8)
     .max(128)
-    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/)
     .messages({
       "string.min": "Password must be at least 8 characters long",
       "string.max": "Password cannot exceed 128 characters",
       "string.pattern.base":
-        "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)",
+        "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&#)",
       "string.empty": "Password cannot be empty",
       "any.required": "Password is required",
     });

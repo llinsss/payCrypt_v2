@@ -1,0 +1,95 @@
+{
+  "@@locale": "en",
+  "appTitle": "Tagged",
+  "appTitleDescription": "Seamless Crypto Payments for Africa",
+
+  "@_NAVIGATION": {
+    "description": "Navigation labels"
+  },
+  "navDashboard": "Dashboard",
+  "navBalances": "Balances",
+  "navSend": "Send",
+  "navSettings": "Settings",
+  "navScheduledPayments": "Scheduled Payments",
+
+  "@_AUTH": {
+    "description": "Authentication screen labels"
+  },
+  "signIn": "Sign In",
+  "signUp": "Sign Up",
+  "email": "Email",
+  "password": "Password",
+  "confirmPassword": "Confirm Password",
+  "forgotPassword": "Forgot Password?",
+  "login": "Login",
+  "register": "Register",
+  "logout": "Log Out",
+  "logoutConfirm": "Are you sure you want to log out?",
+
+  "@_DASHBOARD": {
+    "description": "Dashboard screen labels"
+  },
+  "totalBalance": "Total Balance",
+  "availableBalance": "Available Balance",
+  "lockedBalance": "Locked Balance",
+  "recentTransactions": "Recent Transactions",
+  "viewAll": "View All",
+  "noTransactions": "No transactions yet",
+
+  "@_SEND": {
+    "description": "Send payment screen labels"
+  },
+  "sendTo": "Send to",
+  "enterTag": "Enter @tag",
+  "amount": "Amount",
+  "asset": "Asset",
+  "memo": "Memo (optional)",
+  "schedulePayment": "Schedule this payment",
+  "frequency": "Frequency",
+  "once": "Once",
+  "daily": "Daily",
+  "weekly": "Weekly",
+  "monthly": "Monthly",
+  "startDate": "Start Date",
+  "send": "Send",
+  "schedule": "Schedule",
+
+  "@_SCHEDULED_PAYMENTS": {
+    "description": "Scheduled payments screen labels"
+  },
+  "activePayments": "Active Payments",
+  "pastPayments": "Past Payments",
+  "noScheduledPayments": "No Scheduled Payments",
+  "cancelPayment": "Cancel Payment",
+  "cancelPaymentConfirm": "Are you sure you want to cancel this scheduled payment?",
+  "resumePayment": "Resume Payment",
+
+  "@_SETTINGS": {
+    "description": "Settings screen labels"
+  },
+  "language": "Language",
+  "displayCurrency": "Display Currency",
+  "theme": "Theme",
+  "light": "Light",
+  "dark": "Dark",
+  "system": "System",
+  "notifications": "Notifications",
+
+  "@_COMMON": {
+    "description": "Common labels"
+  },
+  "loading": "Loading...",
+  "error": "Error",
+  "success": "Success",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "save": "Save",
+  "delete": "Delete",
+  "refresh": "Refresh",
+  "retry": "Retry",
+  "done": "Done",
+  "search": "Search",
+  "noResults": "No results found",
+  "offline": "You are offline",
+  "online": "You are back online"
+}

@@ -49,6 +49,7 @@ describe("WebhookDeliveryService DLQ & Retry Logic", () => {
 
     const result = await WebhookDeliveryService.executeDelivery({
       eventId: 101,
+      eventKey: "deadbeef",
       webhookId: 10,
       payload: mockPayload,
       url: "https://example.com/webhook",
@@ -59,6 +60,8 @@ describe("WebhookDeliveryService DLQ & Retry Logic", () => {
     expect(result).toBe(true);
     expect(axios.post).toHaveBeenCalledTimes(1);
     expect(WebhookEvent.markSuccess).toHaveBeenCalledWith(101, 200, JSON.stringify({ received: true }));
+    const [, , requestConfig] = axios.post.mock.calls[0];
+    expect(requestConfig.headers["X-Webhook-Event-Id"]).toBe("deadbeef");
   });
 
   it("handles failure and schedules next retry when attempt < 5", async () => {

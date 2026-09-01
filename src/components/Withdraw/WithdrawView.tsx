@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   ChevronDown,
@@ -11,6 +11,10 @@ import {
   Info,
 } from "lucide-react";
 import { formatCurrency, formatCrypto } from "../../utils/amount";
+import {
+  calculateMaxWithdrawable,
+  estimateWithdrawFees,
+} from "../../utils/withdrawFees";
 import { UserTokenBalance } from "../../interfaces";
 import { apiClient } from "../../utils/api";
 import toast from "react-hot-toast";
@@ -40,20 +44,35 @@ const WithdrawView: React.FC = () => {
       .catch((err) => console.error("Error fetching balances:", err));
   }, []);
 
-  const maxAmount = selectedBalance ? Number(selectedBalance.amount) : 0;
+  const balance = selectedBalance ? Number(selectedBalance.amount) : 0;
   const inputAmount = Number(amount) || 0;
 
-  const fees = useMemo(() => {
-    const baseFee = 0.05;
-    const platformFee = inputAmount * 0.001;
-    const fiatFee = withdrawType === "fiat" ? 5 : 0;
-    return {
-      baseFee,
-      platformFee,
-      fiatFee,
-      total: baseFee + platformFee + fiatFee,
-    };
-  }, [inputAmount, withdrawType]);
+  const feeParams = useMemo(
+    () => ({
+      baseFee: 0.05,
+      platformFeeRate: 0.001,
+      fiatFee: withdrawType === "fiat" ? 5 : 0,
+    }),
+    [withdrawType]
+  );
+
+  // Fees are paid out of the same balance, so the withdrawable max must
+  // leave enough headroom to cover its own fees (network fee + platform
+  // fee + fiat reserve) rather than allowing the full balance to be entered.
+  const maxAmount = useMemo(
+    () => calculateMaxWithdrawable(balance, feeParams),
+    [balance, feeParams]
+  );
+
+  const fees = useMemo(
+    () => estimateWithdrawFees(inputAmount, feeParams),
+    [inputAmount, feeParams]
+  );
+
+  const reservedForFees = useMemo(
+    () => Math.max(0, balance - maxAmount),
+    [balance, maxAmount]
+  );
 
   const isValidAmount = inputAmount > 0 && inputAmount <= maxAmount;
   const isValidRecipient =
@@ -207,18 +226,28 @@ const WithdrawView: React.FC = () => {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">
-                  Available:{" "}
-                  {formatCrypto(maxAmount, selectedBalance.token_symbol)}
+                  Balance:{" "}
+                  {formatCrypto(balance, selectedBalance.token_symbol)}
                 </span>
-                {amount && (
+                {amount && balance > 0 && (
                   <span className="text-gray-600">
                     ≈{" "}
                     {formatCurrency(
-                      (inputAmount / maxAmount) *
+                      (inputAmount / balance) *
                       Number(selectedBalance.usd_value)
                     )}
                   </span>
                 )}
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">
+                  Max withdrawable:{" "}
+                  {formatCrypto(maxAmount, selectedBalance.token_symbol)}
+                </span>
+                <span className="text-gray-400">
+                  Reserved for fees:{" "}
+                  {formatCrypto(reservedForFees, selectedBalance.token_symbol)}
+                </span>
               </div>
             </div>
           </div>

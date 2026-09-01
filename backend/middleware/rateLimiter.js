@@ -1,12 +1,12 @@
+import * as Sentry from "@sentry/node";
 import RateLimitService from "../services/RateLimitService.js";
 import AuditLog from "../models/AuditLog.js";
 import User from "../models/User.js";
+import logger from "../utils/logger.js";
 
 /**
  * IP Whitelist from environment
  */
-const IP_WHITELIST = (process.env.IP_WHITELIST || "").split(",").map(ip => ip.trim()).filter(Boolean);
-
 /**
  * Rate Limiter Middleware Factory
  * @param {Object} options
@@ -25,7 +25,8 @@ export const rateLimit = (options = {}) => {
 
   return async (req, res, next) => {
     // 1. IP Whitelist bypass
-    if (IP_WHITELIST.includes(req.ip)) {
+    const ipWhitelist = (process.env.IP_WHITELIST || "").split(",").map(ip => ip.trim()).filter(Boolean);
+    if (ipWhitelist.includes(req.ip)) {
       return next();
     }
 
@@ -55,17 +56,20 @@ export const rateLimit = (options = {}) => {
       refillRatePerMs
     );
 
+    // Redis is unreachable — fail open so an outage doesn't take down the API.
+    // Rely on the warning log (and any downstream Sentry alerting) to surface it.
+    if (error) {
+      logger.warn(`[RateLimiter] Redis unavailable, allowing request for ${redisKey}`, { endpointName, error });
+      return next();
+    }
+
     // 5. Set Headers
-    res.setHeader("X-RateLimit-Limit", Math.floor(capacity));
+    res.setHeader("X-RateLimit-Limit", String(Math.floor(capacity)));
     res.setHeader("X-RateLimit-Remaining", remaining);
-    
+
     // Calculate reset time (when bucket will be full)
     const resetTime = Math.ceil(Date.now() / 1000 + (capacity - remaining) / (refillRatePerMs * 1000));
     res.setHeader("X-RateLimit-Reset", resetTime);
-
-    if (error && !allowed) {
-      return res.status(503).json({ error: "Rate limiting service temporarily unavailable" });
-    }
 
     if (!allowed) {
       // 6. Log Violation
@@ -79,6 +83,12 @@ export const rateLimit = (options = {}) => {
         statusCode: 429
       });
 
+      Sentry.captureMessage(`Rate limit exceeded for ${endpointName}`, {
+        level: "warning",
+        tags: { endpointName, ip: req.ip },
+        extra: { endpoint: req.originalUrl, identifier, capacity },
+      });
+
       const retryAfter = Math.ceil(1 / (refillRatePerMs * 1000)); // Time to get 1 token
       res.setHeader("Retry-After", retryAfter);
       return res.status(429).json({
@@ -90,6 +100,22 @@ export const rateLimit = (options = {}) => {
 
     next();
   };
+};
+
+export const AUTH_RATE_LIMITS = {
+  login: { endpointName: "login", windowMs: 15 * 60 * 1000, max: 5 },
+  register: { endpointName: "register", windowMs: 60 * 60 * 1000, max: 5 },
+  forgotPassword: { endpointName: "forgot-password", windowMs: 60 * 60 * 1000, max: 3 },
+  resetPassword: { endpointName: "reset-password", windowMs: 60 * 60 * 1000, max: 3 },
+  twoFactorVerify: { endpointName: "2fa-verify", windowMs: 15 * 60 * 1000, max: 5 },
+};
+
+export const strictAuthRateLimit = (preset) => {
+  const config = AUTH_RATE_LIMITS[preset];
+  if (!config) {
+    throw new Error(`Unknown strictAuthRateLimit preset: ${preset}`);
+  }
+  return rateLimit(config);
 };
 
 export default rateLimit;

@@ -5,6 +5,7 @@ import 'package:Tagg/models/chains_models.dart';
 import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:stacked/stacked.dart';
 
 class TokenLogos {
@@ -155,12 +156,15 @@ class DepositViewModel extends BaseViewModel {
     // from stacked to show feedback to the user.
   }
 
-  /// Share the tag (placeholder). For a full implementation, add `share_plus`
-  /// package and call Share.share(tag).
+  /// Share the tag and payment link via native OS share sheet.
   Future<void> shareTag() async {
-    // Example (requires share_plus):
-    // await Share.share(_tag);
-    // For now we leave it as a TODO so project doesn't gain an extra dependency silently.
+    try {
+      final paymentLink = 'taggedpay.xyz/pay/$_tag';
+      final shareText = 'Send me crypto! My tag is $_tag\n$paymentLink';
+      await Share.share(shareText);
+    } catch (e) {
+      print('❌ Error sharing tag: $e');
+    }
   }
 
   /// Refresh action (e.g., re-fetch balances or refresh QR). Uses stacked's setBusy.

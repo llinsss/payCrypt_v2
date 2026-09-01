@@ -2,6 +2,8 @@ import {
     checkAllDependencies,
     getConnectionPoolStats,
 } from "../utils/dbHealth.js";
+import stellarStreamService from "../services/StellarStreamService.js";
+import HousekeepingService from "../services/HousekeepingService.js";
 
 /**
  * GET /api/health
@@ -45,6 +47,15 @@ export const getHealth = async (req, res) => {
             message: dependencies.stellar.message,
             details: dependencies.stellar.details || undefined,
         };
+
+        // SSE stream state is separate from Horizon reachability: Horizon may
+        // answer HTTP health checks while its event stream is reconnecting.
+        health.checks.stellarStream = stellarStreamService.getStatus();
+
+        // Last-run metrics for the singleton housekeeping jobs (audit log and
+        // export cleanup). Only the replica that actually held the lease for
+        // a given run shows `lastRunAt`; other replicas show `lastSkippedAt`.
+        health.checks.housekeepingJobs = HousekeepingService.getHousekeepingStatus();
 
         // Determine overall status
         if (!dependencies.healthy) {

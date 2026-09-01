@@ -1,11 +1,38 @@
 import 'package:Tagg/ui/common/app_assets.dart';
+import 'package:Tagg/ui/common/offline_banner.dart';
+import 'package:Tagg/ui/common/coach_marks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:stacked/stacked.dart';
 
 import 'dashboard_viewmodel.dart';
 import 'package:Tagg/models/transaction_model.dart';
+
+class _ScrollListener {
+  late ScrollController _scrollController;
+  final DashboardViewModel viewModel;
+
+  _ScrollListener({required this.viewModel}) {
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      viewModel.loadMoreTransactions();
+    }
+  }
+
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+  }
+
+  ScrollController get scrollController => _scrollController;
+}
 
 class DashboardView extends StackedView<DashboardViewModel> {
   const DashboardView({Key? key}) : super(key: key);
@@ -16,17 +43,27 @@ class DashboardView extends StackedView<DashboardViewModel> {
     DashboardViewModel viewModel,
     Widget? child,
   ) {
+    // Show the first-visit coach marks once, after the first frame.
+    if (!viewModel.coachMarksChecked) {
+      viewModel.coachMarksChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowDashboardCoachMarks(context),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFF090715),
       body: SafeArea(
         child: Column(
           children: [
+            if (viewModel.isOffline) const OfflineBanner(),
+
             // Status Bar and Navigation
             _buildTopNavigation(viewModel),
 
             // Main Content
             Expanded(
               child: SingleChildScrollView(
+                controller: viewModel.transactionScrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -40,6 +77,12 @@ class DashboardView extends StackedView<DashboardViewModel> {
 
                     // Dashboard Cards
                     _buildDashboardCards(viewModel),
+
+                    const SizedBox(height: 24),
+
+                    // Upcoming Scheduled Payments Reminder
+                    if (viewModel.hasUpcomingPayments)
+                      _buildUpcomingPaymentsReminder(viewModel),
 
                     const SizedBox(height: 24),
 
@@ -107,52 +150,65 @@ class DashboardView extends StackedView<DashboardViewModel> {
                 Row(
                   children: [
                     // Notification Button
-                    Container(
-                      width: 39,
-                      height: 39,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF130F22),
-                        border: Border.all(color: const Color(0xFF262140)),
-                        borderRadius: BorderRadius.circular(48),
-                      ),
-                      child: const Icon(
-                        Icons.notifications_outlined,
-                        color: Color(0xFFE2E2E2),
-                        size: 16,
-                      ),
-                    ),
-
-                    const SizedBox(width: 14),
-
-                    Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF130F22),
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(48),
-                        ),
-                        child: Image.asset(
-                          AppAssets.profile,
-                        )),
-
-                    const SizedBox(width: 14),
-
-                    // Menu Button
-                    GestureDetector(
-                      onTap: viewModel.openMenu,
+                    Semantics(
+                      label: 'View notifications',
+                      button: true,
                       child: Container(
-                        width: 40,
-                        height: 40,
+                        width: 48,
+                        height: 48,
                         decoration: BoxDecoration(
                           color: const Color(0xFF130F22),
                           border: Border.all(color: const Color(0xFF262140)),
                           borderRadius: BorderRadius.circular(48),
                         ),
                         child: const Icon(
-                          Icons.menu,
+                          Icons.notifications_outlined,
                           color: Color(0xFFE2E2E2),
-                          size: 16,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // Profile Button
+                    Semantics(
+                      label: 'View profile',
+                      button: true,
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF130F22),
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(48),
+                        ),
+                        child: Image.asset(AppAssets.profile),
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // Menu Button
+                    Semantics(
+                      label: 'Open menu',
+                      button: true,
+                      onTap: viewModel.openMenu,
+                      child: GestureDetector(
+                        onTap: viewModel.openMenu,
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF130F22),
+                            border: Border.all(color: const Color(0xFF262140)),
+                            borderRadius: BorderRadius.circular(48),
+                          ),
+                          child: const Icon(
+                            Icons.menu,
+                            color: Color(0xFFE2E2E2),
+                            size: 20,
+                          ),
                         ),
                       ),
                     ),
@@ -182,19 +238,46 @@ class DashboardView extends StackedView<DashboardViewModel> {
         // Action Buttons
         Row(
           children: [
-            _buildActionButton(
-              assetPath: AppAssets.up,
-              onTap: viewModel.withdraw,
+            Tooltip(
+              message: 'Offline',
+              child: IgnorePointer(
+                ignoring: viewModel.isOffline,
+                child: Opacity(
+                  opacity: viewModel.isOffline ? 0.5 : 1.0,
+                  child: _buildActionButton(
+                    assetPath: AppAssets.up,
+                    onTap: viewModel.isOffline ? () {} : viewModel.withdraw,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(width: 12),
-            _buildActionButton(
-              assetPath: AppAssets.down,
-              onTap: viewModel.deposit,
+            Tooltip(
+              message: 'Offline',
+              child: IgnorePointer(
+                ignoring: viewModel.isOffline,
+                child: Opacity(
+                  opacity: viewModel.isOffline ? 0.5 : 1.0,
+                  child: _buildActionButton(
+                    assetPath: AppAssets.down,
+                    onTap: viewModel.isOffline ? () {} : viewModel.deposit,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(width: 12),
-            _buildActionButton(
-              assetPath: AppAssets.refresh,
-              onTap: viewModel.refresh,
+            Tooltip(
+              message: 'Offline',
+              child: IgnorePointer(
+                ignoring: viewModel.isOffline,
+                child: Opacity(
+                  opacity: viewModel.isOffline ? 0.5 : 1.0,
+                  child: _buildActionButton(
+                    assetPath: AppAssets.refresh,
+                    onTap: viewModel.isOffline ? () {} : viewModel.refresh,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -576,25 +659,28 @@ class DashboardView extends StackedView<DashboardViewModel> {
   }
 
   Widget _buildRecentTransactionsSection(DashboardViewModel viewModel) {
+    final scrollListener = _ScrollListener(viewModel: viewModel);
+
     return Container(
       width: double.infinity,
+      height: 500,
       decoration: BoxDecoration(
         border: Border.all(color: const Color(0xFF262140)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Column(
-          children: [
-            // Table Header Row
-            Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Color(0xFF262140), width: 1),
-                ),
+      child: Column(
+        children: [
+          // Table Header Row
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFF262140), width: 1),
               ),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
                   _buildTableHeader('Type', 100),
@@ -613,54 +699,85 @@ class DashboardView extends StackedView<DashboardViewModel> {
                 ],
               ),
             ),
+          ),
 
-            // Transaction Rows - from API
-            if (viewModel.isBusy)
-              Container(
-                height: 200,
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF8024DE),
-                  ),
-                ),
-              )
-            else if (viewModel.filteredTransactions.isEmpty)
-              Container(
-                height: 200,
-                child: Center(
-                  child: Text(
-                    'No transactions found',
-                    style: GoogleFonts.instrumentSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w400,
-                      color: const Color(0xFF867EA5),
+          // Transaction Rows with Infinite Scroll
+          Expanded(
+            child: viewModel.isBusy && viewModel.filteredTransactions.isEmpty
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF8024DE),
                     ),
-                  ),
-                ),
-              )
-            else
-              Column(
-                children:
-                    viewModel.filteredTransactions.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final transaction = entry.value;
-                  final isLast =
-                      index == viewModel.filteredTransactions.length - 1;
+                  )
+                : viewModel.filteredTransactions.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No transactions found',
+                          style: GoogleFonts.instrumentSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                            color: const Color(0xFF867EA5),
+                          ),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        controller: scrollListener.scrollController,
+                        scrollDirection: Axis.horizontal,
+                        child: Column(
+                          children: [
+                            ...viewModel.filteredTransactions
+                                .asMap()
+                                .entries
+                                .map((entry) {
+                              final index = entry.key;
+                              final transaction = entry.value;
+                              final isLast = index ==
+                                  viewModel.filteredTransactions.length - 1;
 
-                  return _buildTransactionRow(
-                    type: transaction.displayType,
-                    amount: transaction.formattedUsdValue,
-                    sender: transaction.fromAddress,
-                    recipient: transaction.toAddress,
-                    status: transaction.statusEnum,
-                    date: transaction.formattedDate,
-                    isLast: isLast,
-                    onTap: () => viewModel.openTransactionDetails(transaction),
-                  );
-                }).toList(),
-              ),
-          ],
-        ),
+                              return _buildTransactionRow(
+                                type: transaction.displayType,
+                                amount: transaction.formattedUsdValue,
+                                sender: transaction.fromAddress,
+                                recipient: transaction.toAddress,
+                                status: transaction.statusEnum,
+                                date: transaction.formattedDate,
+                                isLast: isLast,
+                                onTap: () =>
+                                    viewModel.openTransactionDetails(transaction),
+                              );
+                            }).toList(),
+                            // Loading indicator when fetching more
+                            if (viewModel.isLoadingMore)
+                              Container(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                child: const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF8024DE),
+                                  ),
+                                ),
+                              )
+                            else if (!viewModel.hasMore &&
+                                viewModel.filteredTransactions.isNotEmpty)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                child: Text(
+                                  'No more transactions',
+                                  style: GoogleFonts.instrumentSans(
+                                    fontSize: 14,
+                                    color: const Color(0xFF867EA5),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -875,41 +992,178 @@ class DashboardView extends StackedView<DashboardViewModel> {
 
           const SizedBox(height: 12),
 
-          // Filter buttons
-          Container(
-            height: 49,
-            decoration: BoxDecoration(
-              color: const Color(0xFF130F22),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildFilterButton(
-                  text: 'All',
-                  isSelected: viewModel.selectedFilterIndex == 0,
-                  onTap: () => viewModel.selectFilter(0),
-                  isFirst: true,
-                  isLast: false,
-                ),
-                _buildFilterButton(
-                  text: 'Credit',
-                  isSelected: viewModel.selectedFilterIndex == 1,
-                  onTap: () => viewModel.selectFilter(1),
-                  isFirst: false,
-                  isLast: false,
-                ),
-                _buildFilterButton(
-                  text: 'Debit',
-                  isSelected: viewModel.selectedFilterIndex == 2,
-                  onTap: () => viewModel.selectFilter(2),
-                  isFirst: false,
-                  isLast: true,
-                ),
-              ],
+          // Search bar (issue #456)
+          Semantics(
+            label: 'Search transactions',
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF130F22),
+                border: Border.all(color: const Color(0xFF262140)),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 14),
+                  const Icon(Icons.search, color: Color(0xFF867EA5), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      onChanged: viewModel.onSearchChanged,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Search by @tag, reference, amount…',
+                        hintStyle: const TextStyle(
+                            color: Color(0xFF867EA5), fontSize: 13),
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        suffixIcon: viewModel.searchQuery.isNotEmpty
+                            ? Semantics(
+                                label: 'Clear search',
+                                button: true,
+                                child: GestureDetector(
+                                  onTap: () => viewModel.clearSearchFilters(),
+                                  child: const Icon(Icons.close,
+                                      color: Color(0xFF867EA5), size: 16),
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
             ),
           ),
+
+          const SizedBox(height: 12),
+
+          // Filter buttons + Advanced filter + Clear button
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 49,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF130F22),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  padding: const EdgeInsets.all(4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildFilterButton(
+                        text: 'All',
+                        isSelected: viewModel.selectedFilterIndex == 0,
+                        onTap: () => viewModel.selectFilter(0),
+                        isFirst: true,
+                        isLast: false,
+                      ),
+                      _buildFilterButton(
+                        text: 'Credit',
+                        isSelected: viewModel.selectedFilterIndex == 1,
+                        onTap: () => viewModel.selectFilter(1),
+                        isFirst: false,
+                        isLast: false,
+                      ),
+                      _buildFilterButton(
+                        text: 'Debit',
+                        isSelected: viewModel.selectedFilterIndex == 2,
+                        onTap: () => viewModel.selectFilter(2),
+                        isFirst: false,
+                        isLast: true,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Advanced filter button
+              Semantics(
+                label: 'Open advanced filters',
+                button: true,
+                child: GestureDetector(
+                  onTap: () => _showFilterBottomSheet(context, viewModel),
+                  child: Container(
+                    height: 44,
+                    width: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF130F22),
+                      border: Border.all(color: const Color(0xFF262140)),
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: const Icon(Icons.tuning, color: Color(0xFF867EA5), size: 20),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Active filter chips
+          if (viewModel.hasActiveFilters) ...[
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  if (viewModel.searchQuery.isNotEmpty)
+                    _buildFilterChip('Search: ${viewModel.searchQuery}', () {
+                      // Clear search via onSearchChanged
+                      viewModel.onSearchChanged('');
+                    }),
+                  if (viewModel.statusFilter != null)
+                    _buildFilterChip('Status: ${viewModel.statusFilter}', () {
+                      viewModel.setStatusFilter(null);
+                    }),
+                  if (viewModel.typeFilter != null)
+                    _buildFilterChip('Type: ${viewModel.typeFilter}', () {
+                      viewModel.setTypeFilter(null);
+                    }),
+                  if (viewModel.dateRangeStart != null)
+                    _buildFilterChip(
+                      'From: ${DateFormat('MMM d').format(viewModel.dateRangeStart!)}',
+                      () => viewModel.setDateRange(null, viewModel.dateRangeEnd),
+                    ),
+                  if (viewModel.dateRangeEnd != null)
+                    _buildFilterChip(
+                      'To: ${DateFormat('MMM d').format(viewModel.dateRangeEnd!)}',
+                      () => viewModel.setDateRange(viewModel.dateRangeStart, null),
+                    ),
+                  for (final token in viewModel.selectedTokens)
+                    _buildFilterChip('$token', () {
+                      viewModel.toggleTokenFilter(token);
+                    }),
+                  for (final chain in viewModel.selectedChains)
+                    _buildFilterChip('$chain', () {
+                      viewModel.toggleChainFilter(chain);
+                    }),
+                  const SizedBox(width: 8),
+                  // Clear all button
+                  GestureDetector(
+                    onTap: () => viewModel.clearSearchFilters(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF130F22),
+                        border: Border.all(color: const Color(0xFF674AA6)),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        'Clear all',
+                        style: GoogleFonts.instrumentSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF674AA6),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -967,8 +1221,67 @@ class DashboardView extends StackedView<DashboardViewModel> {
     );
   }
 
-// Update your builder method to include the filter before the transactions table
-// Replace the _buildRecentTransactionsSection call with:
+  Widget _buildUpcomingPaymentsReminder(DashboardViewModel viewModel) {
+    final nextPayment = viewModel.upcomingPayments.first;
+    return GestureDetector(
+      onTap: () {
+        // Navigate to scheduled payments view
+        viewModel.navigateToScheduledPayments();
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [Color(0xFF1A1833), Color(0xFF1C1530)],
+          ),
+          border: Border.all(color: const Color(0xFF674AA6).withOpacity(0.4)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF674AA6).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.schedule_send, color: Color(0xFF674AA6), size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Upcoming Payment',
+                    style: GoogleFonts.instrumentSans(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                      color: const Color(0xFF867EA5),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${nextPayment.formattedAmount} to @${nextPayment.recipientTag} — ${nextPayment.formattedNextRun}',
+                    style: GoogleFonts.instrumentSans(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: const Color(0xFF867EA5), size: 20),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildTransactionsWithFilter(DashboardViewModel viewModel) {
     return Column(
@@ -978,6 +1291,222 @@ class DashboardView extends StackedView<DashboardViewModel> {
         const SizedBox(height: 24),
         _buildRecentTransactionsSection(viewModel),
       ],
+    );
+  }
+
+  Widget _buildFilterChip(String label, VoidCallback onRemove) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: onRemove,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF130F22),
+            border: Border.all(color: const Color(0xFF674AA6)),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.instrumentSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF674AA6),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.close, color: Color(0xFF674AA6), size: 14),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFilterBottomSheet(BuildContext context, DashboardViewModel viewModel) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF130F22),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Advanced Filters',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Status filter
+            Text(
+              'Status',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: ['completed', 'pending', 'failed'].map((status) {
+                final isSelected = viewModel.statusFilter == status;
+                return FilterChip(
+                  label: Text(status),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    viewModel.setStatusFilter(selected ? status : null);
+                  },
+                  backgroundColor: const Color(0xFF181027),
+                  selectedColor: const Color(0xFF674AA6),
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : const Color(0xFF867EA5),
+                    fontSize: 12,
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+
+            // Type filter
+            Text(
+              'Type',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: ['credit', 'debit'].map((type) {
+                final isSelected = viewModel.typeFilter == type;
+                return FilterChip(
+                  label: Text(type),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    viewModel.setTypeFilter(selected ? type : null);
+                  },
+                  backgroundColor: const Color(0xFF181027),
+                  selectedColor: const Color(0xFF674AA6),
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : const Color(0xFF867EA5),
+                    fontSize: 12,
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+
+            // Date range filter
+            Text(
+              'Date Range',
+              style: GoogleFonts.instrumentSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: const Color(0xFFE2E2E2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildDatePickerField(
+                    'From',
+                    viewModel.dateRangeStart,
+                    (date) => viewModel.setDateRange(date, viewModel.dateRangeEnd),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildDatePickerField(
+                    'To',
+                    viewModel.dateRangeEnd,
+                    (date) => viewModel.setDateRange(viewModel.dateRangeStart, date),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Close button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF674AA6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text(
+                  'Done',
+                  style: GoogleFonts.instrumentSans(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDatePickerField(String label, DateTime? value, Function(DateTime?) onDateSelected) {
+    return GestureDetector(
+      onTap: () async {
+        final selected = await showDatePicker(
+          context: context,
+          initialDate: value ?? DateTime.now(),
+          firstDate: DateTime(2020),
+          lastDate: DateTime.now(),
+        );
+        if (selected != null) {
+          onDateSelected(selected);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF181027),
+          border: Border.all(color: const Color(0xFF262140)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF867EA5)),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value != null ? DateFormat('MMM d, yyyy').format(value) : 'Select date',
+              style: GoogleFonts.instrumentSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: value != null ? const Color(0xFFE2E2E2) : const Color(0xFF867EA5),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

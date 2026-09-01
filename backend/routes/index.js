@@ -18,11 +18,21 @@ import performanceRoutes from "./performance.js";
 import analyticsRoutes from "./analytics.js";
 import webhookRoutes from "./webhooks.js";
 import webhookAdminRoutes from "./webhookAdmin.js";
+import disputeAdminRoutes from "./disputeAdmin.js";
+import backupAdminRoutes from "./backupAdmin.js";
 import exportRoutes from "./exports.js";
 import ussdRoutes from "./ussd.js";
 import batchPaymentRoutes from "./batchPayments.js";
 import keyRoutes from "./keys.js";
-import { deprecationWarning } from "../middleware/apiVersion.js";
+import tagRoutes from "./tagRoutes.js";
+import withdrawalRoutes from "./withdrawals.js";
+import swapRoutes from "./swapRoutes.js";
+import accountRoutes from "./account.js"; // #460 NDPR compliance
+import supportTicketRoutes from "./supportTickets.js";
+import indexerAdminRoutes from "./indexerAdmin.js";
+import referralRoutes from "./referrals.js";
+import circuitBreakerRoutes from "./circuitBreaker.js";
+import { versionHeaders, CURRENT_VERSION, DEPRECATIONS } from "../middleware/apiVersion.js";
 
 const router = express.Router();
 
@@ -46,24 +56,68 @@ const registerRoutes = (router) => {
   router.use("/analytics", analyticsRoutes);
   router.use("/webhooks", webhookRoutes);
   router.use("/admin/webhooks", webhookAdminRoutes);
+  router.use("/admin/disputes", disputeAdminRoutes);
+  router.use("/admin/backups", backupAdminRoutes);
+  router.use("/admin/indexer", indexerAdminRoutes);
   router.use("/exports", exportRoutes);
   router.use("/ussd", ussdRoutes);
   router.use("/batches", batchPaymentRoutes);
   router.use("/keys", keyRoutes);
+  router.use("/tags", tagRoutes);
+  router.use("/withdrawals", withdrawalRoutes);
+  router.use("/swap", swapRoutes);
+  router.use("/account", accountRoutes); // #460 NDPR: data export & account deletion
+  router.use("/support-tickets", supportTicketRoutes);
+  router.use("/referrals", referralRoutes);
+  router.use("/circuit-breaker", circuitBreakerRoutes);
 };
+
+/**
+ * @swagger
+ * /api/versions:
+ *   get:
+ *     summary: List available API versions and their deprecation status
+ *     tags: [Versioning]
+ *     responses:
+ *       200:
+ *         description: Version metadata
+ */
+router.get("/versions", (req, res) => {
+  const versions = new Set([1, CURRENT_VERSION]);
+  res.status(200).json({
+    current: CURRENT_VERSION,
+    versions: Array.from(versions)
+      .sort((a, b) => a - b)
+      .map((version) => {
+        const deprecation = DEPRECATIONS[version];
+        return {
+          version,
+          status: deprecation ? "deprecated" : version === CURRENT_VERSION ? "current" : "supported",
+          ...(deprecation && {
+            deprecatedAt: deprecation.deprecatedAt.toISOString(),
+            sunset: deprecation.sunsetAt.toISOString(),
+            migrationGuide: deprecation.migrationGuide,
+          }),
+        };
+      }),
+  });
+});
 
 // V1 routes (deprecated)
 const v1Router = express.Router();
-v1Router.use(deprecationWarning('v1', '2025-12-31'));
+v1Router.use(versionHeaders(1));
 registerRoutes(v1Router);
 router.use("/v1", v1Router);
 
 // V2 routes (current)
 const v2Router = express.Router();
+v2Router.use(versionHeaders(CURRENT_VERSION));
 registerRoutes(v2Router);
 router.use("/v2", v2Router);
 
-// Default to v2 for backward compatibility
+// Default (unversioned) alias — kept for backward compatibility, always
+// mirrors the current version.
+router.use(versionHeaders(CURRENT_VERSION));
 registerRoutes(router);
 
 export default router;

@@ -1,5 +1,6 @@
 import Notification from "../models/Notification.js";
 import NotificationPreference from "../models/NotificationPreference.js";
+import DeviceToken from "../models/DeviceToken.js";
 
 export const getNotificationByUserId = async (req, res) => {
   try {
@@ -119,6 +120,37 @@ export const updatePreferences = async (req, res) => {
 
     const preferences = await NotificationPreference.update(req.user.id, updates);
     res.json(preferences);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const registerDeviceToken = async (req, res) => {
+  try {
+    const { token, platform } = req.body;
+    if (!token || !platform) {
+      return res.status(400).json({ error: "token and platform are required" });
+    }
+    if (!["android", "ios"].includes(platform)) {
+      return res.status(400).json({ error: "platform must be 'android' or 'ios'" });
+    }
+
+    await DeviceToken.create({ user_id: req.user.id, token, platform });
+    res.json({ message: "Device token registered" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const unregisterDeviceToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: "token is required" });
+    }
+
+    await DeviceToken.deactivateByUserAndToken(req.user.id, token);
+    res.json({ message: "Device token unregistered" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

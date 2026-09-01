@@ -4,8 +4,12 @@ import QRCode from "qrcode";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import BankAccount from "../models/BankAccount.js";
+import RefreshToken from "../models/RefreshToken.js";
 import { balanceQueue } from "../queues/balance.js";
-import { signToken } from "../config/jwt.js";
+import { signToken, signRefreshToken, verifyToken } from "../config/jwt.js";
+import * as Sentry from "@sentry/node";
+import db from "../config/database.js";
+import ReferralService from "../services/ReferralService.js";
 
 const sanitizeAuthUser = (user) => {
   if (!user) return user;
@@ -13,6 +17,19 @@ const sanitizeAuthUser = (user) => {
   user.two_factor_secret = undefined;
   user.two_factor_backup_codes = undefined;
   return user;
+};
+
+const createRefreshTokenPair = async (userId, req) => {
+  const accessToken = signToken({ userId, type: "access" });
+  const refreshTokenString = signRefreshToken({ userId, type: "refresh" });
+  const tokenHash = await RefreshToken.hashToken(refreshTokenString);
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const ipAddress = req.ip || req.connection?.remoteAddress || null;
+  const userAgent = req.get("user-agent") || null;
+
+  await RefreshToken.create(userId, tokenHash, expiresAt, ipAddress, userAgent);
+
+  return { accessToken, refreshToken: refreshTokenString };
 };
 
 const generateBackupCodes = (count = 8) => {
@@ -23,7 +40,7 @@ const generateBackupCodes = (count = 8) => {
 
 export const register = async (req, res) => {
   try {
-    const { email, tag, address, password, role } = req.body;
+    const { email, tag, address, password } = req.body;
 
     // --- Check email ---
     const existingUserEmail = await User.findByEmail(email);
@@ -37,6 +54,18 @@ export const register = async (req, res) => {
       return res.status(400).json({ error: "User tag already exists" });
     }
 
+    // --- Validate referral code if provided ---
+    let referredBy = null;
+    if (referralCode) {
+      referredBy = await ReferralService.validateReferralCode(referralCode);
+      if (!referredBy) {
+        console.warn(`Invalid referral code: ${referralCode}`);
+      }
+    }
+
+    // --- Generate referral code ---
+    const newReferralCode = await ReferralService.generateReferralCode();
+
     // --- Create user ---
     const photo = `https://api.dicebear.com/9.x/initials/svg?seed=${tag}`;
     const user = await User.create({
@@ -45,11 +74,11 @@ export const register = async (req, res) => {
       address,
       password,
       photo,
-      role,
+      role: "user",
     });
 
     // --- Generate JWT ---
-    const token = signToken({ userId: user.id });
+    await issueSession(user.id, res);
     sanitizeAuthUser(user);
 
     // --- Create wallet + bank account immediately ---
@@ -64,7 +93,6 @@ export const register = async (req, res) => {
     // --- Respond immediately ---
     res.status(201).json({
       message: "User registered successfully",
-      token,
       user,
     });
   } catch (error) {
@@ -90,18 +118,15 @@ export const login = async (req, res) => {
     }
 
     // Generate JWT token
-    const token = signToken({ userId: user.id });
+    await issueSession(user.id, res);
 
     const last_login = new Date();
-    const update_user = await User.update(user.id, {
-      last_login: new Date(),
-    });
+    await User.update(user.id, { last_login });
 
     sanitizeAuthUser(user);
 
     res.json({
       message: "Login successful",
-      token,
       user: { ...user, last_login },
     });
   } catch (error) {
@@ -236,6 +261,167 @@ export const require2FA = async (req, res, next) => {
 
     next();
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const googleLogin = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      return res.status(400).json({ error: "Google ID token required" });
+    }
+
+    const { OAuth2Client } = await import("google-auth-library");
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const email = payload.email;
+    const googleId = payload.sub;
+
+    let user = await User.findByEmail(email);
+
+    if (!user) {
+      const defaultTag = email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "_");
+      user = await User.create({
+        email,
+        tag: defaultTag,
+        password: "", // No password for Google users
+        photo: payload.picture || `https://api.dicebear.com/9.x/initials/svg?seed=${defaultTag}`,
+        role: "user",
+        google_id: googleId,
+      });
+
+      await Wallet.create({ user_id: user.id });
+      await BankAccount.create({ user_id: user.id });
+      await balanceQueue.add("create-balances", {
+        user_id: user.id,
+        tag: defaultTag,
+      });
+
+      const { accessToken, refreshToken } = await createRefreshTokenPair(user.id, req);
+      return res.status(201).json({
+        message: "Account created via Google Sign-In",
+        isNewUser: true,
+        accessToken,
+        refreshToken,
+        user: sanitizeAuthUser(user),
+      });
+    }
+
+    const { accessToken, refreshToken } = await createRefreshTokenPair(user.id, req);
+    await User.update(user.id, { last_login: new Date() });
+
+    sanitizeAuthUser(user);
+
+    res.status(200).json({
+      message: "Login successful",
+      isNewUser: false,
+      accessToken,
+      refreshToken,
+      user,
+    });
+  } catch (error) {
+    console.error("Google login failed:", error);
+    res.status(401).json({ error: "Invalid Google token or authentication failed" });
+  }
+};
+
+export const refresh = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ error: "Refresh token is required" });
+    }
+
+    let decoded;
+    try {
+      decoded = verifyToken(refreshToken);
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid or expired refresh token" });
+    }
+
+    if (decoded.type !== "refresh") {
+      return res.status(401).json({ error: "Token is not a refresh token" });
+    }
+
+    const userId = decoded.userId;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const tokenHash = await RefreshToken.hashToken(refreshToken);
+    const storedToken = await RefreshToken.findValidByHash(tokenHash);
+
+    if (!storedToken) {
+      // Token either doesn't exist, is expired, or already used (replay attack)
+      // Check if it's a replay of an already-used token
+      const allTokens = await db("refresh_tokens")
+        .where("user_id", userId)
+        .whereNotNull("used_at");
+
+      const isReplay = allTokens.some(async (t) => {
+        return await RefreshToken.verifyTokenHash(refreshToken, t.token_hash);
+      });
+
+      // Log security incident and revoke all sessions
+      console.error(`🚨 Refresh token replay detected for user ${userId}`);
+      Sentry.captureException(new Error("Refresh token replay attack"), {
+        tags: { userId, ip: req.ip },
+      });
+
+      // Revoke all sessions for this user
+      await RefreshToken.revokeAllByUserId(userId);
+
+      return res.status(401).json({
+        error: "Invalid refresh token. All sessions have been revoked for security.",
+      });
+    }
+
+    // Mark current token as used (single-use enforcement)
+    await RefreshToken.markAsUsed(storedToken.id);
+
+    // Issue new token pair
+    const { accessToken, refreshToken: newRefreshToken } = await createRefreshTokenPair(userId, req);
+
+    res.json({
+      message: "Token refreshed successfully",
+      accessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (error) {
+    console.error("❌ Token refresh failed:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      const tokenHash = await RefreshToken.hashToken(refreshToken);
+      const storedToken = await RefreshToken.findByHash(tokenHash);
+      if (storedToken) {
+        await RefreshToken.markAsUsed(storedToken.id);
+      }
+    }
+
+    res.json({ message: "Logged out successfully" });
+  } catch (error) {
+    console.error("❌ Logout failed:", error);
     res.status(500).json({ error: error.message });
   }
 };

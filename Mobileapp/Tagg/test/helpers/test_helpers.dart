@@ -8,6 +8,14 @@ import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
+import 'package:Tagg/services/connectivity_service.dart';
+import 'package:Tagg/services/swap_service.dart';
+import 'package:Tagg/services/exchange_rate_service.dart';
+import 'package:Tagg/services/theme_service.dart';
+import 'package:Tagg/services/batch_payment_service.dart';
+import 'package:Tagg/services/biometric_service.dart';
+import 'package:Tagg/services/deep_link_service.dart';
+import 'package:Tagg/services/notification_service.dart';
 // @stacked-import
 
 import 'test_helpers.mocks.dart';
@@ -36,15 +44,15 @@ void registerServices() {
   getAndRegisterUserService();
   getAndRegisterWalletService();
   getAndRegisterTransactionService();
-  getAndRegisterBalanceService();
-  getAndRegisterKycService();
-  getAndRegisterChainService();
-  getAndRegisterTokenService();
-  getAndRegisterHealthService();
-  getAndRegisterBankAccountService();
-  getAndRegisterKycService();
-  getAndRegisterTransactionService();
   getAndRegisterChainsService();
+  getAndRegisterConnectivityService();
+  getAndRegisterSwapService();
+  getAndRegisterExchangeRateService();
+  getAndRegisterThemeService();
+  getAndRegisterBatchPaymentService();
+  getAndRegisterBiometricService();
+  getAndRegisterDeepLinkService();
+  getAndRegisterNotificationService();
 // @stacked-mock-register
 }
 
@@ -141,6 +149,62 @@ MockChainsService getAndRegisterChainsService() {
   _removeRegistrationIfExists<ChainsService>();
   final service = MockChainsService();
   locator.registerSingleton<ChainsService>(service);
+  return service;
+}
+
+ConnectivityService getAndRegisterConnectivityService() {
+  _removeRegistrationIfExists<ConnectivityService>();
+  final service = ConnectivityService();
+  locator.registerSingleton<ConnectivityService>(service);
+  return service;
+}
+
+SwapService getAndRegisterSwapService() {
+  _removeRegistrationIfExists<SwapService>();
+  final service = SwapService(apiService: locator<ApiService>());
+  locator.registerSingleton<SwapService>(service);
+  return service;
+}
+
+ExchangeRateService getAndRegisterExchangeRateService() {
+  _removeRegistrationIfExists<ExchangeRateService>();
+  final service = ExchangeRateService();
+  locator.registerSingleton<ExchangeRateService>(service);
+  return service;
+}
+
+ThemeService getAndRegisterThemeService() {
+  _removeRegistrationIfExists<ThemeService>();
+  final service = ThemeService();
+  locator.registerSingleton<ThemeService>(service);
+  return service;
+}
+
+BatchPaymentService getAndRegisterBatchPaymentService() {
+  _removeRegistrationIfExists<BatchPaymentService>();
+  final service = BatchPaymentService();
+  locator.registerSingleton<BatchPaymentService>(service);
+  return service;
+}
+
+BiometricService getAndRegisterBiometricService() {
+  _removeRegistrationIfExists<BiometricService>();
+  final service = BiometricService();
+  locator.registerSingleton<BiometricService>(service);
+  return service;
+}
+
+DeepLinkService getAndRegisterDeepLinkService() {
+  _removeRegistrationIfExists<DeepLinkService>();
+  final service = DeepLinkService();
+  locator.registerSingleton<DeepLinkService>(service);
+  return service;
+}
+
+NotificationService getAndRegisterNotificationService() {
+  _removeRegistrationIfExists<NotificationService>();
+  final service = NotificationService(apiService: locator<ApiService>());
+  locator.registerSingleton<NotificationService>(service);
   return service;
 }
 // @stacked-mock-create

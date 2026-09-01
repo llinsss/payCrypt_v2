@@ -1,5 +1,6 @@
 import { apiClient } from "./api";
 import { AuthUser } from "../types/auth";
+import { parseAuthResponse, parseProfileResponse } from "./apiContracts";
 
 // Auth API interfaces
 export interface LoginRequest {
@@ -16,7 +17,6 @@ export interface RegisterRequest {
 
 export interface AuthResponse {
   message: string;
-  token: string;
   user: {
     id: string;
     email: string;
@@ -36,15 +36,10 @@ export const authApi = {
   // Login user
   async login(credentials: LoginRequest): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<AuthResponse>(
+      const response = parseAuthResponse(await apiClient.post<unknown>(
         "/auth/login",
         credentials
-      );
-
-      // Store token in localStorage
-      if (response.token) {
-        localStorage.setItem("auth_token", response.token);
-      }
+      )) as AuthResponse;
 
       return response;
     } catch (error) {
@@ -56,16 +51,10 @@ export const authApi = {
   // Register new user
   async register(userData: RegisterRequest): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<AuthResponse>(
+      const response = parseAuthResponse(await apiClient.post<unknown>(
         "/auth/register",
         userData
-      );
-
-      console.log(response);
-      // Store token in localStorage
-      if (response.token) {
-        localStorage.setItem("auth_token", response.token);
-      }
+      )) as AuthResponse;
 
       return response;
     } catch (error) {
@@ -75,17 +64,17 @@ export const authApi = {
   },
 
   // Logout user
-  logout(): void {
-    localStorage.removeItem("auth_token");
+  async logout(): Promise<void> {
+    await apiClient.post("/auth/logout");
   },
 
   // Get current user (if we add a /me endpoint later)
   async getCurrentUser(): Promise<AuthUser> {
     try {
-      const response = await apiClient.get<{ user: AuthUser }>(
+      const response = await apiClient.get<unknown>(
         "/users/profile"
       );
-      return response.user;
+      return parseProfileResponse(response) as AuthUser;
     } catch (error) {
       console.error("Failed to get current user:", error);
       throw error;
@@ -94,13 +83,7 @@ export const authApi = {
 
   // Check if user is authenticated
   isAuthenticated(): boolean {
-    const token = localStorage.getItem("auth_token");
-    return !!token;
-  },
-
-  // Get stored token
-  getToken(): string | null {
-    return localStorage.getItem("auth_token");
+    return false;
   },
 };
 
@@ -123,6 +106,6 @@ export const mapBackendUserToAuthUser = (
     created_at: backendUser.created_at,
     updated_at: backendUser.updated_at,
     last_login: new Date().toISOString(),
-    role: (backendUser.role as "user" | "admin") || "user",
+    role: (backendUser.role as "user" | "admin" | "super_admin") || "user",
   };
 };

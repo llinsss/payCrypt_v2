@@ -4,7 +4,7 @@
   "main": "workers.js",
   "scripts": {
     "start": "node workers.js",
-    "test": "jest --testPathPattern=tests/"
+    "test": "jest --testPathPattern=tests/ --runInBand --forceExit"
   },
   "dependencies": {
     "axios": "^1.6.0",
