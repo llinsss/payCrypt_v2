@@ -6,7 +6,7 @@ import {
   updateChain,
   deleteChain,
 } from "../controllers/chainController.js";
-import { publicCache } from "../middleware/cacheControl.js";
+import { publicCache, invalidateCache } from "../middleware/cacheControl.js";
 import validate from "../middleware/validate.js";
 import { paginationSchema } from "../validators/paginationValidator.js";
 import { createChainSchema, updateChainSchema } from "../validators/chainSchemas.js";
@@ -85,7 +85,7 @@ const router = express.Router();
  *       422:
  *         description: Validation error (invalid page or limit)
  */
-router.post("/", validate(createChainSchema), createChain);
+router.post("/", validate(createChainSchema), invalidateCache("chains"), createChain);
 router.get("/", validate(paginationSchema, "query"), publicCache(3600), getChains);
 
 /**
@@ -157,7 +157,7 @@ router.get("/", validate(paginationSchema, "query"), publicCache(3600), getChain
  *         description: Chain not found
  */
 router.get("/:id", getChainById);
-router.put("/:id", validate(updateChainSchema), updateChain);
-router.delete("/:id", deleteChain);
+router.put("/:id", validate(updateChainSchema), invalidateCache("chains"), updateChain);
+router.delete("/:id", invalidateCache("chains"), deleteChain);
 
 export default router;

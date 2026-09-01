@@ -7,7 +7,7 @@ import {
   deleteToken,
 } from "../controllers/tokenController.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
-import { publicCache } from "../middleware/cacheControl.js";
+import { publicCache, invalidateCache } from "../middleware/cacheControl.js";
 import validate from "../middleware/validate.js";
 import { paginationSchema } from "../validators/paginationValidator.js";
 import { createTokenSchema, updateTokenSchema } from "../validators/tokenSchemas.js";
@@ -61,8 +61,8 @@ const router = express.Router();
  *       403:
  *         description: Admin access required
  */
-router.post("/", authenticate, requireAdmin, createToken);
-router.get("/", publicCache(3600), getTokens);
+router.post("/", authenticate, requireAdmin, validate(createTokenSchema), invalidateCache("tokens"), createToken);
+router.get("/", validate(paginationSchema, "query"), publicCache(3600), getTokens);
 
 /**
  * @swagger
@@ -121,7 +121,7 @@ router.get("/", publicCache(3600), getTokens);
  *         description: Admin access required
  */
 router.get("/:id", getTokenById);
-router.put("/:id", authenticate, requireAdmin, updateToken);
-router.delete("/:id", authenticate, requireAdmin, deleteToken);
+router.put("/:id", authenticate, requireAdmin, validate(updateTokenSchema), invalidateCache("tokens"), updateToken);
+router.delete("/:id", authenticate, requireAdmin, invalidateCache("tokens"), deleteToken);
 
 export default router;
