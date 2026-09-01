@@ -85,4 +85,12 @@ class UserService {
     }
     return {};
   }
+
+  /// Clears locally cached profile/account data for the outgoing session.
+  /// Called on logout so the next signed-in account never sees a stale
+  /// preference carried over from a previous user on this device.
+  Future<void> clearCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('preferred_currency');
+  }
 }

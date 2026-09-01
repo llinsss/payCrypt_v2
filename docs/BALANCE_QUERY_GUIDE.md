@@ -51,6 +51,10 @@ await Balance.update(balanceId, { amount, usd_value });
 // All methods automatically invalidate cache
 ```
 
+### Synchronize On-Chain Balances
+
+Use `POST /api/balances/sync` to reconcile the authenticated user's persisted balances with on-chain values. This is an idempotent mutation: retries and duplicate requests converge to the same state. The former `GET /api/balances/sync` endpoint is no longer supported; clients should migrate to POST because synchronization changes persisted state.
+
 ## Cache Behavior
 
 ### Cache Hit (Fast)

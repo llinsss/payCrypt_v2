@@ -1,4 +1,5 @@
 import { apiClient } from "./api";
+import { parseAmountResponse } from "./apiContracts";
 
 /**
  * Safely parses a value that is expected to be a finite decimal number.
@@ -60,7 +61,6 @@ export const formatCurrencyToNGN = (amount: number, currency = "NGN") => {
 };
 
 export const getCryptoUSDValue = async (amount: number, token?: string) => {
-  const response = await apiClient.post("/usd-equivalent", { token, amount });
-  console.log(response);
-  return response as unknown as string;
+  const response = await apiClient.post<unknown>("/usd-equivalent", { token, amount });
+  return parseAmountResponse(response);
 };

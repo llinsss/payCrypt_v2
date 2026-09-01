@@ -20,7 +20,7 @@ npm run migrate:rollback
 npm run migrate:rollback:all
 ```
 
-### Apply all pending migrations
+### Apply all pending migrations (schema-only, safe for production)
 ```bash
 npm run migrate
 ```
@@ -30,10 +30,22 @@ npm run migrate
 npm run migrate:status
 ```
 
-### Full database reset (rollback all, migrate, seed)
+### Seed production-safe data only
+```bash
+npm run seed:prod
+```
+
+### Seed all data including demo (development only)
+```bash
+npm run seed:demo
+```
+
+### Full database reset (rollback all, migrate, seed with demo data)
 ```bash
 npm run db:reset
 ```
+
+> **Important:** `npm run migrate` is schema-only and safe for production. Seeding is separate. See [Seed Categorization](./SEED_CATEGORIZATION.md) for which seeds are production-safe.
 
 ---
 
@@ -163,3 +175,20 @@ DELETE FROM knex_migrations WHERE name = '20260220115816_add_metadata_to_transac
 ```
 
 Then re-run `npm run migrate` or apply the rollback manually.
+
+---
+
+## Seeding After Rollback
+
+After rolling back migrations, you may need to re-seed data:
+
+- **Production environments:** After rolling back and re-applying migrations, run `npm run seed:prod` to restore production-safe data (tokens, chains)
+- **Development environments:** After rolling back, run `npm run seed:demo` to restore all seeds including demo data
+- **Selective seeding:** See [Seed Categorization](./SEED_CATEGORIZATION.md) for details on which seeds are safe in which environments
+
+Example production workflow:
+```bash
+npm run migrate:rollback        # Rollback last batch
+npm run migrate                 # Re-apply migrations
+npm run seed:prod               # Restore production-safe data
+```

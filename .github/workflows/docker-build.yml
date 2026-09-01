@@ -1,0 +1,60 @@
+name: Docker Build
+
+# Builds and pushes backend Docker image to registry.
+# Docker images do NOT include seed data—seeding happens at deployment time.
+#
+# DEPLOYMENT STRATEGY:
+# 1. Docker image contains schema + application code only
+# 2. Kubernetes/container orchestrator runs migrations & seeds after deployment
+# 3. Production uses: npm run migrate && npm run seed:prod
+# 4. Demo/staging uses: npm run migrate && npm run seed:demo
+# See: backend/docs/SEED_CATEGORIZATION.md for seed categorization details
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/docker-build.yml"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-backend
+
+jobs:
+  build-and-push:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

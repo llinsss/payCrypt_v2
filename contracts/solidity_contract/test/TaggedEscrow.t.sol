@@ -139,7 +139,7 @@ contract TaggedEscrowTest is Test {
         escrow.releaseEscrow(escrowId);
 
         assertEq(usdc.balanceOf(recipient), AMOUNT);
-        assertEq(escrow.getEscrowStatus(escrowId), TaggedEscrow.EscrowStatus.RELEASED);
+        assertEq(uint(escrow.getEscrowStatus(escrowId)), uint(TaggedEscrow.EscrowStatus.RELEASED));
     }
 
     function testReleaseBeforeLockPeriodExpiryReverts() public {
@@ -196,8 +196,8 @@ contract TaggedEscrowTest is Test {
         vm.prank(sender);
         escrow.cancelEscrow(escrowId);
 
-        assertEq(usdc.balanceOf(sender), 100000e6 - AMOUNT + AMOUNT);
-        assertEq(escrow.getEscrowStatus(escrowId), TaggedEscrow.EscrowStatus.CANCELLED);
+        assertEq(usdc.balanceOf(sender), 100000e6);
+        assertEq(uint(escrow.getEscrowStatus(escrowId)), uint(TaggedEscrow.EscrowStatus.CANCELLED));
     }
 
     function testOnlySenderCanCancel() public {

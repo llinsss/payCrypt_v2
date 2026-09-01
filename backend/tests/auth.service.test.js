@@ -8,6 +8,19 @@ const mockWalletCreate = jest.fn();
 const mockBankAccountCreate = jest.fn();
 const mockBalanceQueueAdd = jest.fn();
 const mockSignToken = jest.fn();
+const mockSignRefreshToken = jest.fn();
+const mockVerifyToken = jest.fn();
+const mockRefreshTokenHashToken = jest.fn();
+const mockRefreshTokenCreate = jest.fn();
+const mockValidateReferralCode = jest.fn();
+const mockGenerateReferralCode = jest.fn();
+
+jest.unstable_mockModule("../services/ReferralService.js", () => ({
+  default: {
+    validateReferralCode: mockValidateReferralCode,
+    generateReferralCode: mockGenerateReferralCode,
+  },
+}));
 
 jest.unstable_mockModule("../models/User.js", () => ({
   default: {
@@ -39,6 +52,15 @@ jest.unstable_mockModule("../queues/balance.js", () => ({
 
 jest.unstable_mockModule("../config/jwt.js", () => ({
   signToken: mockSignToken,
+  signRefreshToken: mockSignRefreshToken,
+  verifyToken: mockVerifyToken,
+}));
+
+jest.unstable_mockModule("../models/RefreshToken.js", () => ({
+  default: {
+    hashToken: mockRefreshTokenHashToken,
+    create: mockRefreshTokenCreate,
+  },
 }));
 
 const { register, login } = await import("../controllers/authController.js");
@@ -84,6 +106,7 @@ describe("Auth Service", () => {
       mockBalanceQueueAdd.mockResolvedValue({ id: 1 });
 
       const req = {
+        get: () => "test-agent",
         body: {
           email: "test@example.com",
           tag: "testuser",
@@ -97,7 +120,7 @@ describe("Auth Service", () => {
       await register(req, res);
 
       expect(res.statusCode).toBe(201);
-      expect(res.body.token).toBe("jwt-token-123");
+      expect(res.body.accessToken).toBe("jwt-token-123");
       expect(res.body.message).toBe("User registered successfully");
       expect(mockUserCreate).toHaveBeenCalled();
       expect(mockWalletCreate).toHaveBeenCalled();
@@ -158,6 +181,7 @@ describe("Auth Service", () => {
       mockUserUpdate.mockResolvedValue({ ...user, last_login: new Date() });
 
       const req = {
+        get: () => "test-agent",
         body: {
           email: "test@example.com",
           password: "securepassword123",
@@ -168,9 +192,9 @@ describe("Auth Service", () => {
       await login(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.token).toBe("jwt-token-123");
+      expect(res.body.accessToken).toBe("jwt-token-123");
       expect(res.body.message).toBe("Login successful");
-      expect(mockSignToken).toHaveBeenCalledWith({ userId: 1 });
+      expect(mockSignToken).toHaveBeenCalledWith({ userId: 1, type: "access" });
       expect(mockUserUpdate).toHaveBeenCalledWith(1, { last_login: expect.any(Date) });
     });
 
@@ -228,6 +252,7 @@ describe("Auth Service", () => {
       mockUserUpdate.mockResolvedValue({ ...user, last_login: new Date() });
 
       const req = {
+        get: () => "test-agent",
         body: {
           email: "test@example.com",
           password: "securepassword123",
