@@ -156,6 +156,11 @@ tagged.setRefreshTokenHandler(async () => {
 });
 ```
 
+### Features:
+- **Single-Flight Deduplication**: Multiple concurrent requests encountering `401 Unauthorized` share a single in-flight refresh promise, preventing duplicate token refresh requests to your authentication server.
+- **Retry Loop Prevention**: Requests are marked internally and retried at most once. If a retried request still returns `401` (e.g., revoked or invalid refreshed credentials), it immediately fails with `AuthenticationError` without re-entering the refresh cycle.
+- **Error Preservation**: Original authentication error messages and details are preserved if token refresh fails or returns `null`.
+
 ---
 
 ## Error Handling
