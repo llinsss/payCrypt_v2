@@ -1,4 +1,19 @@
 import Token from "../models/Token.js";
+import catalogCache from "../services/CatalogCacheService.js";
+
+const CATALOG = catalogCache.CATALOGS.TOKENS;
+
+/**
+ * Token controller
+ *
+ * Pagination is validated upstream by the validate(paginationSchema, "query")
+ * middleware wired in tokens.js routes -- req.query.page and req.query.limit
+ * are guaranteed to be safe integers when they reach these handlers.
+ *
+ * Body fields for create/update are validated and stripped by
+ * validate(createTokenSchema) / validate(updateTokenSchema) middleware,
+ * preventing mass-assignment of undocumented or sensitive columns.
+ */
 
 /**
  * Token controller
@@ -18,6 +33,7 @@ export const createToken = async (req, res) => {
     // the validate(createTokenSchema) middleware -- no mass assignment risk.
     const tokenData = req.body;
     const token = await Token.create(tokenData);
+    await catalogCache.invalidate(CATALOG);
     res.status(201).json(token);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -29,9 +45,13 @@ export const getTokens = async (req, res) => {
     // page and limit are coerced to integers and bounded by the
     // validate(paginationSchema, "query") middleware before reaching here.
     const { page, limit } = req.query;
-    const offset = (page - 1) * limit;
 
+    const cached = await catalogCache.get(CATALOG, page, limit);
+    if (cached) return res.json(cached);
+
+    const offset = (page - 1) * limit;
     const tokens = await Token.getAll(limit, offset);
+    await catalogCache.set(CATALOG, page, limit, tokens);
     res.json(tokens);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -65,6 +85,7 @@ export const updateToken = async (req, res) => {
     // req.body has already been validated and unknown fields stripped by
     // the validate(updateTokenSchema) middleware -- no mass assignment risk.
     const updatedToken = await Token.update(id, req.body);
+    await catalogCache.invalidate(CATALOG);
     res.json(updatedToken);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -81,6 +102,7 @@ export const deleteToken = async (req, res) => {
     }
 
     await Token.delete(id);
+    await catalogCache.invalidate(CATALOG);
     res.json({ message: "Token deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });

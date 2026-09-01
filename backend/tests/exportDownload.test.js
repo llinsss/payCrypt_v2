@@ -63,7 +63,7 @@ function makeExpiredToken(payload) {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
-describe("GET /api/transactions/export/download — Issue #227 security hardening", () => {
+describe("GET /api/transactions/export/download — Issue #501 one-time download tokens", () => {
   beforeEach(() => {
     mockServeDownload.mockReset();
   });

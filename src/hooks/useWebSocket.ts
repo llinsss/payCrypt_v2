@@ -1,55 +1,83 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { io, Socket } from 'socket.io-client';
 import { WebSocketMessage } from '../types';
+
+type ConnectionState = 'disconnected' | 'connecting' | 'connected';
+
+function isWebSocketMessage(value: unknown): value is WebSocketMessage {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    (candidate.type === 'balance_update' || candidate.type === 'transaction_update' || candidate.type === 'system_alert') &&
+    typeof candidate.timestamp === 'string' &&
+    !!candidate.data &&
+    typeof candidate.data === 'object' &&
+    !Array.isArray(candidate.data)
+  );
+}
 
 export const useWebSocket = (url: string, userId?: string) => {
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [messages, setMessages] = useState<WebSocketMessage[]>([]);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      setConnectionState('disconnected');
+      setIsConnected(false);
+      return undefined;
+    }
 
-    // Mock WebSocket connection
-    const mockConnect = () => {
+    const token = localStorage.getItem('auth_token');
+    setConnectionState('connecting');
+    const socket = io(url.replace(/^ws/, 'http'), {
+      auth: { token, userId },
+      transports: ['websocket'],
+      reconnection: true,
+    });
+    socketRef.current = socket;
+
+    const handleConnect = () => {
+      setConnectionState('connected');
       setIsConnected(true);
-      
-      // Simulate periodic updates
-      const interval = setInterval(() => {
-        const mockMessage: WebSocketMessage = {
-          type: Math.random() > 0.7 ? 'balance_update' : 'transaction_update',
-          data: {
-            userId,
-            balance: Math.random() * 10000,
-            transaction: {
-              id: Date.now().toString(),
-              type: 'deposit',
-              amount: Math.random() * 100
-            }
-          },
-          timestamp: new Date().toISOString()
-        };
-        
-        setMessages(prev => [...prev.slice(-9), mockMessage]);
-      }, 5000);
-
-      return () => {
-        clearInterval(interval);
-        setIsConnected(false);
-      };
+    };
+    const handleDisconnect = () => {
+      setConnectionState('disconnected');
+      setIsConnected(false);
+    };
+    const handleMessage = (message: unknown) => {
+      if (!isWebSocketMessage(message)) return;
+      setMessages((previous) => [...previous.slice(-9), message]);
     };
 
-    const cleanup = mockConnect();
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('message', handleMessage);
+    socket.on('websocket_message', handleMessage);
 
-    return cleanup;
-  }, [userId]);
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('message', handleMessage);
+      socket.off('websocket_message', handleMessage);
+      socket.disconnect();
+      if (socketRef.current === socket) socketRef.current = null;
+      setConnectionState('disconnected');
+      setIsConnected(false);
+    };
+  }, [url, userId]);
 
   const sendMessage = (message: unknown) => {
-    // Mock send message
-    console.log('Sending message:', message);
+    if (!socketRef.current?.connected) return false;
+    socketRef.current.emit('message', message);
+    return true;
   };
 
   return {
     isConnected,
     messages,
-    sendMessage
+    sendMessage,
+    connectionState,
   };
 };

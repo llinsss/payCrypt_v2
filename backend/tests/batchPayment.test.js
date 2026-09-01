@@ -29,7 +29,7 @@ describe("POST /transactions/batches validation", () => {
     payments: [
       {
         recipientTag: "bob_123",
-        amount: 12.5,
+        amount: "12.5",
       },
     ],
   };
@@ -144,12 +144,12 @@ describe("POST /transactions/batches validation", () => {
       payments: [
         {
           recipientTag: "bob_123",
-          amount: 10,
+          amount: "10",
           notes: "ops",
         },
         {
           recipientTag: "carol_123",
-          amount: 5,
+          amount: "5",
           notes: "design",
         },
       ],

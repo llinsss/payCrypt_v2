@@ -60,12 +60,17 @@ exit
 
 or use phpmyadmin ui in xampp/lampp environment
 
-# Run migrations to create tables
+# Run migrations to create schema
 npm run migrate
 
-# (Optional) Run seeds to populate with sample data
-npm run seed
+# (Optional) Run all seeds (production + demo data)
+npm run seed:demo
+
+# Or for development convenience: migrate + seed in one command
+npm run migrate:dev
 ```
+
+> **Note:** Migrations are schema-only and safe in production. Seeds populate data; use `npm run seed:prod` in production to load only essential production-safe data.
 
 ### 4. Start the Server
 
@@ -90,7 +95,7 @@ npm start            # Start production server
 ### Database Migrations
 ```bash
 npm run migrate:make <name>     # Create new migration
-npm run migrate                 # Run all pending migrations
+npm run migrate                 # Run schema-only migrations (safe for production)
 npm run migrate:rollback        # Rollback last migration
 npm run migrate:rollback:all    # Rollback all migrations
 npm run migrate:status          # Check migration status
@@ -99,7 +104,10 @@ npm run migrate:status          # Check migration status
 ### Database Seeds
 ```bash
 npm run seed:make <name>        # Create new seed file
-npm run seed                    # Run all seeds
+npm run seed                    # Run all seeds (production + demo data)
+npm run seed:prod               # Run production-safe seeds only (for production)
+npm run seed:demo               # Run all seeds including demo data (for development)
+npm run migrate:dev             # Convenience: migrate + seed all (for development)
 ```
 
 ### Database Utilities

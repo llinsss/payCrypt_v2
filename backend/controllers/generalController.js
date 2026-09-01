@@ -294,8 +294,23 @@ export const bill_verify_customer = async (req, res, next) => {
 
 export const get_exchange_rates = async (req, res, next) => {
   try {
-    const rates = await ExchangeRateService.getRates();
+    const { rates, fetchedAt, freshness } =
+      await ExchangeRateService.getRatesDetailed();
+
+    // Expose freshness without changing the response body shape.
+    res.set("X-Exchange-Rate-Freshness", freshness);
+    if (fetchedAt) res.set("X-Exchange-Rate-Fetched-At", fetchedAt);
+
     return success(res, "Exchange rates fetched successfully", rates, 200);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const get_exchange_rate_freshness = async (req, res, next) => {
+  try {
+    const freshness = await ExchangeRateService.getFreshness();
+    return success(res, "Exchange rate freshness", freshness, 200);
   } catch (err) {
     next(err);
   }

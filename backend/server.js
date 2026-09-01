@@ -3,7 +3,7 @@ dotenv.config();
 
 import http from "http";
 import { validateEnv } from "./config/env.validation.js";
-import stellarStreamService from "./services/StellarStreamService.js";
+import { validateStartup } from "./services/deploymentValidator.js";
 
 let validatedEnv;
 try {
@@ -97,13 +97,20 @@ const isProduction = process.env.NODE_ENV === "production";
 
   await initApollo(app, null, httpServer);
 
-  const shutdown = (signal) => {
-    console.log(`${signal} received; stopping Stellar payment streams`);
-    stellarStreamService.stop();
-    httpServer.close(() => process.exit(0));
-  };
-  process.once("SIGTERM", () => shutdown("SIGTERM"));
-  process.once("SIGINT", () => shutdown("SIGINT"));
+  // Validate deployments before listening. In production, fail startup on missing deployments.
+  try {
+    const deployResult = await validateStartup({ failOnMissing: isProduction });
+    if (!deployResult.ok) {
+      console.warn("One or more deployments are missing or mismatched:", deployResult.missing.map((m) => m.chain));
+      if (isProduction) {
+        console.error("Exiting: missing deployments in production environment");
+        process.exit(1);
+      }
+    }
+  } catch (err) {
+    console.error("Deployment validation failed:", err.message);
+    if (isProduction) process.exit(1);
+  }
 
   httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT} (with WebSockets)`);
