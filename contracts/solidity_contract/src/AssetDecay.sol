@@ -50,8 +50,14 @@ contract AssetDecay is ReentrancyGuard {
      */
     function deposit(uint256 decayDurationSeconds) external payable {
         require(msg.value > 0, "Amount must be > 0");
-        require(decayDurationSeconds >= MIN_DECAY_DURATION, "Decay duration below minimum");
-        require(decayDurationSeconds <= MAX_DECAY_DURATION, "Decay duration exceeds maximum");
+        require(_decayPeriod > 0, "Decay period must be > 0");
+        // #611: overwriting a live entry here would orphan its ETH inside
+        // the contract with no accounting pointing back to it. Require the
+        // prior deposit to be fully withdrawn before a new one is opened.
+        require(
+            !assets[msg.sender].exists || assets[msg.sender].amount == 0,
+            "Active deposit exists"
+        );
 
         assets[msg.sender] = Asset({
             amount: msg.value,
@@ -114,5 +120,15 @@ contract AssetDecay is ReentrancyGuard {
         owner = address(0);
     }
 
-    receive() external payable {}
+    /// @dev #612: every wei this contract holds must be attributable to a
+    /// `assets[user]` entry created by `deposit`, or `withdraw`'s accounting
+    /// (`asset.amount` vs. actual balance) silently drifts. Direct transfers
+    /// (plain sends, or any call with empty calldata) don't credit a user,
+    /// so they are rejected here rather than left as unrecoverable dust.
+    /// Note: `selfdestruct` can still force ETH into this contract without
+    /// invoking `receive`; that ETH is intentionally never tracked or
+    /// withdrawable — it is an accepted, unavoidable edge case of the EVM.
+    receive() external payable {
+        revert("Direct transfers not allowed");
+    }
 }
