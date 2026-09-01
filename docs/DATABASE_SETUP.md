@@ -96,13 +96,43 @@ The Stellar SDK uses the following tables:
 
 See `docs/stellar-database-schema.md` for detailed schema documentation.
 
+## Migration Naming Convention
+
+All new migrations **must** use the timestamp format:
+
+```
+YYYYMMDDHHMMSS_description.js
+```
+
+- `YYYY` — 4-digit year
+- `MM` — 2-digit month (01–12)
+- `DD` — 2-digit day (01–31)
+- `HH` — 2-digit hour (00–23)
+- `MM` — 2-digit minute (00–59)
+- `SS` — 2-digit second (00–59)
+- `description` — snake_case description of the change
+
+**Example:** `20260801120000_add_refresh_tokens_to_users.js`
+
+**Why timestamp naming?**
+
+- Prevents numbering conflicts in parallel development branches.
+- Guarantees chronological ordering without manual coordination.
+- Aligns with Knex's default `knex migrate:make` output.
+
+> **Note:** The legacy sequential files (`001`–`013`) are retained for backward
+> compatibility with existing `knex_migrations` records and must not be renamed.
+
+See [MIGRATION_AUDIT.md](MIGRATION_AUDIT.md) for the full audit of migration
+gaps and how they were resolved.
+
 ## Migration Commands
 
 ```bash
 # Apply all pending migrations
 npm run migrate
 
-# Create a new migration
+# Create a new migration (uses timestamp naming by default)
 npm run migrate:make migration_name
 
 # Rollback last migration

@@ -14,9 +14,12 @@ import {
   ArrowRightLeft,
   Shield,
   Clock,
+  XCircle,
+  RefreshCcw,
 } from "lucide-react";
 import { formatCurrency } from "../../utils/mockData";
 import toast from "react-hot-toast";
+import { apiClient, ApiError } from "../../utils/api";
 
 interface Recipient {
   id: string;
@@ -24,6 +27,49 @@ interface Recipient {
   percentage: number;
   amount: number;
 }
+
+// Atomic split-payment backend contract: the whole batch is submitted under
+// one idempotency key so retries (network failure or partial failure) can't
+// double-send to recipients who already succeeded.
+interface SplitPaymentRecipientRequest {
+  tag: string;
+  amount: number;
+}
+
+interface SplitPaymentRequest {
+  idempotency_key: string;
+  total_amount: number;
+  split_type: "equal" | "percentage" | "custom";
+  recipients: SplitPaymentRecipientRequest[];
+}
+
+type RecipientPaymentStatus = "pending" | "success" | "failed";
+
+interface SplitPaymentRecipientResult {
+  tag: string;
+  status: RecipientPaymentStatus;
+  amount: number;
+  transaction_id?: string;
+  error?: string;
+}
+
+interface SplitPaymentResponse {
+  idempotency_key: string;
+  status: "completed" | "partial" | "failed";
+  recipients: SplitPaymentRecipientResult[];
+}
+
+type SubmissionStatus =
+  | "idle"
+  | "submitting"
+  | "completed"
+  | "partial"
+  | "failed";
+
+const generateIdempotencyKey = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `split-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const SplitPaymentView: React.FC = () => {
   const [totalAmount, setTotalAmount] = useState("");
@@ -36,6 +82,22 @@ const SplitPaymentView: React.FC = () => {
   );
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
+  const [submissionStatus, setSubmissionStatus] =
+    useState<SubmissionStatus>("idle");
+  const [recipientResults, setRecipientResults] = useState<
+    Record<string, SplitPaymentRecipientResult>
+  >({});
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+
+  // Any edit to the payment shape invalidates the in-flight idempotency key
+  // and prior per-recipient results — they described a different payment.
+  const resetSubmissionState = () => {
+    setIdempotencyKey(null);
+    setSubmissionStatus("idle");
+    setRecipientResults({});
+    setSubmissionError(null);
+  };
 
   const updateAmounts = (newRecipients: Recipient[], amount: string) => {
     const total = parseFloat(amount) || 0;
@@ -58,6 +120,7 @@ const SplitPaymentView: React.FC = () => {
   };
 
   const handleAmountChange = (amount: string) => {
+    resetSubmissionState();
     setTotalAmount(amount);
     setRecipients((prev) => updateAmounts(prev, amount));
     if (amount && parseFloat(amount) > 0) {
@@ -66,6 +129,7 @@ const SplitPaymentView: React.FC = () => {
   };
 
   const addRecipient = () => {
+    resetSubmissionState();
     const newRecipient: Recipient = {
       id: Date.now().toString(),
       tag: "",
@@ -78,6 +142,7 @@ const SplitPaymentView: React.FC = () => {
 
   const removeRecipient = (id: string) => {
     if (recipients.length > 2) {
+      resetSubmissionState();
       const newRecipients = recipients.filter((r) => r.id !== id);
       setRecipients(updateAmounts(newRecipients, totalAmount));
     }
@@ -88,6 +153,7 @@ const SplitPaymentView: React.FC = () => {
     field: keyof Recipient,
     value: string | number
   ) => {
+    resetSubmissionState();
     const newRecipients = recipients.map((r) =>
       r.id === id ? { ...r, [field]: value } : r
     );
@@ -95,18 +161,71 @@ const SplitPaymentView: React.FC = () => {
   };
 
   const handleSplitTypeChange = (type: "equal" | "percentage" | "custom") => {
+    resetSubmissionState();
     setSplitType(type);
     setRecipients((prev) => updateAmounts(prev, totalAmount));
     setActiveStep(3);
   };
 
-  const handleSendPayment = () => {
+  const buildSplitPaymentRequest = (key: string): SplitPaymentRequest => ({
+    idempotency_key: key,
+    total_amount: Number.parseFloat(totalAmount) || 0,
+    split_type: splitType,
+    recipients: recipients.map((r) => ({ tag: r.tag, amount: r.amount })),
+  });
+
+  // Submits (or retries) the batch under a single idempotency key, so a
+  // network failure or a partial per-recipient failure can be safely
+  // resubmitted without double-paying recipients who already succeeded.
+  const submitSplitPayment = async (key: string) => {
     setIsProcessing(true);
-    // Simulate payment processing
-    setTimeout(() => {
+    setSubmissionStatus("submitting");
+    setSubmissionError(null);
+    try {
+      const response = await apiClient.post<SplitPaymentResponse>(
+        "/payments/split",
+        buildSplitPaymentRequest(key)
+      );
+
+      const resultsByTag: Record<string, SplitPaymentRecipientResult> = {};
+      response.recipients.forEach((result) => {
+        resultsByTag[result.tag] = result;
+      });
+      setRecipientResults(resultsByTag);
+      setSubmissionStatus(response.status);
+
+      if (response.status === "completed") {
+        toast.success("Split payment sent successfully!");
+      } else if (response.status === "partial") {
+        toast.error(
+          "Some payments failed. Retry to resend only the failed recipients."
+        );
+      } else {
+        toast.error("Split payment failed.");
+      }
+    } catch (error) {
+      setSubmissionStatus("failed");
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : "Network error — please retry.";
+      setSubmissionError(message);
+      toast.error(message);
+    } finally {
       setIsProcessing(false);
-      toast.success("Split payment sent successfully!");
-    }, 2000);
+    }
+  };
+
+  const handleSendPayment = () => {
+    const key = generateIdempotencyKey();
+    setIdempotencyKey(key);
+    setRecipientResults({});
+    submitSplitPayment(key);
+  };
+
+  const handleRetry = () => {
+    if (!idempotencyKey) return;
+    submitSplitPayment(idempotencyKey);
   };
 
   const totalPercentage = recipients.reduce((sum, r) => sum + r.percentage, 0);
@@ -308,10 +427,18 @@ const SplitPaymentView: React.FC = () => {
           </div>
 
           <div className="space-y-4">
-            {recipients.map((recipient, index) => (
+            {recipients.map((recipient, index) => {
+              const result = recipientResults[recipient.tag];
+              return (
               <div
                 key={recipient.id}
-                className="p-6 bg-gradient-to-br from-gray-50 to-white rounded-2xl border border-gray-200 hover:border-gray-300 transition-all duration-300 group"
+                className={`p-6 bg-gradient-to-br from-gray-50 to-white rounded-2xl border transition-all duration-300 group ${
+                  result?.status === "failed"
+                    ? "border-red-300"
+                    : result?.status === "success"
+                    ? "border-green-300"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
               >
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center space-x-3">
@@ -326,6 +453,27 @@ const SplitPaymentView: React.FC = () => {
                         Enter their Tagged tag
                       </div>
                     </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {result?.status === "success" && (
+                      <span className="flex items-center gap-1 text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-lg">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Sent
+                      </span>
+                    )}
+                    {result?.status === "failed" && (
+                      <span
+                        title={result.error}
+                        className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded-lg"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />{" "}
+                        {result.error || "Failed"}
+                      </span>
+                    )}
+                    {submissionStatus === "submitting" && !result && (
+                      <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
+                        Sending…
+                      </span>
+                    )}
                   </div>
                   {recipients.length > 2 && (
                     <button
@@ -399,7 +547,8 @@ const SplitPaymentView: React.FC = () => {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Enhanced Summary */}
@@ -481,6 +630,34 @@ const SplitPaymentView: React.FC = () => {
         </div>
       </div>
 
+      {/* Submission status banner */}
+      {(submissionStatus === "partial" || submissionStatus === "failed") && (
+        <div
+          className={`flex items-center justify-between gap-4 p-4 rounded-2xl border ${
+            submissionStatus === "partial"
+              ? "bg-amber-50 border-amber-200 text-amber-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+        >
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <XCircle className="w-5 h-5 flex-shrink-0" />
+            <span>
+              {submissionStatus === "partial"
+                ? "Some recipients failed to receive payment."
+                : submissionError || "Split payment failed."}
+            </span>
+          </div>
+          <button
+            onClick={handleRetry}
+            disabled={isProcessing}
+            className="flex items-center gap-2 bg-white border border-current px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap hover:bg-black/5 transition-colors"
+          >
+            <RefreshCcw className="w-4 h-4" />
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Send Button */}
       <button
         onClick={handleSendPayment}
@@ -495,6 +672,11 @@ const SplitPaymentView: React.FC = () => {
           <div className="flex items-center justify-center space-x-2">
             <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             <span className="text-lg">Sending Payments...</span>
+          </div>
+        ) : submissionStatus === "completed" ? (
+          <div className="flex items-center justify-center space-x-2">
+            <CheckCircle2 className="w-6 h-6" />
+            <span className="text-lg">Payment Sent</span>
           </div>
         ) : (
           <div className="flex items-center justify-center space-x-2">

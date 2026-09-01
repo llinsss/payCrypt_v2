@@ -1,6 +1,7 @@
 import { Worker, Queue } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import ReconciliationService from "../services/ReconciliationService.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 // ========== Queue ==========
 
@@ -15,6 +16,7 @@ export const reconciliationQueue = redisConnection
       },
     })
   : null;
+attachRedisErrorAlert(reconciliationQueue, "balance-reconciliation-queue");
 
 // ========== Worker ==========
 
@@ -50,6 +52,7 @@ export const reconciliationWorker = redisConnection
       },
     )
   : null;
+attachRedisErrorAlert(reconciliationWorker, "balance-reconciliation-worker");
 
 // ========== Event Handlers ==========
 

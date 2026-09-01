@@ -19,7 +19,7 @@ const Dispute = {
     },
 
     async create(disputeData) {
-        const [id] = await db("disputes").insert(disputeData);
+        const [{ id }] = await db("disputes").insert(disputeData).returning("id");
         return this.findById(id);
     },
 
@@ -209,12 +209,12 @@ const Dispute = {
     // ─── Dispute Comments ──────────────────────────────────
 
     async addComment(disputeId, userId, comment, isAdmin = false) {
-        const [id] = await db("dispute_comments").insert({
+        const [{ id }] = await db("dispute_comments").insert({
             dispute_id: disputeId,
             user_id: userId,
             comment,
             is_admin: isAdmin,
-        });
+        }).returning("id");
         return await db("dispute_comments")
             .select(
                 "dispute_comments.*",

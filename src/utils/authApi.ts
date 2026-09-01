@@ -106,6 +106,6 @@ export const mapBackendUserToAuthUser = (
     created_at: backendUser.created_at,
     updated_at: backendUser.updated_at,
     last_login: new Date().toISOString(),
-    role: (backendUser.role as "user" | "admin") || "user",
+    role: (backendUser.role as "user" | "admin" | "super_admin") || "user",
   };
 };

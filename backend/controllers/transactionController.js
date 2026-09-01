@@ -3,17 +3,56 @@ import User from "../models/User.js";
 import PaymentService from "../services/PaymentService.js";
 import ReceiptService from "../services/ReceiptService.js";
 import LockService from "../services/LockService.js";
+import IdempotencyService from "../services/IdempotencyService.js";
 import { processPaymentSchema, transactionHistoryQuerySchema } from "../schemas/payment.js";
 
 export const createTransaction = async (req, res) => {
   try {
+    const { amount, to_tag, recipient_tag, idempotency_key } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ error: "Amount must be greater than 0" });
+    }
+
+    if (!to_tag && !recipient_tag) {
+      return res.status(400).json({ error: "Recipient tag is required" });
+    }
+
+    if (idempotency_key) {
+      const existing = typeof IdempotencyService.get === "function"
+        ? await IdempotencyService.get(idempotency_key)
+        : await IdempotencyService.getRecord?.(idempotency_key);
+
+      if (existing) {
+        const data = existing.result ? JSON.parse(existing.result) : existing.response || existing;
+        return res.status(200).json({
+          success: true,
+          message: "Transaction already processed",
+          data,
+        });
+      }
+    }
+
     const transactionData = {
       ...req.body,
       user_id: req.user.id,
     };
 
     const transaction = await Transaction.create(transactionData);
-    res.status(201).json(transaction);
+
+    if (idempotency_key) {
+      if (typeof IdempotencyService.create === "function") {
+        await IdempotencyService.create(idempotency_key, transaction);
+      } else if (typeof IdempotencyService.saveResponse === "function") {
+        await IdempotencyService.saveResponse(idempotency_key, transaction);
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Transaction created successfully",
+      data: transaction,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -532,6 +571,70 @@ export const getPaymentHistory = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+};
+
+/**
+ * Estimate gas costs before transaction submission on EVM chains
+ * POST /api/v1/transactions/estimate-gas
+ */
+export const estimateTransactionGas = async (req, res) => {
+  try {
+    const { chain, recipientTag, amount, token, userBalance } = req.body;
+
+    if (!chain || !recipientTag || !amount || !token) {
+      return res.status(400).json({
+        error: "Missing required fields: chain, recipientTag, amount, token",
+      });
+    }
+
+    // Import gas estimation service
+    const MultiChainTransactionService = (await import("../services/MultiChainTransactionService.js")).default;
+
+    // Validate chain is EVM
+    if (!MultiChainTransactionService.isEVMChain(chain)) {
+      return res.status(400).json({
+        error: `Chain ${chain} is not supported for gas estimation`,
+        code: "UNSUPPORTED_CHAIN",
+      });
+    }
+
+    // Get gas estimation preview
+    const preview = await MultiChainTransactionService.getGasEstimationPreview(
+      { balance: userBalance, address: req.user?.walletAddress },
+      chain,
+      recipientTag,
+      amount,
+      token
+    );
+
+    if (!preview.success) {
+      return res.status(preview.code === "RPC_ERROR" ? 502 : 503).json({
+        error: preview.error,
+        code: preview.code,
+        message: "Unable to estimate gas. Please try again later.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      preview: preview.preview,
+      message: "Gas estimation completed",
+    });
+  } catch (error) {
+    console.error("Gas estimation error:", error);
+
+    if (error.statusCode === 502 || error.statusCode === 503) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        code: error.code,
+      });
+    }
+
+    res.status(500).json({
+      error: "Failed to estimate gas",
+      message: error.message,
     });
   }
 };

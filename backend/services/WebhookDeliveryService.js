@@ -25,17 +25,19 @@ const WebhookDeliveryService = {
    * Executes the actual HTTP POST transmission.
    * On failure, it transitions the event to the next step, DLQ or Retry.
    */
-  async executeDelivery({ eventId, webhookId, payload, url, secret, currentAttempt = 0 }) {
+  async executeDelivery({ eventId, eventKey, webhookId, payload, url, secret, currentAttempt = 0 }) {
     const signature = WebhookSignature.generateSignature(payload, secret);
 
     try {
       const response = await axios.post(url, payload, {
         timeout: TIMEOUT_MS,
-      maxRedirects: 0,
-      validateStatus: (status) => status >= 200 && status < 400,
+        maxRedirects: 0,
+        validateStatus: (status) => status >= 200 && status < 400,
+        headers: {
           "X-Webhook-Signature": signature,
           "X-Webhook-Event": payload.event,
           "X-Webhook-Delivery": eventId,
+          "X-Webhook-Event-Id": eventKey || eventId,
         },
       });
 
@@ -51,10 +53,10 @@ const WebhookDeliveryService = {
     } catch (err) {
       const status = err.response?.status ?? null;
       const errMsg = err.message;
-      
+
       console.error(`💥 Webhook ${webhookId} failed at attempt ${currentAttempt}: ${errMsg}`);
-      
-      await this.handleFailure({ eventId, webhookId, payload, url, secret, currentAttempt, errMsg, status });
+
+      await this.handleFailure({ eventId, eventKey, webhookId, payload, url, secret, currentAttempt, errMsg, status });
       
       // We throw specifically if this is expected by BullMQ (which it is for basic queues), 
       // but since we are handling retries MANUALLY pushing to the retry queue, we shouldn't throw 
@@ -67,7 +69,7 @@ const WebhookDeliveryService = {
   /**
    * Assess a failed delivery. Moves state toward Retry or DLQ.
    */
-  async handleFailure({ eventId, webhookId, payload, url, secret, currentAttempt, errMsg, status }) {
+  async handleFailure({ eventId, eventKey, webhookId, payload, url, secret, currentAttempt, errMsg, status }) {
     if (!eventId) return; // Cannot track if it was dispatched statelessly
     
     const nextAttempt = currentAttempt + 1;
@@ -99,6 +101,7 @@ const WebhookDeliveryService = {
         {
           webhookId,
           eventId,
+          eventKey,
           url,
           secret,
           payload,

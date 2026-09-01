@@ -22,7 +22,7 @@ const WebhookEvent = {
   },
 
   async create(eventData) {
-    const [id] = await db("webhook_events").insert({
+    const [{ id }] = await db("webhook_events").insert({
       ...eventData,
       created_at: db.fn.now(),
       updated_at: db.fn.now(),

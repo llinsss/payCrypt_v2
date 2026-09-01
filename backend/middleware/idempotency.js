@@ -63,8 +63,8 @@ export const idempotency = async (req, res, next) => {
         next();
     } catch (error) {
         console.error('Idempotency middleware error:', error);
-        next(); // Fallback: allow request if idempotency check fails?
-        // Or return 500? In financial systems, better to fail loud.
-        // For now, let's just proceed to not block traffic if Redis is down (Service degradation).
+        // Fail open: don't let a Redis outage block traffic. IdempotencyService
+        // already degrades gracefully per-call, so this only catches unexpected errors.
+        next();
     }
 };

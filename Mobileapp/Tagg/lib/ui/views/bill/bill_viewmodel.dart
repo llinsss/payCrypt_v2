@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:stacked/stacked.dart';
+import 'package:Tagg/app/app.locator.dart';
+import 'package:Tagg/services/api_service.dart';
 
 enum PaybillService {
   electricity,
@@ -10,6 +12,8 @@ enum PaybillService {
 }
 
 class BillViewModel extends BaseViewModel {
+  final _apiService = locator<ApiService>();
+
   String _selectedService = '';
   String _selectedProvider = '';
   String _firstFieldValue = '';
@@ -17,10 +21,15 @@ class BillViewModel extends BaseViewModel {
   final firstFieldController = TextEditingController();
   final secondFieldController = TextEditingController();
 
+  String _errorMessage = '';
+  String _successMessage = '';
+
   String get selectedService => _selectedService;
   String get selectedProvider => _selectedProvider;
   String get firstFieldValue => _firstFieldValue;
   String get secondFieldValue => _secondFieldValue;
+  String get errorMessage => _errorMessage;
+  String get successMessage => _successMessage;
 
   void selectService(String service) {
     _selectedService = service;
@@ -102,24 +111,46 @@ class BillViewModel extends BaseViewModel {
   }
 
   Future<void> processBill() async {
+    if (!canProceed()) {
+      _errorMessage = 'Please complete all required fields';
+      notifyListeners();
+      return;
+    }
+
     setBusy(true);
+    _errorMessage = '';
+    _successMessage = '';
 
     try {
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      final amount = double.tryParse(secondFieldController.text);
+      if (amount == null || amount <= 0) {
+        _errorMessage = 'Invalid amount';
+        notifyListeners();
+        return;
+      }
 
-      // Handle successful payment
-      print('Processing payment for $_selectedService');
-      print('Provider: $_selectedProvider');
-      print('Field 1: $_firstFieldValue');
-      print('Field 2: $_secondFieldValue');
+      final response = await _apiService.post('/bills/pay', {
+        'category': _selectedService.toLowerCase(),
+        'provider': _selectedProvider.toLowerCase(),
+        'phone': firstFieldController.text,
+        'amount': amount,
+      });
 
-      // You can add navigation or show success dialog here
+      if (response['status'] == 'success') {
+        _successMessage = response['data']['message'] ?? 'Bill payment successful';
+        _selectedService = '';
+        _selectedProvider = '';
+        firstFieldController.clear();
+        secondFieldController.clear();
+      } else {
+        _errorMessage = response['message'] ?? 'Payment failed';
+      }
     } catch (e) {
-      // Handle error
-      print('Error processing payment: $e');
+      _errorMessage = 'Error processing payment: $e';
+      print('Bill Payment Error: $e');
     } finally {
       setBusy(false);
+      notifyListeners();
     }
   }
 

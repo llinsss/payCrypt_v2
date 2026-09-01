@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:Tagg/app/app.locator.dart';
+import 'package:Tagg/app/app.router.dart';
 import 'package:Tagg/models/user_token_balance.dart';
 import 'package:Tagg/models/chains_models.dart';
 import 'package:Tagg/services/user_service.dart';
 import 'package:Tagg/services/wallet_service.dart';
 import 'package:Tagg/services/chains_service.dart';
 import 'package:Tagg/ui/common/app_assets.dart';
+import 'package:Tagg/ui/common/address_validator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:stacked/stacked.dart';
@@ -15,6 +18,7 @@ class WithdrawalViewModel extends BaseViewModel {
   final _userService = locator<UserService>();
   final _chainsService = locator<ChainsService>();
   final _snackbarService = locator<SnackbarService>();
+  final _navigationService = locator<NavigationService>();
 
   int selectedNavIndex = 1;
   int selectedWithdrawMethod = 0;
@@ -24,6 +28,9 @@ class WithdrawalViewModel extends BaseViewModel {
   final recipientTagController = TextEditingController();
   final walletAddressController = TextEditingController();
   final accountNumberController = TextEditingController();
+  // Optional note attached to the transaction (issue #476)
+  final notesController = TextEditingController();
+  static const int maxNotesLength = 100;
 
   // User token balances
   List<UserTokenBalance> _tokenBalances = [];
@@ -37,6 +44,23 @@ class WithdrawalViewModel extends BaseViewModel {
   UserTokenBalance? _selectedBalance;
   UserTokenBalance? get selectedBalance => _selectedBalance;
 
+  /// Chain identifier of the currently-selected balance, used to validate the
+  /// recipient wallet address against the correct chain format.
+  String? get selectedChain =>
+      _selectedBalance?.chainSymbol ?? _selectedBalance?.chainName;
+
+  /// Inline validation error for the recipient wallet address field (issue #447).
+  String? addressError;
+
+  /// Re-validate the wallet address as the user types and surface the error
+  /// inline. Cleared while the field is empty so we don't nag mid-typing.
+  void onWalletAddressChanged(String value) {
+    addressError = value.trim().isEmpty
+        ? null
+        : AddressValidator.validate(value, selectedChain);
+    notifyListeners();
+  }
+
   String networkFee = "1%";
   String platformFee = "0.5%";
 
@@ -49,12 +73,22 @@ class WithdrawalViewModel extends BaseViewModel {
   double get platformFeeAmount => _platformFeeAmount;
   double get totalFeeAmount => _totalFeeAmount;
 
+  Timer? _pollingTimer;
+  Map<String, dynamic>? _withdrawal;
+  Map<String, dynamic>? get withdrawal => _withdrawal;
+  String _currentStep = 'submitted';
+  String get currentStep => _currentStep;
+  bool _isTerminalState = false;
+  bool get isTerminalState => _isTerminalState;
+
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     amountController.dispose();
     recipientTagController.dispose();
     walletAddressController.dispose();
     accountNumberController.dispose();
+    notesController.dispose();
     super.dispose();
   }
 
@@ -139,8 +173,57 @@ class WithdrawalViewModel extends BaseViewModel {
   }
 
   void continueWithdrawal() {
-    // Handle next step
     debugPrint("Continue tapped with method $selectedWithdrawMethod");
+  }
+
+  void openStatusScreen(Map<String, dynamic> withdrawal) {
+    _withdrawal = withdrawal;
+    _currentStep = 'submitted';
+    _isTerminalState = false;
+    notifyListeners();
+    _navigationService.navigateTo(Routes.withdrawalStatusView);
+  }
+
+  void startStatusPolling(int withdrawalId) {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      try {
+        final data = await _userService.getWithdrawalStatus(withdrawalId);
+        _withdrawal = data;
+        _updateStepFromStatus(data['status']?.toString() ?? 'pending');
+        notifyListeners();
+        if (_isTerminalState) {
+          _pollingTimer?.cancel();
+        }
+      } catch (e) {
+        debugPrint('Withdrawal status polling failed: $e');
+      }
+    });
+  }
+
+  void _updateStepFromStatus(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        _currentStep = 'submitted';
+        _isTerminalState = false;
+        break;
+      case 'processing':
+        _currentStep = 'processing';
+        _isTerminalState = false;
+        break;
+      case 'completed':
+        _currentStep = 'sent';
+        _isTerminalState = true;
+        break;
+      case 'failed':
+      case 'reversed':
+        _currentStep = 'failed';
+        _isTerminalState = true;
+        break;
+      default:
+        _currentStep = 'submitted';
+        _isTerminalState = false;
+    }
   }
 
   /// Initialize and load user balances
@@ -252,8 +335,16 @@ class WithdrawalViewModel extends BaseViewModel {
         }
         break;
       case 1: // Crypto Wallet
-        if (walletAddressController.text.trim().isEmpty) {
+        final addr = walletAddressController.text.trim();
+        if (addr.isEmpty) {
           return 'Please enter wallet address';
+        }
+        // Enforce chain-specific address format before submitting.
+        final addrError = AddressValidator.validate(addr, selectedChain);
+        if (addrError != null) {
+          addressError = addrError;
+          notifyListeners();
+          return addrError;
         }
         break;
       case 2: // Bank Account
@@ -289,7 +380,7 @@ class WithdrawalViewModel extends BaseViewModel {
           onError('Crypto wallet withdrawal coming soon');
           break;
         case 2: // Bank Account
-          onError('Bank account withdrawal coming soon');
+          await _initiateBankWithdrawal(onSuccess: onSuccess, onError: onError);
           break;
       }
     } catch (e) {
@@ -297,6 +388,35 @@ class WithdrawalViewModel extends BaseViewModel {
       onError('Withdrawal failed: ${e.toString()}');
     } finally {
       setBusy(false);
+    }
+  }
+
+  Future<void> _initiateBankWithdrawal({
+    required Function(String message) onSuccess,
+    required Function(String message) onError,
+  }) async {
+    final amount = amountController.text.trim();
+    try {
+      final response = await _walletService.initiateBankWithdrawal(
+        tokenId: _selectedBalance!.tokenId,
+        bankAccountId: 1,
+        amountCrypto: double.parse(amount),
+      );
+
+      if (response is Map<String, dynamic> && response['data'] != null) {
+        final id = response['data']['id'];
+        if (id != null) {
+          amountController.clear();
+          accountNumberController.clear();
+          startStatusPolling(id);
+          _navigationService.navigateTo(Routes.withdrawalStatusView);
+          return;
+        }
+      }
+
+      onError('Withdrawal failed');
+    } catch (e) {
+      onError('Withdrawal failed: ${e.toString()}');
     }
   }
 
@@ -308,18 +428,21 @@ class WithdrawalViewModel extends BaseViewModel {
   }) async {
     final amount = amountController.text.trim();
     final receiverTag = recipientTagController.text.trim();
+    final notes = notesController.text.trim();
 
     try {
       final response = await _walletService.withdrawToTag(
         balanceId: _selectedBalance!.id,
         amount: amount,
         receiverTag: receiverTag,
+        notes: notes.isNotEmpty ? notes : null,
       );
 
       if (response.isSuccess) {
         // Clear form
         amountController.clear();
         recipientTagController.clear();
+        notesController.clear();
 
         // Reload balances
         await loadBalances();

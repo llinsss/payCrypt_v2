@@ -1,0 +1,76 @@
+# Full local development stack for the Tagg@d backend.
+#
+# Quick start:
+#   cp backend/.env.example backend/.env
+#   docker-compose up
+#
+# This brings up Postgres, Redis and the backend API with hot reload
+# (nodemon + a bind mount of ./backend). Database migrations run
+# automatically on backend startup (see backend/server.js).
+#
+# Bull Board (the queue admin UI) is served by the backend process itself at
+# /admin/running-queues — it's exposed on its own host port (3001) below in
+# addition to the main API port (3000) purely for convenience, since it's
+# not a separate service in this codebase.
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: ${DB_NAME:-taggedpay}
+      POSTGRES_USER: ${DB_USER:-taggedpay_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-taggedpay_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-taggedpay_user} -d ${DB_NAME:-taggedpay}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    env_file:
+      - backend/.env
+    environment:
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-taggedpay}
+      DB_USER: ${DB_USER:-taggedpay_user}
+      DB_PASSWORD: ${DB_PASSWORD:-taggedpay_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000" # API
+      - "3001:3000" # Bull Board UI — see note above
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:

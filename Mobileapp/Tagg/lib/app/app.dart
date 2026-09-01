@@ -2,6 +2,7 @@ import 'package:Tagg/ui/bottom_sheets/notice/notice_sheet.dart';
 import 'package:Tagg/ui/dialogs/info_alert/info_alert_dialog.dart';
 import 'package:Tagg/ui/views/home/home_view.dart';
 import 'package:Tagg/ui/views/startup/startup_view.dart';
+import 'package:Tagg/ui/views/onboarding/onboarding_view.dart';
 import 'package:stacked/stacked_annotations.dart';
 import 'package:stacked_services/stacked_services.dart';
 import 'package:Tagg/ui/views/signin/signin_view.dart';
@@ -26,14 +27,29 @@ import 'package:Tagg/ui/views/kyc_verification/kyc_verification_view.dart';
 import 'package:Tagg/ui/views/change_password/change_password_view.dart';
 import 'package:Tagg/ui/views/contact_support/contact_support_view.dart';
 import 'package:Tagg/ui/views/notifications/notifications_view.dart';
+import 'package:Tagg/ui/views/transaction_detail/transaction_detail_view.dart';
+import 'package:Tagg/ui/views/withdrawal_status/withdrawal_status_view.dart';
+import 'package:Tagg/ui/views/batch_payment/batch_payment_view.dart';
 import 'package:Tagg/services/transaction_service.dart';
 import 'package:Tagg/services/chains_service.dart';
+import 'package:Tagg/services/exchange_rate_service.dart';
+import 'package:Tagg/services/connectivity_service.dart';
+import 'package:Tagg/services/swap_service.dart';
+import 'package:Tagg/services/batch_payment_service.dart';
+import 'package:Tagg/services/biometric_service.dart';
+import 'package:Tagg/services/deep_link_service.dart';
+import 'package:Tagg/services/notification_service.dart';
+import 'package:Tagg/services/push_notification_service.dart';
+import 'package:Tagg/services/scheduled_payment_service.dart';
+import 'package:Tagg/services/websocket_service.dart';
+import 'package:Tagg/services/language_service.dart';
+import 'package:Tagg/ui/views/scheduled_payments/scheduled_payments_view.dart';
 // @stacked-import
-
 @StackedApp(
   routes: [
     MaterialRoute(page: HomeView),
     MaterialRoute(page: StartupView),
+    MaterialRoute(page: OnboardingView),
     MaterialRoute(page: HomeView),
     MaterialRoute(page: SigninView),
     MaterialRoute(page: SignupView),
@@ -52,6 +68,10 @@ import 'package:Tagg/services/chains_service.dart';
     MaterialRoute(page: ChangePasswordView),
     MaterialRoute(page: ContactSupportView),
     MaterialRoute(page: NotificationsView),
+    MaterialRoute(page: TransactionDetailView),
+    MaterialRoute(page: BatchPaymentView),
+    MaterialRoute(page: WithdrawalStatusView),
+    MaterialRoute(page: ScheduledPaymentsView),
 // @stacked-route
   ],
   dependencies: [
@@ -65,6 +85,17 @@ import 'package:Tagg/services/chains_service.dart';
     LazySingleton(classType: WalletService),
     LazySingleton(classType: TransactionService),
     LazySingleton(classType: ChainsService),
+    LazySingleton(classType: ConnectivityService),
+    LazySingleton(classType: SwapService),
+    LazySingleton(classType: ExchangeRateService),
+    LazySingleton(classType: BatchPaymentService),
+    LazySingleton(classType: BiometricService),
+    LazySingleton(classType: DeepLinkService),
+    LazySingleton(classType: NotificationService),
+    LazySingleton(classType: PushNotificationService),
+    LazySingleton(classType: ScheduledPaymentService),
+    LazySingleton(classType: WebSocketService),
+    LazySingleton(classType: LanguageService),
 // @stacked-service
   ],
   bottomsheets: [

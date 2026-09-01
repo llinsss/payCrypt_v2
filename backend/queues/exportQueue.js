@@ -1,6 +1,8 @@
 import { Queue, Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import ExportService from "../services/ExportService.js";
+import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { instrumentBullWorker } from "../observability/sentry.js";
 
 export const exportQueue = redisConnection
   ? new Queue("transaction-export", {
@@ -13,6 +15,7 @@ export const exportQueue = redisConnection
       },
     })
   : null;
+attachRedisErrorAlert(exportQueue, "transaction-export-queue");
 
 export const exportWorker =
   redisConnection &&
@@ -26,6 +29,9 @@ export const exportWorker =
       concurrency: 2,
     }
   );
+attachRedisErrorAlert(exportWorker, "transaction-export-worker");
+
+if (exportWorker) instrumentBullWorker(exportWorker, "transaction-export");
 
 if (exportWorker) {
   exportWorker.on("completed", (job) =>

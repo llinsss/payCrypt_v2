@@ -5,6 +5,7 @@ import Transaction from "./Transaction.js";
 import Notification from "./Notification.js";
 import Chain from "./Chain.js";
 import Wallet from "./Wallet.js";
+import MultiSigWallet from "./MultiSigWallet.js";
 import Kyc from "./Kyc.js";
 import BankAccount from "./BankAccount.js";
 import StellarTag from "./StellarTag.js";
@@ -15,6 +16,7 @@ import WebhookEvent from "./WebhookEvent.js";
 import ScheduledPayment from "./ScheduledPayment.js";
 import AuditLog from "./AuditLog.js";
 import Dispute from "./Dispute.js";
+import DeviceToken from "./DeviceToken.js";
 
 export {
   User,
@@ -24,6 +26,7 @@ export {
   Notification,
   Chain,
   Wallet,
+  MultiSigWallet,
   Kyc,
   BankAccount,
   StellarTag,
@@ -34,4 +37,5 @@ export {
   ScheduledPayment,
   AuditLog,
   Dispute,
+  DeviceToken,
 };

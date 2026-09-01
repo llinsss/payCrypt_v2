@@ -18,12 +18,14 @@ class SignupViewModel extends BaseViewModel {
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmPasswordController =
       TextEditingController();
+  final TextEditingController addressController = TextEditingController();
 
   // Focus Nodes
   final FocusNode tagFocusNode = FocusNode();
   final FocusNode emailFocusNode = FocusNode();
   final FocusNode passwordFocusNode = FocusNode();
   final FocusNode confirmPasswordFocusNode = FocusNode();
+  final FocusNode addressFocusNode = FocusNode();
 
   // State
   bool _agreeToTerms = false;
@@ -47,7 +49,7 @@ class SignupViewModel extends BaseViewModel {
       final registerRequest = RegisterRequest(
         email: emailController.text.trim(),
         tag: tagController.text.trim(),
-        address: '', // TODO: Add address field to signup form if needed
+        address: addressController.text.trim(),
         password: passwordController.text,
         role: 'user',
       );
@@ -75,17 +77,18 @@ class SignupViewModel extends BaseViewModel {
     setBusy(true);
 
     try {
-      // TODO: Implement Google Sign In
-      await Future.delayed(const Duration(seconds: 1));
+      final authResponse = await _authService.loginWithGoogle();
 
       _snackbarService.showSnackbar(
-        message: 'Google Sign In coming soon!',
+        message: 'Account created successfully with Google!',
         duration: const Duration(seconds: 2),
       );
+
+      await _navigationService.replaceWith(Routes.bottomnavView);
     } catch (e) {
       _dialogService.showDialog(
-        title: 'Error',
-        description: 'Failed to sign in with Google. Please try again.',
+        title: 'Google Sign In Failed',
+        description: e.toString().replaceFirst('Exception: ', ''),
       );
     } finally {
       setBusy(false);
@@ -159,11 +162,13 @@ class SignupViewModel extends BaseViewModel {
     emailController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
+    addressController.dispose();
 
     tagFocusNode.dispose();
     emailFocusNode.dispose();
     passwordFocusNode.dispose();
     confirmPasswordFocusNode.dispose();
+    addressFocusNode.dispose();
 
     super.dispose();
   }

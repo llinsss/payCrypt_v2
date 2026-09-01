@@ -9,6 +9,7 @@ import {
 } from "../models/index.js";
 import { from18Decimals, to18Decimals } from "../utils/amount.js";
 import secureRandomString from "../utils/random-string.js";
+import { validateAddress } from "../utils/validateAddress.js";
 import redis from "../config/redis.js";
 import { NGN_KEY } from "../config/initials.js";
 import { ethers } from "ethers";
@@ -242,6 +243,13 @@ export const send_to_wallet = async (req, res) => {
     const sender_address = balance.address;
     const sender_tag = user.tag;
 
+    // Enforce chain-specific address format BEFORE any on-chain tx or DB record
+    // is created — sending to a wrong-chain address permanently loses funds.
+    const addressCheck = validateAddress(receiver_address, chain);
+    if (!addressCheck.valid) {
+      return res.status(400).json({ error: addressCheck.error });
+    }
+
     // Acquire lock for sender
     const lockIdentifier = await LockService.acquireUserLock(user.id);
     if (!lockIdentifier) {
@@ -323,6 +331,65 @@ export const send_to_wallet = async (req, res) => {
     }
   } catch (error) {
     console.error("Transfer Error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+export const getAllowances = async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { chain } = req.query;
+
+    if (!address) {
+      return res.status(400).json({ error: "Wallet address required" });
+    }
+
+    const ERC20AllowanceService = (await import("../services/ERC20AllowanceService.js")).default;
+
+    if (chain) {
+      const wallet = await Wallet.findByAddress(address);
+      if (!wallet) {
+        return res.status(404).json({ error: "Wallet not found" });
+      }
+
+      const tokens = await Token.getByChain(chain);
+      const allowances = await ERC20AllowanceService.getMultipleAllowances(address, chain, tokens.map(t => t.id));
+
+      return res.json({
+        success: true,
+        data: {
+          wallet: address,
+          chain,
+          allowances,
+        },
+      });
+    }
+
+    const wallet = await Wallet.findByAddress(address);
+    if (!wallet) {
+      return res.status(404).json({ error: "Wallet not found" });
+    }
+
+    const tokens = await Token.getAll();
+    const chains = ["base", "lisk", "flow", "u2u"];
+
+    const allAllowances = {};
+    for (const c of chains) {
+      const allowances = await ERC20AllowanceService.getMultipleAllowances(address, c, tokens.map(t => t.id));
+      if (allowances.length > 0) {
+        allAllowances[c] = allowances;
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        wallet: address,
+        allowances: allAllowances,
+      },
+    });
+  } catch (error) {
+    console.error("Allowance check error:", error);
     return res.status(500).json({ error: error.message });
   }
 };

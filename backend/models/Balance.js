@@ -74,10 +74,15 @@ const Balance = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "tokens.price as token_price",
-        "users.currency_preference"
+        "tokens.chain as token_chain",
+        "users.currency_preference",
+        "chains.id as chain_id",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol"
       )
       .leftJoin("users", "balances.user_id", "users.id")
       .leftJoin("tokens", "balances.token_id", "tokens.id")
+      .leftJoin("chains", "tokens.chain", "chains.symbol")
       .where("balances.id", id)
       .first();
 
@@ -153,14 +158,25 @@ const Balance = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "tokens.price as token_price",
-        "users.currency_preference"
+        "tokens.chain as token_chain",
+        "users.currency_preference",
+        "chains.id as chain_id",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol"
       )
       .leftJoin("users", "balances.user_id", "users.id")
       .leftJoin("tokens", "balances.token_id", "tokens.id")
+      .leftJoin("chains", "tokens.chain", "chains.symbol")
       .orderBy("balances.created_at", "desc")
       .limit(limit)
       .offset(offset);
   },
+
+  async countAll() {
+    const result = await db("balances").count("* as total").first();
+    return result ? Number(result.total) : 0;
+  },
+
   async findByUserId(userId) {
     // Try cache first
     const cacheKey = cacheKeys.balanceByUser(userId);
@@ -191,10 +207,15 @@ const Balance = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "tokens.price as token_price",
-        "users.currency_preference"
+        "tokens.chain as token_chain",
+        "users.currency_preference",
+        "chains.id as chain_id",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol"
       )
       .leftJoin("users", "balances.user_id", "users.id")
       .leftJoin("tokens", "balances.token_id", "tokens.id")
+      .leftJoin("chains", "tokens.chain", "chains.symbol")
       .where("balances.user_id", userId);
 
     // Cache the result
@@ -238,10 +259,15 @@ const Balance = {
         "tokens.symbol as token_symbol",
         "tokens.logo_url as token_logo_url",
         "tokens.price as token_price",
-        "users.currency_preference"
+        "tokens.chain as token_chain",
+        "users.currency_preference",
+        "chains.id as chain_id",
+        "chains.name as chain_name",
+        "chains.symbol as chain_symbol"
       )
       .leftJoin("users", "balances.user_id", "users.id")
       .leftJoin("tokens", "balances.token_id", "tokens.id")
+      .leftJoin("chains", "tokens.chain", "chains.symbol")
       .where("balances.user_id", userId)
       .orderBy("balances.created_at", "desc")
       .limit(limit)
