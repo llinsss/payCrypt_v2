@@ -360,6 +360,26 @@ router.get("/exchange-rates", publicCache(900), controller.get_exchange_rates);
 
 /**
  * @swagger
+ * /api/exchange-rates/freshness:
+ *   get:
+ *     summary: Report freshness of the cached exchange rates
+ *     description: >
+ *       Returns the age and staleness classification of the currently cached
+ *       exchange rates without triggering a provider fetch. `freshness` is one
+ *       of `fresh`, `stale`, `expired`, or `unknown`.
+ *     tags: [General]
+ *     responses:
+ *       200:
+ *         description: Freshness metadata
+ */
+router.get(
+  "/exchange-rates/freshness",
+  publicCache(60),
+  controller.get_exchange_rate_freshness,
+);
+
+/**
+ * @swagger
  * /api/exchange-rates/{currency}:
  *   get:
  *     summary: Get exchange rate for a specific currency
