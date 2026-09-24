@@ -14,7 +14,7 @@ try {
   process.exit(1);
 }
 
-const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: HousekeepingService }, { default: SocketService }, { initApollo }] = await Promise.all([
+const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: HousekeepingService }, { default: SocketService }, { initApollo }, { tokenPriceRefresh, ngnRateRefresh }] = await Promise.all([
   import("./app.js"),
   import("./config/database.js"),
   import("./config/redis.js"),
@@ -23,6 +23,7 @@ const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: 
   import("./services/HousekeepingService.js"),
   import("./services/SocketService.js"),
   import("./graphql/apollo.js"),
+  import("./config/initials.js"),
 ]);
 
 const PORT = process.env.PORT || 3000;
@@ -148,6 +149,8 @@ const isProduction = process.env.NODE_ENV === "production";
 
       // Clear background timers (audit cleanup, export cleanup, USSD)
       for (const id of activeTimers) clearInterval(id);
+      tokenPriceRefresh.stop();
+      ngnRateRefresh.stop();
       console.log("  Graceful shutdown complete");
 
       process.exit(0);
@@ -195,6 +198,11 @@ const isProduction = process.env.NODE_ENV === "production";
     }, TWENTY_FOUR_HOURS));
 
     console.log(`Audit log retention: ${retentionDays} days (cleanup every 24h)`);
+
+    // Self-scheduling: the next refresh starts only after the previous one
+    // settles, so slow upstream calls never overlap (see config/initials.js).
+    tokenPriceRefresh.start();
+    ngnRateRefresh.start();
 
     activeTimers.push(setInterval(async () => {
       try {
