@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "type-check": "tsc --noEmit",
-    "test:contracts": "vitest run src/utils/apiContracts.test.ts"
+    "test:contracts": "vitest run src/utils/apiContracts.test.ts src/utils/billsApi.test.ts src/components/Bills"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
