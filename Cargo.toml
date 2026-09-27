@@ -20,6 +20,10 @@ soroban-token-sdk = "21.7.6"
 # idempotency/replay protection, and operational metrics.
 contract-health = { path = "crates/contract-health" }
 
+# Database retention policy for raw Soroban events (#862): deterministic
+# retention/pruning with idempotent re-runs and crash recovery.
+event-retention = { path = "crates/event-retention" }
+
 [profile.release]
 opt-level = "z"
 lto = true
