@@ -27,6 +27,10 @@ tracing = "0.1"
 # replay-safe, crash-recoverable persistence of routing/upgrade state.
 indexer-routing = { path = "crates/indexer-routing" }
 
+# Ledger gap alerts for Rust indexers: deterministic gap detection with
+# persisted, idempotent alert state that survives restarts.
+indexer-ledger-gap = { path = "crates/indexer-ledger-gap" }
+
 [profile.release]
 opt-level = "z"
 lto = true
