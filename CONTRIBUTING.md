@@ -1,149 +1,105 @@
 # Contributing
 
-Thanks for your interest in contributing! This document covers the basics of
-getting set up, the conventions we follow, and the security expectations for
-changes that touch on-chain logic.
+Thanks for your interest in contributing! This document describes how to set up
+the project, run the checks, and submit changes.
 
 ## Getting started
 
-1. Fork the repository and create a feature branch.
-2. Install the toolchain described in the project README.
-3. Make your change, keeping it focused on a single issue.
-4. Run the existing test suite before opening a pull request.
-5. Open a pull request that references the issue it resolves.
+1. Fork the repository and create a feature branch off `main`.
+2. Make your changes, keeping commits focused and scoped to a single issue.
+3. Run the local checks (see below) before opening a pull request.
+4. Open a pull request describing the change and linking the relevant issue.
 
-## Pull request expectations
+## Local checks
 
-- Keep changes surgical and scoped to the issue being addressed.
-- Do not refactor unrelated code or reformat files you are not otherwise touching.
-- Add or update tests for any behavior change.
-- Update documentation when you change a public interface or a security-relevant
-  assumption.
+Run the standard checks before submitting:
 
-## Security: Soroban authorization and threat model
+```sh
+# Rust / Soroban
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+```
 
-Any change that touches authorization, admin controls, token movement, or
-upgrade paths must be reviewed against the threat model below. The threat model
-is contract-level: it describes the authority behind each privileged action, the
-assumptions we rely on, what is explicitly out of scope, and the test that
-enforces each invariant.
+## Rust contract documentation generation
 
-### Authorization contexts
+Rust/Soroban contracts in this repository generate their API documentation
+deterministically so that reviewers and downstream consumers can verify that a
+released artifact matches the source it was built from. The generation flow is
+pinned, validated, and reversible.
 
-Soroban authorization is expressed through `require_auth` calls on addresses
-(accounts or contracts). A contract must never assume that a caller is
-authorized simply because it was invoked; authority is established only by an
-explicit `require_auth` on the relevant address within the current invocation
-context.
+### Pinned inputs
 
-- **Account authority** — an `Address` representing a user account. The account
-  must sign the authorization entry (or have it delegated) for the call to
-  succeed.
-- **Contract authority** — an `Address` representing another contract. The
-  authorizing contract must itself call `require_auth` on the address, which
-  means the authority ultimately traces back to an account or a contract that
-  was authorized in the same call tree.
-- **Invocation context** — authorization entries are scoped to a specific
-  contract, function, and argument set. Reusing an entry for a different call is
-  not valid.
+Documentation builds must be reproducible. Pin the following inputs and record
+them alongside the generated artifact:
 
-### Privileged actions and their authority
+- **Toolchain**: the exact Rust toolchain from `rust-toolchain.toml`
+  (channel + components). Do not rely on a floating `stable`.
+- **Dependencies**: the committed `Cargo.lock`. Documentation is generated with
+  `--locked` so the resolved dependency graph cannot drift.
+- **Generator**: the `cargo-doc` / `rustdoc` version shipped with the pinned
+  toolchain, plus any documentation tooling pinned in the workspace manifest.
 
-| Privileged action | Required authority | Enforced by |
-| --- | --- | --- |
-| Initialize the contract | Deployer / initializer address | `require_auth` on the initializer during `initialize` |
-| Change admin | Current admin | `require_auth` on the current admin |
-| Pause / unpause | Admin | `require_auth` on the admin |
-| Upgrade the contract | Admin | `require_auth` on the admin before `update_current_contract_wasm` |
-| Move user funds | The owning account | `require_auth` on the account whose balance changes |
-| Mint / burn (if applicable) | Admin or the token contract itself | `require_auth` on the minting authority |
-| Set fees / parameters | Admin | `require_auth` on the admin |
+Any change to a pinned input is a change to the artifact identity and must be
+called out in the pull request.
 
-If a new privileged action is added, it must be added to this table together
-with the authority that gates it and the test that proves the gate holds.
+### Artifact identity
 
-### Cross-contract calls
+Generated documentation is content-addressed so that identical inputs always
+produce an identical identity:
 
-- A cross-contract call does **not** inherit the caller's authority. The callee
-  must perform its own `require_auth` checks.
-- When our contract calls into another contract, we must treat the callee as
-  untrusted: validate return values, do not assume the callee will not re-enter,
-  and do not assume the callee's state is consistent with ours.
-- When another contract calls into us, we must not assume the caller is
-  trustworthy. Every state-changing entry point must re-establish authority.
-- Re-entrancy: any entry point that makes an external call must be safe to
-  re-enter, or must be guarded so that it cannot be.
+- Generate docs into a clean output directory.
+- Compute a deterministic digest over the generated files (sorted paths, file
+  contents, and the recorded pinned inputs).
+- Publish the digest as the artifact identity (e.g. `docs-<digest>`), and store
+  it with the release metadata.
 
-### Admin power
+Because the digest covers both the generated content and the pinned inputs, a
+mismatch between a released artifact and a rebuild from the same commit is a
+hard failure, not a warning.
 
-- The admin is a single point of trust. Compromise of the admin key is a
-  compromise of the contract's privileged surface.
-- Admin actions must be explicit, authorized, and observable (events).
-- Admin cannot move user funds unless the user has separately authorized the
-  movement.
-- Admin rotation must be authorized by the current admin and must emit an event.
+### Environment validation
 
-### Token behavior
+Before generating or releasing documentation, validate the environment:
 
-- Token transfers must be authorized by the account whose balance decreases.
-- The contract must not assume a token is well-behaved: transfers may fail, may
-  return unexpected values, or may invoke callbacks.
-- Balances must be updated before external calls where re-entrancy could
-  otherwise allow double-spending.
-- Fee-on-transfer or rebasing tokens are out of scope unless explicitly
-  supported and tested.
+- The active toolchain matches `rust-toolchain.toml`.
+- `Cargo.lock` is present and unmodified relative to the commit being built.
+- The output directory is clean (no stale artifacts from a previous run).
+- Required documentation tooling is available and reports the expected version.
 
-### Replay
+Validation failures abort the run before any artifact is produced or released.
 
-- Authorization entries are bound to a specific invocation (contract, function,
-  arguments) and to a ledger window. They must not be replayable across
-  different calls or after expiry.
-- Any signature or nonce scheme we introduce must include a domain separator and
-  a monotonically increasing nonce or an expiry, and must be covered by a test
-  that attempts replay.
+### Release approval
 
-### Upgrades
+Documentation artifacts are released only after:
 
-- Upgrades are authorized by the admin and must emit an event.
-- Upgrade logic must not be reachable without `require_auth` on the admin.
-- Storage layout changes must be handled explicitly; do not assume that new code
-  can read old storage without a migration path.
-- The upgrade path must be covered by a test that verifies unauthorized callers
-  cannot upgrade.
+- Environment validation passes.
+- The artifact identity is computed and recorded.
+- A reviewer approves the release, confirming the identity matches the source
+  commit and the pinned inputs.
 
-### Assumptions
+### Rollback
 
-- The Stellar network and Soroban host enforce authorization correctly.
-- The admin key is held securely and is not shared.
-- Callers are adversarial; we do not trust any address by default.
-- Ledger time and sequence numbers are monotonic and provided by the host.
+If a released documentation artifact is found to be incorrect:
 
-### Out of scope
+1. Revert the release to the previously approved artifact identity.
+2. Re-run generation from the affected commit to confirm the failure is
+   reproducible.
+3. Fix the source or pinned inputs, regenerate, and re-approve through the
+   normal release flow.
 
-- Compromise of the Stellar network or the Soroban host itself.
-- Compromise of a user's signing device or key management.
-- Economic attacks that do not exploit a contract-level authorization flaw.
-- Behavior of third-party contracts beyond the assumptions we document here.
+Rollback restores the last known-good identity; it never mutates a published
+artifact in place.
 
-### Invariants and their tests
+### Tests
 
-Every invariant below must be linked to a test that enforces it. When you add an
-invariant, add the corresponding test in the same pull request.
+Documentation generation is covered by tests for the success path, boundary
+inputs, unauthorized release attempts, replay of an existing identity, and
+failure paths (missing lockfile, toolchain mismatch, dirty output directory).
+Add or update tests alongside any change to the generation flow.
 
-| Invariant | Test |
-| --- | --- |
-| Only the admin can change the admin | `test_admin_rotation_requires_admin_auth` |
-| Only the admin can pause / unpause | `test_pause_requires_admin_auth` |
-| Only the admin can upgrade | `test_upgrade_requires_admin_auth` |
-| Only the owner can move their funds | `test_transfer_requires_owner_auth` |
-| Unauthorized callers cannot initialize | `test_initialize_requires_auth` |
-| Authorization entries cannot be replayed | `test_authorization_replay_rejected` |
-| Cross-contract calls re-establish authority | `test_cross_contract_call_requires_auth` |
-| Admin actions emit events | `test_admin_action_emits_event` |
+## Submitting changes
 
-If a test name changes, update this table in the same pull request.
-
-## Reporting a vulnerability
-
-Please do not open a public issue for security vulnerabilities. Report them
-privately to the maintainers so a fix can be prepared before disclosure.
+- Keep pull requests scoped to a single issue.
+- Update documentation when behavior changes.
+- Ensure all local checks pass before requesting review.

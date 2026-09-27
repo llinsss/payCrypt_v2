@@ -16,6 +16,21 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
+# Pinned inputs for deterministic Rust contract documentation generation (#868).
+# The docgen toolchain and its dependencies are pinned so that generated
+# documentation artifacts are byte-for-byte reproducible across environments.
+[workspace.metadata.docgen]
+toolchain = "1.79.0"
+rustdoc-args = ["--cfg", "docsrs", "--document-private-items"]
+features = ["docs"]
+# Deterministic artifact identity: docs are hashed over the pinned inputs below.
+artifact-hash-algorithm = "sha256"
+artifact-version = "1"
+# Environment validation performed before generation/release.
+required-env = ["DOCGEN_OUTPUT_DIR"]
+release-approval = "manual"
+rollback = "restore-previous-artifact"
+
 [profile.release]
 opt-level = "z"
 lto = true

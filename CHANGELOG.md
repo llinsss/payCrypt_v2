@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust/Soroban contract documentation generation with pinned toolchain and
+  dependency inputs, deterministic artifact identity (content hashing and
+  versioning), pre-generation environment validation, release approval, and
+  documented rollback behavior (#868).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are
