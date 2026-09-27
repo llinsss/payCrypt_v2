@@ -24,6 +24,10 @@ contract-health = { path = "crates/contract-health" }
 # retention/pruning with idempotent re-runs and crash recovery.
 event-retention = { path = "crates/event-retention" }
 
+# Signed Rust contract release manifests (#863): pinned inputs, deterministic
+# artifact identity, environment validation, release approval, and rollback.
+release-manifest = { path = "crates/release-manifest" }
+
 [profile.release]
 opt-level = "z"
 lto = true
