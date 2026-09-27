@@ -294,3 +294,6 @@ Immutable transaction history for all tag operations
 
 <!-- handsoff-issue-728 -->
 - #728: Validate contract dependencies at initialization
+
+<!-- handsoff-issue-729 -->
+- #729: Add Rust contract initialization guards
