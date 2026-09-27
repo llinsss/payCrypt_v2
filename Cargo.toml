@@ -49,6 +49,28 @@ release-approval = "manual"
 # Rollback behavior when a released changelog artifact is rejected.
 rollback = "restore-previous-artifact"
 
+# Local development bootstrap for Rust/Soroban contracts (#870).
+# Pinned inputs, artifact identity, environment validation, release approval,
+# and rollback behavior for the local dev bootstrap are declared here so the
+# bootstrap is deterministic and machine-checkable.
+[workspace.metadata.bootstrap]
+# Pinned inputs: the bootstrap provisions exactly these toolchain/contract versions.
+toolchain = "1.79.0"
+soroban-sdk = "21.7.6"
+soroban-token-sdk = "21.7.6"
+soroban-cli = "21.7.6"
+# Local network used by the bootstrap for local-network tests.
+local-network = "standalone"
+# Artifact identity: the bootstrap artifact is hashed over the pinned inputs.
+artifact-hash-algorithm = "sha256"
+artifact-version = "1"
+# Environment validation performed before the bootstrap runs.
+required-env = ["SOROBAN_NETWORK", "SOROBAN_RPC_URL", "SOROBAN_NETWORK_PASSPHRASE"]
+# Release approval gate for promoting a bootstrapped environment.
+release-approval = "manual"
+# Rollback behavior when a bootstrapped environment is rejected.
+rollback = "restore-previous-artifact"
+
 [profile.release]
 opt-level = "z"
 lto = true

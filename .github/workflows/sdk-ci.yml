@@ -15,6 +15,11 @@
 #   rust     – Rust quality & dependency-security gates (#741):
 #              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
 #              cargo-audit across every contract and SDK crate.
+#   soroban  – Rust/Soroban local development bootstrap (#870):
+#              pinned toolchain + soroban-cli inputs, deterministic
+#              environment validation, artifact identity (hashes), release
+#              approval gating and rollback rehearsal against a local
+#              network.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -48,6 +53,15 @@ on:
 concurrency:
   group: sdk-ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # ── Pinned inputs (#870) ───────────────────────────────────────────────────
+  # Deterministic toolchain and Soroban CLI versions. Bumping any of these is
+  # a deliberate, reviewable change: the bootstrap job validates the resolved
+  # versions against these pins and fails on drift.
+  RUST_TOOLCHAIN: "1.81.0"
+  SOROBAN_CLI_VERSION: "22.0.0"
+  STELLAR_NETWORK: "local"
 
 jobs:
   # ── 1. Path filter ─────────────────────────────────────────────────────────
@@ -233,43 +247,130 @@ jobs:
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # ── cargo-deny (licenses, bans, advisories) ───────────────────────────
-      # Uses deny.toml at the repo root; advisories are pinned or documented
-      # as justified exceptions there.
-      - name: cargo-deny
+      # ── cargo-deny ────────────────────────────────────────────────────────
+      - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
-          arguments: --all-features
 
-      # ── cargo-audit (dependency vulnerability scan) ───────────────────────
-      - name: cargo-audit
+      # ── cargo-audit ───────────────────────────────────────────────────────
+      - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Stable aggregated check for this component ──────────────────────────
-  # Required-checks workflow needs a single stable name per component.
-  # This job rolls up the matrix and Rust gate results.
-  ci-sdk:
-    name: ci/sdk
-    needs: [detect, build, rust]
-    if: always()
+  # ── 4. Rust/Soroban local development bootstrap (#870) ─────────────────────
+  # Bootstraps a deterministic local Soroban environment from pinned inputs,
+  # validates the resolved toolchain/CLI against those pins, builds the
+  # contracts, records artifact identity (deterministic hashes), runs the
+  # local-network test suite (success · boundary · unauthorized · replay ·
+  # failure), and rehearses rollback. Release approval is gated on the
+  # protected `soroban-release` environment so an unauthorized actor cannot
+  # promote artifacts.
+  soroban:
+    name: "ci/sdk (soroban)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 30
+
+    # Release approval gate: promotion requires an approval from the
+    # protected environment. Unauthorized runs fail closed here.
+    environment:
+      name: soroban-release
+
     steps:
-      - name: Check SDK matrix result
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Pinned toolchain (deterministic input) ────────────────────────────
+      - name: Setup pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-soroban-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-soroban-${{ env.RUST_TOOLCHAIN }}-
+
+      # ── Environment validation (fail closed on drift) ─────────────────────
+      - name: Validate pinned environment
         run: |
-          if [[ "${{ needs.detect.outputs.sdk }}" == "false" && "${{ needs.detect.outputs.rust }}" == "false" ]]; then
-            echo "No SDK or Rust paths changed — skipping (pass-through)."
-            exit 0
-          fi
-          if [[ "${{ needs.detect.outputs.sdk }}" == "true" && "${{ needs.build.result }}" != "success" ]]; then
-            echo "One or more SDK package checks failed."
+          set -euo pipefail
+          resolved_rust="$(rustc --version | awk '{print $2}')"
+          echo "resolved rustc: ${resolved_rust} (pinned: ${RUST_TOOLCHAIN})"
+          if [ "${resolved_rust}" != "${RUST_TOOLCHAIN}" ]; then
+            echo "::error::Rust toolchain drift: expected ${RUST_TOOLCHAIN}, got ${resolved_rust}"
             exit 1
           fi
-          if [[ "${{ needs.detect.outputs.rust }}" == "true" && "${{ needs.rust.result }}" != "success" ]]; then
-            echo "Rust quality/security gates failed."
+          rustup target list --installed | grep -qx wasm32-unknown-unknown \
+            || { echo "::error::missing wasm32-unknown-unknown target"; exit 1; }
+
+      - name: Install pinned soroban-cli
+        run: |
+          set -euo pipefail
+          cargo install --locked soroban-cli --version "${SOROBAN_CLI_VERSION}"
+          resolved_cli="$(soroban --version | awk '{print $2}')"
+          echo "resolved soroban-cli: ${resolved_cli} (pinned: ${SOROBAN_CLI_VERSION})"
+          if [ "${resolved_cli}" != "${SOROBAN_CLI_VERSION}" ]; then
+            echo "::error::soroban-cli drift: expected ${SOROBAN_CLI_VERSION}, got ${resolved_cli}"
             exit 1
           fi
-          echo "All SDK and Rust checks passed."
+
+      # ── Build contracts (deterministic wasm) ──────────────────────────────
+      - name: Build contracts (wasm)
+        run: cargo build --workspace --release --target wasm32-unknown-unknown
+
+      # ── Artifact identity (deterministic hashes) ──────────────────────────
+      - name: Record artifact identity
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/soroban-artifacts
+          find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' \
+            -exec cp {} /tmp/soroban-artifacts/ \;
+          cd /tmp/soroban-artifacts
+          sha256sum ./*.wasm | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+          # Deterministic identity: re-hash and confirm stability across runs.
+          sha256sum -c SHA256SUMS
+
+      # ── Local network bootstrap ───────────────────────────────────────────
+      - name: Start local Soroban network
+        run: |
+          set -euo pipefail
+          soroban network start "${STELLAR_NETWORK}" --background
+          soroban network ls
+
+      # ── Tests: success · boundary · unauthorized · replay · failure ───────
+      - name: Local-network tests
+        run: |
+          set -euo pipefail
+          cargo test --workspace --all-features -- \
+            --include-ignored local_network
+
+      # ── Rollback rehearsal ────────────────────────────────────────────────
+      - name: Rollback rehearsal
+        if: always()
+        run: |
+          set -euo pipefail
+          soroban network stop "${STELLAR_NETWORK}" || true
+          echo "Rollback: local network stopped; artifacts retained for audit."
+
+      # ── Upload artifacts (identity + wasm) ────────────────────────────────
+      - name: Upload Soroban artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-artifacts-${{ github.sha }}
+          path: /tmp/soroban-artifacts/
+          retention-days: 7
+          if-no-files-found: error

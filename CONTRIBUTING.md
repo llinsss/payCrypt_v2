@@ -21,6 +21,86 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
 ```
 
+## Rust/Soroban local development bootstrap
+
+Bringing up a local Rust/Soroban development environment is pinned, validated,
+and reversible so that every contributor builds against the same inputs and can
+reproduce a released artifact exactly.
+
+### Pinned inputs
+
+Bootstrap must be reproducible. Pin the following inputs and record them
+alongside any artifact produced locally:
+
+- **Toolchain**: the exact Rust toolchain from `rust-toolchain.toml`
+  (channel + components). Do not rely on a floating `stable`.
+- **Dependencies**: the committed `Cargo.lock`. Build and test with `--locked`
+  so the resolved dependency graph cannot drift.
+- **Soroban CLI / local network**: the pinned `soroban-cli` version and the
+  local network configuration (network passphrase, RPC endpoint, friendbot
+  settings) used to stand up the sandbox.
+
+Any change to a pinned input is a change to the artifact identity and must be
+called out in the pull request.
+
+### Artifact identity
+
+Locally built contracts are content-addressed so that identical inputs always
+produce an identical identity:
+
+- Build the contract into a clean output directory.
+- Compute a deterministic digest over the built artifact (sorted paths, file
+  contents) and the recorded pinned inputs.
+- Reference that identity (e.g. `contract-<digest>`) when reporting results, so
+  the artifact, the source commit, and the pinned inputs are linked.
+
+A mismatch between a released artifact and a rebuild from the same commit is a
+hard failure, not a warning.
+
+### Environment validation
+
+Before building, testing, or deploying to the local network, validate the
+environment:
+
+- The active toolchain matches `rust-toolchain.toml`.
+- `Cargo.lock` is present and unmodified relative to the commit being built.
+- The build output directory is clean (no stale artifacts from a previous run).
+- The pinned `soroban-cli` is available and reports the expected version, and
+  the local network is reachable with the expected passphrase.
+
+Validation failures abort the run before any artifact is produced or deployed.
+
+### Release approval
+
+A contract is released (including to the local network for integration work)
+only after:
+
+- Environment validation passes.
+- The artifact identity is computed and recorded.
+- A reviewer approves the release, confirming the identity matches the source
+  commit and the pinned inputs.
+
+### Rollback
+
+If a released contract or a local deployment is found to be incorrect:
+
+1. Revert to the previously approved artifact identity and redeploy it.
+2. Re-run the build from the affected commit to confirm the failure is
+   reproducible.
+3. Fix the source or pinned inputs, rebuild, and re-approve through the normal
+   release flow.
+
+Rollback restores the last known-good identity; it never mutates a published
+artifact in place.
+
+### Tests
+
+Bootstrap and contract behavior is covered by unit, property, and local-network
+tests for the success path, boundary inputs, unauthorized release attempts,
+replay of an existing identity, and failure paths (missing lockfile, toolchain
+mismatch, dirty output directory, unreachable local network). Add or update
+tests alongside any change to the bootstrap flow.
+
 ## Rust contract documentation generation
 
 Rust/Soroban contracts in this repository generate their API documentation
