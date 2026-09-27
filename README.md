@@ -291,3 +291,6 @@ Immutable transaction history for all tag operations
 
 <!-- handsoff-issue-727 -->
 - #727: Add deterministic wallet deployment salts in Rust
+
+<!-- handsoff-issue-728 -->
+- #728: Validate contract dependencies at initialization
