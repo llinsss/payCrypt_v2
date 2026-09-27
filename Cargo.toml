@@ -15,6 +15,8 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 [workspace.dependencies]
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+tokio-util = "0.7"
 
 [profile.release]
 opt-level = "z"
