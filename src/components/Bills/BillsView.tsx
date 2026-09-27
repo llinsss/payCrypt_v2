@@ -1,31 +1,44 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Zap,
   Wifi,
   Phone,
   Tv,
-  Trophy,
   CreditCard,
   CheckCircle,
-  AlertCircle,
   Sparkles,
   Play,
   TrendingUp,
   Shield,
 } from "lucide-react";
 import { formatCurrency } from "../../utils/mockData";
+import {
+  billsApi,
+  submitBillPayment,
+  type BillCategory,
+  type BillPaymentState,
+  type BillProvider,
+} from "../../utils/billsApi";
+import BillPaymentResult from "./BillPaymentResult";
 
 const BillsView: React.FC = () => {
-  const [selectedCategory, setSelectedCategory] = useState("electricity");
+  const [selectedCategory, setSelectedCategory] =
+    useState<BillCategory>("electricity");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentResult, setPaymentResult] = useState<
-    "success" | "failed" | null
-  >(null);
+  const [payment, setPayment] = useState<BillPaymentState | null>(null);
+  const [providers, setProviders] = useState<BillProvider[]>([]);
+  const [providersError, setProvidersError] = useState<string | null>(null);
 
-  const billCategories = [
+  const billCategories: {
+    id: BillCategory;
+    name: string;
+    icon: typeof Zap;
+    color: string;
+    bgColor: string;
+  }[] = [
     {
       id: "electricity",
       name: "Electricity",
@@ -34,8 +47,8 @@ const BillsView: React.FC = () => {
       bgColor: "from-yellow-50 to-amber-50",
     },
     {
-      id: "internet",
-      name: "Internet",
+      id: "data",
+      name: "Data",
       icon: Wifi,
       color: "from-blue-500 to-cyan-500",
       bgColor: "from-blue-50 to-cyan-50",
@@ -48,39 +61,45 @@ const BillsView: React.FC = () => {
       bgColor: "from-green-50 to-emerald-50",
     },
     {
-      id: "cable",
+      id: "cable_tv",
       name: "Cable TV",
       icon: Tv,
       color: "from-purple-500 to-pink-500",
       bgColor: "from-purple-50 to-pink-50",
     },
-    {
-      id: "betting",
-      name: "Betting",
-      icon: Trophy,
-      color: "from-red-500 to-orange-500",
-      bgColor: "from-red-50 to-orange-50",
-    },
   ];
 
-  const providers = {
-    electricity: ["AEDC", "EKEDC", "IKEDC", "PHED", "KEDCO"],
-    internet: ["MTN", "Airtel", "Glo", "9mobile", "Spectranet"],
-    airtime: ["MTN", "Airtel", "Glo", "9mobile"],
-    cable: ["DSTV", "GOTV", "Startimes", "Showmax"],
-    betting: ["Bet9ja", "Nairabet", "SportyBet", "BetKing", "1xBet"],
-  };
+  const categoryName =
+    billCategories.find((category) => category.id === selectedCategory)?.name ??
+    selectedCategory;
+  const providerName =
+    providers.find((provider) => provider.id === selectedProvider)?.name ??
+    selectedProvider;
+
+  useEffect(() => {
+    let cancelled = false;
+    setProviders([]);
+    setProvidersError(null);
+    billsApi
+      .getProviders(selectedCategory)
+      .then((list) => !cancelled && setProviders(list))
+      .catch(
+        (error: Error) => !cancelled && setProvidersError(error.message)
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategory]);
 
   const getInputLabel = () => {
     switch (selectedCategory) {
       case "electricity":
         return "Meter Number";
       case "airtime":
+      case "data":
         return "Phone Number";
-      case "cable":
+      case "cable_tv":
         return "Smart Card Number";
-      case "betting":
-        return "Account ID";
       default:
         return "Account Number";
     }
@@ -91,11 +110,10 @@ const BillsView: React.FC = () => {
       case "electricity":
         return "Enter meter number";
       case "airtime":
+      case "data":
         return "Enter phone number";
-      case "cable":
+      case "cable_tv":
         return "Enter smart card number";
-      case "betting":
-        return "Enter account ID";
       default:
         return "Enter account number";
     }
@@ -103,22 +121,21 @@ const BillsView: React.FC = () => {
 
   const handlePayment = async () => {
     setIsProcessing(true);
-    setPaymentResult(null);
+    const result = await submitBillPayment(
+      {
+        category: selectedCategory,
+        provider: selectedProvider,
+        phone: accountNumber,
+        amount: parseFloat(amount),
+      },
+      { onUpdate: setPayment }
+    );
+    setIsProcessing(false);
 
-    // Simulate payment processing
-    setTimeout(() => {
-      const success = Math.random() > 0.2;
-      setPaymentResult(success ? "success" : "failed");
-      setIsProcessing(false);
-
-      if (success) {
-        setTimeout(() => {
-          setAccountNumber("");
-          setAmount("");
-          setPaymentResult(null);
-        }, 3000);
-      }
-    }, 3000);
+    if (result.status === "completed") {
+      setAccountNumber("");
+      setAmount("");
+    }
   };
 
   const isValidPayment =
@@ -142,49 +159,13 @@ const BillsView: React.FC = () => {
       </div>
 
       {/* Payment Result Modal */}
-      {paymentResult && (
+      {payment && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl max-w-md w-full p-8 text-center border border-gray-200 shadow-2xl">
-            {paymentResult === "success" ? (
-              <>
-                <div className="w-20 h-20 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <CheckCircle className="w-10 h-10 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-3">
-                  Payment Successful!
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  Your {selectedCategory} bill has been paid successfully.
-                </p>
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-4 mb-6 border border-green-200">
-                  <div className="text-sm text-green-600 mb-1">
-                    Transaction ID
-                  </div>
-                  <div className="font-mono text-sm font-semibold text-green-800">
-                    #TXN{Date.now()}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="w-20 h-20 bg-gradient-to-r from-red-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <AlertCircle className="w-10 h-10 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-3">
-                  Payment Failed
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  Unable to process your payment. Please try again.
-                </p>
-              </>
-            )}
-            <button
-              onClick={() => setPaymentResult(null)}
-              className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white py-3 px-6 rounded-xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl"
-            >
-              {paymentResult === "success" ? "Done" : "Try Again"}
-            </button>
-          </div>
+          <BillPaymentResult
+            payment={payment}
+            categoryName={categoryName}
+            onClose={isProcessing ? undefined : () => setPayment(null)}
+          />
         </div>
       )}
 
@@ -254,18 +235,19 @@ const BillsView: React.FC = () => {
                 className="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition-all duration-300"
               >
                 <option value="">Select a provider</option>
-                {providers[selectedCategory as keyof typeof providers]?.map(
-                  (provider) => (
-                    <option key={provider} value={provider}>
-                      {provider}
-                    </option>
-                  )
-                )}
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
               </select>
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400">
                 <TrendingUp className="w-4 h-4" />
               </div>
             </div>
+            {providersError && (
+              <p className="mt-2 text-sm text-red-600">{providersError}</p>
+            )}
           </div>
 
           {/* Bill Details */}
@@ -312,7 +294,7 @@ const BillsView: React.FC = () => {
                 <div className="flex justify-between py-2 border-b border-blue-100">
                   <span className="text-gray-600">Service:</span>
                   <span className="font-semibold text-gray-900">
-                    {selectedProvider} {selectedCategory}
+                    {providerName} {categoryName}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-blue-100">
