@@ -32,6 +32,7 @@ import supportTicketRoutes from "./supportTickets.js";
 import indexerAdminRoutes from "./indexerAdmin.js";
 import referralRoutes from "./referrals.js";
 import circuitBreakerRoutes from "./circuitBreaker.js";
+import billRoutes from "./bills.js";
 import { versionHeaders, CURRENT_VERSION, DEPRECATIONS } from "../middleware/apiVersion.js";
 
 const router = express.Router();
@@ -70,6 +71,7 @@ const registerRoutes = (router) => {
   router.use("/support-tickets", supportTicketRoutes);
   router.use("/referrals", referralRoutes);
   router.use("/circuit-breaker", circuitBreakerRoutes);
+  router.use("/bills", billRoutes);
 };
 
 /**
