@@ -199,7 +199,7 @@ router.put("/preferences", authenticate, updatePreferences);
  *         description: Unauthorized
  *   delete:
  *     summary: Unregister a push notification device token
- *     description: Remove a device token to stop sending push notifications to that device.
+ *     description: Remove the authenticated user's device token. Unknown or other users' tokens return the same success response.
  *     tags: [Notifications]
  *     security:
  *       - bearerAuth: []

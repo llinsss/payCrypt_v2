@@ -156,6 +156,8 @@ const { data, pagination } = await client.balances.list({
 
 #### Sync on-chain balances
 
+Synchronization is an explicit idempotent mutation and must be requested with `POST /api/balances/sync`. Repeating a request is safe: persisted balances converge to the current on-chain values.
+
 ```typescript
 const balances = await client.balances.sync();
 ```

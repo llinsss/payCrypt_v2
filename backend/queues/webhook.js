@@ -7,19 +7,18 @@ import WebhookEvent from "../models/WebhookEvent.js";
 import { validateWebhookUrl } from "../utils/validateWebhookUrl.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 import { instrumentBullWorker } from "../observability/sentry.js";
+import { buildJobOptions, attachQueueDepthAlert } from "./queueDefaults.js";
 
 // ========== Queue ==========
 
 export const webhookQueue = redisConnection
   ? new Queue("webhook-delivery", {
       connection: redisConnection,
-      defaultJobOptions: {
-        removeOnComplete: 100,
-        removeOnFail: 200,
-      },
+      defaultJobOptions: buildJobOptions(),
     })
   : null;
 attachRedisErrorAlert(webhookQueue, "webhook-delivery-queue");
+attachQueueDepthAlert(webhookQueue, "webhook-delivery-queue");
 
 if (webhookQueue) {
   webhookQueue.on("waiting", (job) =>

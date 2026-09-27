@@ -1,6 +1,6 @@
 import express from 'express';
 import BillPaymentController from '../controllers/BillPaymentController.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
@@ -136,7 +136,9 @@ router.get('/providers/:category', BillPaymentController.getProviders);
  *                 description: Specific plan/variation code
  *     responses:
  *       200:
- *         description: Bill payment initiated
+ *         description: >-
+ *           Bill payment completed, or still pending when the provider outcome
+ *           is not yet known (pending payments are reconciled automatically).
  *         content:
  *           application/json:
  *             schema:
@@ -152,14 +154,17 @@ router.get('/providers/:category', BillPaymentController.getProviders);
  *                       example: "BILL_ref_abc123"
  *                     status:
  *                       type: string
- *                       example: "processing"
+ *                       enum: [completed, pending]
+ *                       example: "pending"
  *       400:
  *         description: Invalid request or missing fields
  *       401:
  *         description: Unauthorized
  *       429:
  *         description: Too many bill payment requests
+ *       502:
+ *         description: Declined by the provider; the reserved amount was refunded
  */
-router.post('/pay', authenticateToken, billPaymentLimiter, BillPaymentController.pay);
+router.post('/pay', authenticate, billPaymentLimiter, BillPaymentController.pay);
 
 export default router;

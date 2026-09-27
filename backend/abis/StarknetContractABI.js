@@ -280,12 +280,22 @@ export const mainABI = [
     kind: "struct",
     members: [
       {
-        name: "sender",
+        name: "operation_id",
+        type: "core::integer::u256",
+        kind: "key",
+      },
+      {
+        name: "tag",
+        type: "core::felt252",
+        kind: "data",
+      },
+      {
+        name: "wallet",
         type: "core::starknet::contract_address::ContractAddress",
         kind: "data",
       },
       {
-        name: "recipient",
+        name: "sender",
         type: "core::starknet::contract_address::ContractAddress",
         kind: "data",
       },
@@ -307,7 +317,27 @@ export const mainABI = [
     kind: "struct",
     members: [
       {
+        name: "operation_id",
+        type: "core::integer::u256",
+        kind: "key",
+      },
+      {
+        name: "tag",
+        type: "core::felt252",
+        kind: "data",
+      },
+      {
+        name: "wallet",
+        type: "core::starknet::contract_address::ContractAddress",
+        kind: "data",
+      },
+      {
         name: "sender",
+        type: "core::starknet::contract_address::ContractAddress",
+        kind: "data",
+      },
+      {
+        name: "recipient",
         type: "core::starknet::contract_address::ContractAddress",
         kind: "data",
       },

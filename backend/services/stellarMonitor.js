@@ -3,8 +3,26 @@ import logger from '../utils/logger.js';
 
 const STELLAR_HORIZON_URL = process.env.STELLAR_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const server = new Horizon.Server(STELLAR_HORIZON_URL);
+const MONITOR_INTERVAL_MS = 5 * 60 * 1000;
 
-export const checkStellarHealth = async () => {
+/**
+ * Legacy Horizon health monitor. It only probes Horizon's root endpoint;
+ * incoming payments are ingested by StellarStreamService, which persists a
+ * per-account cursor in Redis and deduplicates replayed events.
+ *
+ * Checks are single-flight: while one Horizon request is pending, every
+ * caller (the monitor loop and /health) shares it instead of starting another.
+ */
+let inFlightCheck = null;
+
+export const checkStellarHealth = () => {
+    inFlightCheck ??= runHealthCheck().finally(() => {
+        inFlightCheck = null;
+    });
+    return inFlightCheck;
+};
+
+const runHealthCheck = async () => {
     const start = process.hrtime();
     try {
         const response = await server.root();
@@ -46,12 +64,24 @@ export const checkStellarHealth = async () => {
     }
 };
 
-export const monitorStellarNetwork = () => {
-    // Run initial check
-    checkStellarHealth();
+/**
+ * Polls Horizon health serially: the next check is scheduled only after the
+ * previous one settles, so slow responses can never stack overlapping polls.
+ * Returns a function that stops the monitor.
+ */
+export const monitorStellarNetwork = ({ intervalMs = MONITOR_INTERVAL_MS } = {}) => {
+    let timer = null;
+    let stopped = false;
 
-    // Schedule periodic checks (e.g., every 5 minutes)
-    setInterval(async () => {
+    const poll = async () => {
         await checkStellarHealth();
-    }, 5 * 60 * 1000);
+        if (!stopped) timer = setTimeout(poll, intervalMs);
+    };
+
+    poll();
+
+    return () => {
+        stopped = true;
+        clearTimeout(timer);
+    };
 };

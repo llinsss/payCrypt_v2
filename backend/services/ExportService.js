@@ -6,23 +6,13 @@ import { generatePdf } from "./PdfGenerator.js";
 import { signToken, verifyToken } from "../config/jwt.js";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
 import { sendTemplatedEmail } from "./external/smtp.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { getExportStoragePath } from "../utils/exportStorage.js";
 
 const EXPORT_THRESHOLD = 1000;
 const EXPORT_EXPIRY_HOURS = 24;
 const DOWNLOAD_TOKEN_EXPIRY = "24h";
-
-function getExportStoragePath() {
-  const base = process.env.EXPORT_STORAGE_PATH || path.join(__dirname, "../storage/exports");
-  if (!fs.existsSync(base)) {
-    fs.mkdirSync(base, { recursive: true });
-  }
-  return base;
-}
 
 async function buildDownloadUrl(exportId, userId) {
   const baseUrl = process.env.API_BASE_URL || process.env.FRONTEND_URL || `http://localhost:${process.env.PORT || 3000}`;

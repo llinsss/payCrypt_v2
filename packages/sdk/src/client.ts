@@ -24,6 +24,7 @@ export class TaggedSDK {
     this.http = new HttpClient({
       baseUrl,
       apiKey: config.apiKey,
+      token: config.token,
       timeout: config.timeout || 30000,
     });
 

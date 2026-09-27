@@ -1,6 +1,7 @@
 import { Queue } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
+import { buildJobOptions, attachQueueDepthAlert } from "./queueDefaults.js";
 
 /**
  * Queue for processing transaction confirmations
@@ -8,23 +9,15 @@ import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 export const transactionConfirmationQueue = redisConnection
   ? new Queue("transaction-confirmation", {
       connection: redisConnection,
-      defaultJobOptions: {
+      defaultJobOptions: buildJobOptions({
         attempts: 10, // Retry up to 10 times
-        backoff: {
-          type: "exponential",
-          delay: 5000, // Start with 5 seconds, exponentially increase
-        },
-        removeOnComplete: {
-          age: 86400, // Keep completed jobs for 24 hours
-          count: 1000,
-        },
-        removeOnFail: {
-          age: 604800, // Keep failed jobs for 7 days
-        },
-      },
+        removeOnComplete: { age: 86400, count: 1000 },
+        removeOnFail: { age: 604800 },
+      }),
     })
   : null;
 attachRedisErrorAlert(transactionConfirmationQueue, "transaction-confirmation-queue");
+attachQueueDepthAlert(transactionConfirmationQueue, "transaction-confirmation-queue");
 
 if (transactionConfirmationQueue) {
   console.log("📬 Transaction confirmation queue initialized");

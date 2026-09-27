@@ -1,5 +1,15 @@
 name: Docker Build
 
+# Builds and pushes backend Docker image to registry.
+# Docker images do NOT include seed data—seeding happens at deployment time.
+#
+# DEPLOYMENT STRATEGY:
+# 1. Docker image contains schema + application code only
+# 2. Kubernetes/container orchestrator runs migrations & seeds after deployment
+# 3. Production uses: npm run migrate && npm run seed:prod
+# 4. Demo/staging uses: npm run migrate && npm run seed:demo
+# See: backend/docs/SEED_CATEGORIZATION.md for seed categorization details
+
 on:
   push:
     branches: [master]

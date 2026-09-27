@@ -3,19 +3,20 @@ import { redisConnection } from "../config/redis.js";
 import ExportService from "../services/ExportService.js";
 import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 import { instrumentBullWorker } from "../observability/sentry.js";
+import { buildJobOptions, attachQueueDepthAlert } from "./queueDefaults.js";
 
 export const exportQueue = redisConnection
   ? new Queue("transaction-export", {
       connection: redisConnection,
-      defaultJobOptions: {
-        attempts: 3,
+      defaultJobOptions: buildJobOptions({
         backoff: { type: "exponential", delay: 2000 },
-        removeOnComplete: 50,
-        removeOnFail: 100,
-      },
+        removeOnComplete: { count: 50 },
+        removeOnFail: { count: 100 },
+      }),
     })
   : null;
 attachRedisErrorAlert(exportQueue, "transaction-export-queue");
+attachQueueDepthAlert(exportQueue, "transaction-export-queue");
 
 export const exportWorker =
   redisConnection &&

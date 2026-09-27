@@ -1,5 +1,6 @@
 import { apiClient } from './api';
 import { Transaction } from '../types';
+import { parseTransaction, parseTransactionList } from './apiContracts';
 
 // Transaction API interfaces
 export interface CreateTransactionRequest {
@@ -31,8 +32,8 @@ export const transactionApi = {
   // Get all transactions for current user
   async getUserTransactions(): Promise<TransactionResponse[]> {
     try {
-      const response = await apiClient.get<{ transactions: TransactionResponse[] }>('/transactions');
-      return response.transactions;
+      const response = await apiClient.get<unknown>('/transactions');
+      return parseTransactionList(response) as TransactionResponse[];
     } catch (error) {
       console.error('Failed to get transactions:', error);
       throw error;
@@ -42,8 +43,8 @@ export const transactionApi = {
   // Get all transactions (admin only)
   async getAllTransactions(): Promise<TransactionResponse[]> {
     try {
-      const response = await apiClient.get<{ transactions: TransactionResponse[] }>('/transactions/all');
-      return response.transactions;
+      const response = await apiClient.get<unknown>('/transactions/all');
+      return parseTransactionList(response) as TransactionResponse[];
     } catch (error) {
       console.error('Failed to get all transactions:', error);
       throw error;
@@ -53,8 +54,8 @@ export const transactionApi = {
   // Create new transaction
   async createTransaction(transactionData: CreateTransactionRequest): Promise<TransactionResponse> {
     try {
-      const response = await apiClient.post<{ transaction: TransactionResponse }>('/transactions', transactionData);
-      return response.transaction;
+      const response = await apiClient.post<unknown>('/transactions', transactionData);
+      return parseTransaction(response) as TransactionResponse;
     } catch (error) {
       console.error('Failed to create transaction:', error);
       throw error;
@@ -64,8 +65,8 @@ export const transactionApi = {
   // Get transaction by ID
   async getTransactionById(id: string): Promise<TransactionResponse> {
     try {
-      const response = await apiClient.get<{ transaction: TransactionResponse }>(`/transactions/${id}`);
-      return response.transaction;
+      const response = await apiClient.get<unknown>(`/transactions/${id}`);
+      return parseTransaction(response) as TransactionResponse;
     } catch (error) {
       console.error('Failed to get transaction:', error);
       throw error;
@@ -75,8 +76,8 @@ export const transactionApi = {
   // Update transaction status (admin only)
   async updateTransactionStatus(id: string, status: 'pending' | 'completed' | 'failed'): Promise<TransactionResponse> {
     try {
-      const response = await apiClient.patch<{ transaction: TransactionResponse }>(`/transactions/${id}`, { status });
-      return response.transaction;
+      const response = await apiClient.put<unknown>(`/transactions/${id}`, { status });
+      return parseTransaction(response) as TransactionResponse;
     } catch (error) {
       console.error('Failed to update transaction status:', error);
       throw error;

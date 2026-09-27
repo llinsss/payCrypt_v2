@@ -120,7 +120,7 @@ export class BalancesResource extends BaseResource {
    * @returns Updated balances
    */
   async sync(): Promise<Balance[]> {
-    const response = await this.http.get<BalanceApiResponse>(
+    const response = await this.http.post<BalanceApiResponse>(
       '/api/balances/sync'
     );
     return this.extractBalances(response);

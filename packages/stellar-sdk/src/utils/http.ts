@@ -1,4 +1,5 @@
 import {
+  AbortedError,
   ApiError,
   AuthenticationError,
   AuthorizationError,
@@ -20,7 +21,16 @@ const DEFAULT_CONFIG: Required<HttpClientConfig> = {
   retries: 3,
   retryDelay: 1000,
   retryBackoffMultiplier: 2,
+  maxRetryDelay: 30000,
 };
+
+/**
+ * HTTP methods that HTTP semantics guarantee are safe to repeat
+ * automatically. POST and PATCH are excluded: replaying them after an
+ * ambiguous failure (e.g. a timeout after the server already committed the
+ * write) can duplicate side effects such as payments (#618).
+ */
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
 
 /**
  * HTTP client with retry support and error handling
@@ -94,7 +104,14 @@ export class HttpClient {
   }
 
   /**
-   * Execute request with retry logic
+   * Execute request with retry logic.
+   *
+   * #618: retries are only attempted for methods that HTTP semantics
+   * guarantee are safe to repeat (GET/HEAD/OPTIONS/PUT/DELETE), or when the
+   * caller explicitly opts a mutation in via `idempotencyKey`/`idempotent`.
+   * Without that, a POST/PATCH that fails ambiguously (e.g. times out after
+   * the server already committed it) is surfaced to the caller instead of
+   * being silently replayed.
    */
   private async request<T>(
     method: string,
@@ -103,39 +120,58 @@ export class HttpClient {
     options?: RequestOptions
   ): Promise<T> {
     const url = this.buildUrl(path, options?.params);
-    const headers = this.buildHeaders(options?.headers);
+    const headers = this.buildHeaders(options?.headers, options?.idempotencyKey);
     const timeout = options?.timeout ?? this.config.timeout;
     const maxRetries = options?.retries ?? this.config.retries;
+    const canRetryMethod =
+      IDEMPOTENT_METHODS.has(method.toUpperCase()) ||
+      Boolean(options?.idempotencyKey) ||
+      options?.idempotent === true;
 
     let lastError: Error | null = null;
     let retryDelay = this.config.retryDelay;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (options?.signal?.aborted) {
+        throw new AbortedError();
+      }
+
       try {
         const response = await this.executeRequest(
           method,
           url,
           headers,
           body,
-          timeout
+          timeout,
+          options?.signal
         );
         return response as T;
       } catch (error) {
         lastError = error as Error;
 
-        // Don't retry on certain errors
-        if (!this.shouldRetry(error as Error, attempt, maxRetries)) {
+        if (error instanceof AbortedError) {
           throw error;
         }
 
-        // For rate limit errors, honor the retryAfter header if available
-        if (error instanceof RateLimitError && error.retryAfter) {
-          // retryAfter is in seconds, convert to milliseconds
-          await this.sleep(error.retryAfter * 1000);
-        } else {
-          // Wait before retrying with exponential backoff
-          await this.sleep(retryDelay);
-          retryDelay *= this.config.retryBackoffMultiplier;
+        // Don't retry on certain errors, or on methods that aren't safe to replay
+        if (!canRetryMethod || !this.shouldRetry(error as Error, attempt, maxRetries)) {
+          throw error;
+        }
+
+        // #619: honor the server's Retry-After when present (already parsed
+        // and clamped), otherwise fall back to exponential backoff — both
+        // bounded by maxRetryDelay and given bounded jitter to avoid
+        // synchronized retry storms.
+        const isRateLimited =
+          error instanceof RateLimitError && error.retryAfter !== undefined;
+        const baseDelay = isRateLimited
+          ? this.clampDelay((error as RateLimitError).retryAfter! * 1000)
+          : this.clampDelay(retryDelay);
+
+        await this.sleep(this.addJitter(baseDelay), options?.signal);
+
+        if (!isRateLimited) {
+          retryDelay = this.clampDelay(retryDelay * this.config.retryBackoffMultiplier);
         }
       }
     }
@@ -151,12 +187,23 @@ export class HttpClient {
     url: string,
     headers: Record<string, string>,
     body?: unknown,
-    timeout?: number
+    timeout?: number,
+    externalSignal?: AbortSignal
   ): Promise<unknown> {
+    if (externalSignal?.aborted) {
+      throw new AbortedError();
+    }
+
     const controller = new AbortController();
     const timeoutId = timeout
       ? setTimeout(() => controller.abort(), timeout)
       : null;
+    let abortedExternally = false;
+    const onExternalAbort = () => {
+      abortedExternally = true;
+      controller.abort();
+    };
+    externalSignal?.addEventListener('abort', onExternalAbort);
 
     try {
       const response = await fetch(url, {
@@ -175,6 +222,9 @@ export class HttpClient {
       return data;
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
+        if (abortedExternally) {
+          throw new AbortedError();
+        }
         throw new TimeoutError(`Request timed out after ${timeout}ms`);
       }
       if (
@@ -194,6 +244,7 @@ export class HttpClient {
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
+      externalSignal?.removeEventListener('abort', onExternalAbort);
     }
   }
 
@@ -244,16 +295,63 @@ export class HttpClient {
         return new NotFoundError(message);
 
       case 429: {
-        const retryAfter = parseInt(
-          response.headers.get('retry-after') || '60',
-          10
+        const retryAfterMs = this.parseRetryAfter(
+          response.headers.get('retry-after')
         );
+        const retryAfter =
+          retryAfterMs !== null ? retryAfterMs / 1000 : undefined;
         return new RateLimitError(message, retryAfter);
       }
 
       default:
         return new ApiError(message, response.status, details);
     }
+  }
+
+  /**
+   * Parse a `Retry-After` header per RFC 7231 §7.1.3: either an integer
+   * number of delta-seconds, or an HTTP-date. Returns milliseconds to wait,
+   * clamped to `[0, maxRetryDelay]`, or `null` if the header is missing or
+   * neither form can be parsed (#619) — malformed/absent headers fall back
+   * to standard exponential backoff instead of producing a `NaN` delay or
+   * an unbounded wait.
+   */
+  private parseRetryAfter(headerValue: string | null): number | null {
+    if (!headerValue) return null;
+    const trimmed = headerValue.trim();
+
+    if (/^\d+$/.test(trimmed)) {
+      const seconds = Number(trimmed);
+      if (!Number.isFinite(seconds)) return null;
+      return this.clampDelay(seconds * 1000);
+    }
+
+    const dateMs = Date.parse(trimmed);
+    if (!Number.isNaN(dateMs)) {
+      return this.clampDelay(dateMs - Date.now());
+    }
+
+    return null;
+  }
+
+  /**
+   * Clamp a delay to `[0, maxRetryDelay]` (#619) — guards against both a
+   * past `Retry-After` date (negative delay) and an excessively large one
+   * (a synchronized multi-minute stall).
+   */
+  private clampDelay(delayMs: number): number {
+    return Math.min(Math.max(delayMs, 0), this.config.maxRetryDelay);
+  }
+
+  /**
+   * Add bounded random jitter on top of a base delay (#619), so many
+   * clients retrying at once don't all wake at exactly the same instant.
+   * Jitter is only ever added, never subtracted, so a server-specified
+   * `Retry-After` is never undercut.
+   */
+  private addJitter(delayMs: number): number {
+    const maxJitter = Math.min(delayMs * 0.2, 5000);
+    return delayMs + Math.random() * maxJitter;
   }
 
   /**
@@ -336,7 +434,8 @@ export class HttpClient {
    * Build request headers
    */
   private buildHeaders(
-    customHeaders?: Record<string, string>
+    customHeaders?: Record<string, string>,
+    idempotencyKey?: string
   ): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -347,6 +446,10 @@ export class HttpClient {
       headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
 
+    if (idempotencyKey) {
+      headers['Idempotency-Key'] = idempotencyKey;
+    }
+
     if (customHeaders) {
       Object.assign(headers, customHeaders);
     }
@@ -355,9 +458,26 @@ export class HttpClient {
   }
 
   /**
-   * Sleep for specified duration
+   * Sleep for specified duration. If `signal` is aborted before or during
+   * the wait, rejects immediately instead of waiting it out (#619).
    */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) {
+      return Promise.reject(new AbortedError());
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new AbortedError());
+      };
+
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 }

@@ -3,7 +3,7 @@
  *
  * This table was referenced in ReconciliationService.js and
  * EvmReconciliationService.js but had no CREATE migration.  Only an ALTER
- * migration (20250324_add_chain_to_reconciliation_reports) existed.
+ * migration (20250324000001_add_chain_to_reconciliation_reports) existed.
  *
  * Columns derived from all INSERT and SELECT statements in:
  *   - services/ReconciliationService.js

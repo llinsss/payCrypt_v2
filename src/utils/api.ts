@@ -24,6 +24,7 @@ const getErrorMessage = (data: unknown, status: number) => {
 
 class ApiClient {
   private baseURL: string;
+  private csrfToken?: string;
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
@@ -35,20 +36,28 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseURL}${endpoint}`;
     
-    // Get auth token from localStorage
-    const token = localStorage.getItem('auth_token');
+    const method = options.method || 'GET';
+    if (method !== 'GET' && method !== 'HEAD' && !this.csrfToken) {
+      const csrfResponse = await fetch(`${this.baseURL}/auth/csrf`, { credentials: 'include' });
+      if (csrfResponse.ok) this.csrfToken = (await csrfResponse.json()).csrfToken;
+    }
     
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
+        ...(this.csrfToken && method !== 'GET' && method !== 'HEAD' && { 'X-CSRF-Token': this.csrfToken }),
         ...options.headers,
       },
+      credentials: 'include',
       ...options,
     };
 
     try {
-      const response = await fetch(url, config);
+      let response = await fetch(url, config);
+      if (response.status === 401 && endpoint !== '/auth/refresh' && endpoint !== '/auth/logout') {
+        const refresh = await this.request<{ message: string }>('/auth/refresh', { method: 'POST' });
+        if (refresh) response = await fetch(url, config);
+      }
       
       if (!response.ok) {
         const errorData: unknown = await response.json().catch(() => ({}));
@@ -76,8 +85,8 @@ class ApiClient {
     }
   }
 
-  async get<T>(endpoint: string): Promise<T> {
-    return this.request<T>(endpoint, { method: 'GET' });
+  async get<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    return this.request<T>(endpoint, { ...options, method: 'GET' });
   }
 
   async post<T>(endpoint: string, data?: unknown): Promise<T> {

@@ -19,6 +19,7 @@ export {
   NetworkError,
   TimeoutError,
   ConfigurationError,
+  AbortedError,
 } from './utils/errors';
 
 // Type exports

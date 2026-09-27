@@ -1,0 +1,20 @@
+{
+  "description": "#620: baseline of runtime-visible named exports from @tagged/sdk. scripts/smoke/check-api-surface.mjs diffs the built dist against this list as a CI compatibility gate — update this file deliberately when the public API changes.",
+  "exports": [
+    "TaggedSDK",
+    "AuthResource",
+    "TransactionsResource",
+    "BalancesResource",
+    "TagsResource",
+    "WebhooksResource",
+    "TaggedError",
+    "ApiError",
+    "AuthenticationError",
+    "AuthorizationError",
+    "NotFoundError",
+    "ValidationError",
+    "RateLimitError",
+    "NetworkError",
+    "ConfigurationError"
+  ]
+}
