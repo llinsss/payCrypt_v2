@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Tag ownership recovery and governance policy (#720). Recovery is a
+  governance-gated process, separate from ordinary user-controlled transfer,
+  and requires a mandatory delay plus supporting evidence before it can
+  execute.
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are
