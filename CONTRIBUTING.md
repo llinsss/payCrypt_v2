@@ -1,291 +1,149 @@
-# Contributing to Tagged
-
-Thank you for your interest in contributing to Tagged! This document provides guidelines for contributing to the project.
-
-## Development Setup
-
-### Prerequisites
-- Node.js >= 18.0.0
-- npm >= 9.0.0
-- PostgreSQL >= 14
-- Redis >= 6
-
-### Getting Started
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/llinsss/payCrypt_v2.git
-   cd payCrypt_v2
-   ```
-
-2. **Install dependencies**
-   ```bash
-   # Frontend
-   npm install
-   
-   # Backend
-   cd backend
-   npm install
-   ```
-
-3. **Set up environment variables**
-   ```bash
-   # Frontend
-   cp .env.example .env
-   
-   # Backend
-   cd backend
-   cp .env.example .env
-   ```
-
-4. **Set up database**
-   ```bash
-   cd backend
-   npm run migrate
-   ```
-
-5. **Start development servers**
-   ```bash
-   # Terminal 1: Frontend
-   npm run dev
-   
-   # Terminal 2: Backend
-   cd backend
-   npm run dev
-   ```
-
-### Quick Start with Docker
-
-Prefer not to install PostgreSQL/Redis locally? The full backend stack —
-Postgres, Redis, and the backend API with hot reload — runs with a single
-command:
-
-```bash
-cp backend/.env.example backend/.env
-docker-compose up
-```
-
-This will:
-- Start PostgreSQL 14 and Redis 7 with health checks
-- Build and start the backend with `nodemon`, bind-mounted so file changes
-  reload automatically — no rebuild needed
-- Run pending database migrations automatically on backend startup
-- Expose the API at `http://localhost:3000`
-- Expose Bull Board (queue admin UI) at
-  `http://localhost:3001/admin/running-queues` (basic auth: `BULL_ADMIN_USER`
-  / `BULL_ADMIN_PASS` from `backend/.env`)
-
-To stop everything: `docker-compose down` (add `-v` to also drop the
-Postgres/Redis volumes and start from a clean database).
-
-## Code Standards
-
-### JavaScript/TypeScript
-- Use ES6+ features
-- Follow ESLint configuration
-- Use meaningful variable names
-- Add comments for complex logic
-- Keep functions small and focused
-
-### Commits
-- Use conventional commit messages:
-  - `feat:` New features
-  - `fix:` Bug fixes
-  - `docs:` Documentation changes
-  - `style:` Code style changes
-  - `refactor:` Code refactoring
-  - `test:` Test additions/changes
-  - `chore:` Build/tooling changes
-
-### Pull Requests
-1. Create a feature branch from `master`
-2. Make your changes
-3. Write/update tests
-4. Ensure all tests pass
-5. Update documentation
-6. Submit PR with clear description
-
-### Safe Knex Query Patterns
-
-Knex parameterises the query builder for you, so ordinary calls are already safe:
-
-```js
-db("transactions").where("user_id", userId);          // safe — bound automatically
-```
-
-The `raw` family is different: it takes SQL as text. Interpolating a value into
-that text reintroduces SQL injection regardless of how safe the rest of the
-query is.
-
-```js
-// Never do this — userId is concatenated straight into the SQL.
-db.raw(`SELECT * FROM transactions WHERE user_id = ${userId}`);
-
-// Do this — the value is bound, and the driver escapes it.
-db.raw("SELECT * FROM transactions WHERE user_id = ?", [userId]);
-```
-
-The same applies to every text-taking method: `whereRaw`, `orWhereRaw`,
-`havingRaw`, `groupByRaw`, `orderByRaw`, `joinRaw`.
-
-```js
-// Bindings work in these too.
-query.groupByRaw("DATE_TRUNC(?, created_at)", [period]);
-```
-
-**Identifiers cannot be bound.** Bindings replace *values*, not table or column
-names, so a dynamic column has to be validated instead. Check it against an
-allow-list and never pass request input through:
-
-```js
-const SORTABLE = { created: "created_at", amount: "usd_value" };
-const column = SORTABLE[req.query.sortBy] ?? "created_at";  // allow-list
-query.orderByRaw(`${column} DESC`); // check-raw-sql-allow: column is allow-listed above
-```
-
-A template literal with no `${}` in it is just a string and is perfectly fine —
-multi-line SQL is often clearer that way.
-
-#### Automated check
-
-`backend/scripts/check-raw-sql.js` fails on interpolated raw SQL. Run it any
-time:
-
-```bash
-cd backend && npm run check:raw-sql
-```
-
-To have it run before every commit, enable the committed hooks once per clone:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-Migrations, seeds and one-off scripts are excluded — they build DDL from trusted
-local input, never from request data. If you have a genuinely safe interpolation
-that the check flags, add a `check-raw-sql-allow` comment on that line stating
-why it is safe.
-
-## Continuous Integration
-
-Every pull request is gated on a single required status check:
-
-```
-ci/required-checks
-```
-
-This check runs unconditionally on every PR and aggregates four component
-pipelines. You only ever need to watch this one name in the branch-protection
-UI.
-
-### Component checks
-
-| Check name | Triggered by | What runs |
-|---|---|---|
-| `ci/web` | `src/**`, shared config | lint, typecheck, vite build |
-| `ci/backend` | `backend/**` | lint, npm audit (high+critical), jest |
-| `ci/sdk` | `packages/**`, shared config | lint, typecheck, tsup build |
-| `ci/contracts` | `contracts/**` | solhint, forge build+test, slither, snforge |
-
-> **Shared-config fan-out** — `tsconfig*.json` and `eslint.config.js` are
-> shared between the web frontend and both SDK packages, so changing them
-> triggers `ci/web` **and** `ci/sdk`.
-
-### Security gates
-
-- `ci/backend` — `npm audit --audit-level=high` fails the PR on HIGH or CRITICAL
-  CVEs in backend dependencies.
-- `ci/contracts` — Slither static analysis runs with `--fail-high`; any HIGH or
-  CRITICAL finding blocks the merge.
-
-### Workflow files
-
-```
-.github/workflows/
-├── web-ci.yml          ← Web lint · typecheck · build
-├── backend-ci.yml      ← Backend lint · audit · test
-├── sdk-ci.yml          ← SDK lint · typecheck · build (matrix)
-├── contracts-ci.yml    ← Contracts solhint · forge · slither · snforge
-├── required-checks.yml ← Gate — exposes ci/required-checks
-├── flutter-ci.yml      ← Mobile (Flutter) — separate, not part of gate
-└── docker-build.yml    ← Docker image push (push to master only)
-```
-
-See **[docs/ci.md](docs/ci.md)** for the full reference: path-trigger tables,
-per-step detail, tool versions, local equivalents, and artifact retention.
-
-### Running CI checks locally
-
-```bash
-# Web
-npm ci && npm run lint && npm run type-check && npm run build
-
-# Backend
-cd backend && npm ci && npm run lint && npm audit --audit-level=high && npm test
-
-# SDK (@tagged/sdk)
-cd packages/sdk && npm ci && npm run lint && npm run typecheck && npm run build
-
-# SDK (@tagged/stellar-sdk)
-cd packages/stellar-sdk && npm ci && npm run lint && npm run typecheck && npm run build
-
-# Contracts — Solidity
-cd contracts/solidity_contract
-solhint 'src/**/*.sol' && forge build && forge test -vvv
-slither . --exclude-dependencies --filter-paths "lib/" --fail-high
-
-# Contracts — StarkNet
-cd contracts/starknet_contract && scarb build && snforge test
-```
-
-## Project Structure
-
-```
-payCrypt_v2/
-├── backend/          # Node.js/Express API
-├── src/              # React frontend
-├── contracts/        # Smart contracts
-├── packages/         # Shared packages
-└── docs/             # Documentation
-```
-
-## Testing
-
-### Backend Testing
-
-Tests are split into unit and integration suites (see `backend/TESTING.md` for details).
-
-**Unit Tests** (no database required — fast)
-```bash
-cd backend
-npm run test:unit
-```
-
-**Integration Tests** (requires PostgreSQL — see CONTRIBUTING.md setup)
-```bash
-cd backend
-export DATABASE_URL="postgres://taggedpay_user:taggedpay_password@localhost:5432/paycrypt_test"
-npm run test:integration
-```
-
-**All Tests** (legacy)
-```bash
-cd backend
-npm run test
-```
-
-### Frontend Testing
-
-```bash
-npm run test
-```
-
-## Questions?
-
-- Open an issue for bugs
-- Start a discussion for questions
-- Check existing documentation
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the project's license.
+# Contributing
+
+Thanks for your interest in contributing! This document covers the basics of
+getting set up, the conventions we follow, and the security expectations for
+changes that touch on-chain logic.
+
+## Getting started
+
+1. Fork the repository and create a feature branch.
+2. Install the toolchain described in the project README.
+3. Make your change, keeping it focused on a single issue.
+4. Run the existing test suite before opening a pull request.
+5. Open a pull request that references the issue it resolves.
+
+## Pull request expectations
+
+- Keep changes surgical and scoped to the issue being addressed.
+- Do not refactor unrelated code or reformat files you are not otherwise touching.
+- Add or update tests for any behavior change.
+- Update documentation when you change a public interface or a security-relevant
+  assumption.
+
+## Security: Soroban authorization and threat model
+
+Any change that touches authorization, admin controls, token movement, or
+upgrade paths must be reviewed against the threat model below. The threat model
+is contract-level: it describes the authority behind each privileged action, the
+assumptions we rely on, what is explicitly out of scope, and the test that
+enforces each invariant.
+
+### Authorization contexts
+
+Soroban authorization is expressed through `require_auth` calls on addresses
+(accounts or contracts). A contract must never assume that a caller is
+authorized simply because it was invoked; authority is established only by an
+explicit `require_auth` on the relevant address within the current invocation
+context.
+
+- **Account authority** — an `Address` representing a user account. The account
+  must sign the authorization entry (or have it delegated) for the call to
+  succeed.
+- **Contract authority** — an `Address` representing another contract. The
+  authorizing contract must itself call `require_auth` on the address, which
+  means the authority ultimately traces back to an account or a contract that
+  was authorized in the same call tree.
+- **Invocation context** — authorization entries are scoped to a specific
+  contract, function, and argument set. Reusing an entry for a different call is
+  not valid.
+
+### Privileged actions and their authority
+
+| Privileged action | Required authority | Enforced by |
+| --- | --- | --- |
+| Initialize the contract | Deployer / initializer address | `require_auth` on the initializer during `initialize` |
+| Change admin | Current admin | `require_auth` on the current admin |
+| Pause / unpause | Admin | `require_auth` on the admin |
+| Upgrade the contract | Admin | `require_auth` on the admin before `update_current_contract_wasm` |
+| Move user funds | The owning account | `require_auth` on the account whose balance changes |
+| Mint / burn (if applicable) | Admin or the token contract itself | `require_auth` on the minting authority |
+| Set fees / parameters | Admin | `require_auth` on the admin |
+
+If a new privileged action is added, it must be added to this table together
+with the authority that gates it and the test that proves the gate holds.
+
+### Cross-contract calls
+
+- A cross-contract call does **not** inherit the caller's authority. The callee
+  must perform its own `require_auth` checks.
+- When our contract calls into another contract, we must treat the callee as
+  untrusted: validate return values, do not assume the callee will not re-enter,
+  and do not assume the callee's state is consistent with ours.
+- When another contract calls into us, we must not assume the caller is
+  trustworthy. Every state-changing entry point must re-establish authority.
+- Re-entrancy: any entry point that makes an external call must be safe to
+  re-enter, or must be guarded so that it cannot be.
+
+### Admin power
+
+- The admin is a single point of trust. Compromise of the admin key is a
+  compromise of the contract's privileged surface.
+- Admin actions must be explicit, authorized, and observable (events).
+- Admin cannot move user funds unless the user has separately authorized the
+  movement.
+- Admin rotation must be authorized by the current admin and must emit an event.
+
+### Token behavior
+
+- Token transfers must be authorized by the account whose balance decreases.
+- The contract must not assume a token is well-behaved: transfers may fail, may
+  return unexpected values, or may invoke callbacks.
+- Balances must be updated before external calls where re-entrancy could
+  otherwise allow double-spending.
+- Fee-on-transfer or rebasing tokens are out of scope unless explicitly
+  supported and tested.
+
+### Replay
+
+- Authorization entries are bound to a specific invocation (contract, function,
+  arguments) and to a ledger window. They must not be replayable across
+  different calls or after expiry.
+- Any signature or nonce scheme we introduce must include a domain separator and
+  a monotonically increasing nonce or an expiry, and must be covered by a test
+  that attempts replay.
+
+### Upgrades
+
+- Upgrades are authorized by the admin and must emit an event.
+- Upgrade logic must not be reachable without `require_auth` on the admin.
+- Storage layout changes must be handled explicitly; do not assume that new code
+  can read old storage without a migration path.
+- The upgrade path must be covered by a test that verifies unauthorized callers
+  cannot upgrade.
+
+### Assumptions
+
+- The Stellar network and Soroban host enforce authorization correctly.
+- The admin key is held securely and is not shared.
+- Callers are adversarial; we do not trust any address by default.
+- Ledger time and sequence numbers are monotonic and provided by the host.
+
+### Out of scope
+
+- Compromise of the Stellar network or the Soroban host itself.
+- Compromise of a user's signing device or key management.
+- Economic attacks that do not exploit a contract-level authorization flaw.
+- Behavior of third-party contracts beyond the assumptions we document here.
+
+### Invariants and their tests
+
+Every invariant below must be linked to a test that enforces it. When you add an
+invariant, add the corresponding test in the same pull request.
+
+| Invariant | Test |
+| --- | --- |
+| Only the admin can change the admin | `test_admin_rotation_requires_admin_auth` |
+| Only the admin can pause / unpause | `test_pause_requires_admin_auth` |
+| Only the admin can upgrade | `test_upgrade_requires_admin_auth` |
+| Only the owner can move their funds | `test_transfer_requires_owner_auth` |
+| Unauthorized callers cannot initialize | `test_initialize_requires_auth` |
+| Authorization entries cannot be replayed | `test_authorization_replay_rejected` |
+| Cross-contract calls re-establish authority | `test_cross_contract_call_requires_auth` |
+| Admin actions emit events | `test_admin_action_emits_event` |
+
+If a test name changes, update this table in the same pull request.
+
+## Reporting a vulnerability
+
+Please do not open a public issue for security vulnerabilities. Report them
+privately to the maintainers so a fix can be prepared before disclosure.
