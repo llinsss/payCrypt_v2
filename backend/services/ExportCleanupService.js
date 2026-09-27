@@ -1,6 +1,7 @@
 import db from '../config/database.js';
 import fs from 'fs';
 import logger from '../utils/logger.js';
+import { resolveOwnedExportFile } from '../utils/exportStorage.js';
 
 const CLEANUP_MAX_RETRIES = 3;
 const CLEANUP_INITIAL_DELAY = 1000; // 1 second
@@ -22,6 +23,7 @@ function getSafeErrorCode(error) {
     if (error.code === 'ENOENT') return 'FILE_NOT_FOUND';
     if (error.code === 'EACCES') return 'PERMISSION_DENIED';
     if (error.code === 'EBUSY') return 'FILE_BUSY';
+    if (error.code === 'UNSAFE_PATH') return 'UNSAFE_PATH';
     return 'CLEANUP_ERROR';
 }
 
@@ -33,16 +35,21 @@ async function deleteFileWithRetry(filePath, exportId, maxRetries = CLEANUP_MAX_
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            // Check if file exists
-            if (!fs.existsSync(filePath)) {
+            // Only canonical regular files inside the export root may be deleted;
+            // symlinks, traversal and foreign files throw UNSAFE_PATH.
+            const ownedPath = resolveOwnedExportFile(filePath);
+            if (!ownedPath) {
                 // Already missing is a success state
                 return { success: true, outcome: 'missing' };
             }
 
-            // Attempt deletion
-            fs.unlinkSync(filePath);
+            fs.unlinkSync(ownedPath);
             return { success: true, outcome: 'deleted' };
         } catch (error) {
+            if (error.code === 'ENOENT') {
+                return { success: true, outcome: 'missing' };
+            }
+
             lastError = error;
             const errorCode = getSafeErrorCode(error);
 
@@ -64,9 +71,7 @@ async function deleteFileWithRetry(filePath, exportId, maxRetries = CLEANUP_MAX_
                 maxRetries: maxRetries + 1
             });
 
-            if (attempt === maxRetries) {
-                return { success: false, outcome: 'failed', errorCode };
-            }
+            return { success: false, outcome: 'failed', errorCode };
         }
     }
 

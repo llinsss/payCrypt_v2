@@ -23,6 +23,19 @@ load balancers and orchestrators get one unambiguous signal per probe type:
   it also checks Stellar Horizon reachability, which is informative but not
   required for the process to be considered live or ready.
 
+### Stellar Horizon checks
+
+- The Horizon check (`services/stellarMonitor.js`) is single-flight: concurrent
+  `GET /api/health` requests and the legacy `monitorStellarNetwork()` loop
+  share one pending Horizon request. The loop schedules its next poll only
+  after the previous one settles, so slow Horizon responses never stack
+  overlapping polls; it returns a `stop()` function.
+- The monitor only checks reachability. Incoming payments are ingested by
+  `StellarStreamService`, which persists a per-account cursor in Redis
+  (`stellar:stream:cursor:<address>`), advances it on replayed events without
+  crediting twice (transaction fingerprint), and leaves it unchanged on
+  processing failures so Horizon replays the event.
+
 The backend sends Express request transactions to Sentry when `SENTRY_DSN` is
 configured. Knex queries, Redis commands, and BullMQ job lifecycles are added as
 child spans. Sampling is controlled with `SENTRY_TRACES_SAMPLE_RATE` and

@@ -2,7 +2,7 @@ import express from "express";
 import redis from "../config/redis.js";
 import * as freecryptoapi from "../services/free-crypto-api.js";
 import * as exchangerateapi from "../services/exchange-rate-api.js";
-import { NGN_KEY, updateNgnRate } from "../config/initials.js";
+import { NGN_KEY, ngnRateRefresh } from "../config/initials.js";
 import * as controller from "../controllers/generalController.js";
 import { publicCache } from "../middleware/cacheControl.js";
 
@@ -513,7 +513,7 @@ router.get("/api/rates/ngn", async (req, res) => {
 
     if (!ngnValue) {
       console.log("⚠️ NGN rate not cached, fetching fresh...");
-      await updateNgnRate();
+      await ngnRateRefresh.run();
       ngnValue = await redis.get(NGN_KEY);
     }
 
