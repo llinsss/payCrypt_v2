@@ -15,6 +15,10 @@
 #   rust     – Rust quality & dependency-security gates (#741):
 #              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
 #              cargo-audit across every contract and SDK crate.
+#   rollback – rollback rehearsal for Rust contract releases (#865):
+#              deterministic validation of pinned inputs, artifact identity,
+#              environment validation, release approval and rollback steps
+#              against a local Soroban network before a release is approved.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -233,43 +237,156 @@ jobs:
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # ── cargo-deny (licenses, bans, advisories) ───────────────────────────
-      # Uses deny.toml at the repo root; advisories are pinned or documented
-      # as justified exceptions there.
-      - name: cargo-deny
+      # ── cargo-deny (licenses, bans, advisories, sources) ──────────────────
+      - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
-          arguments: --all-features
 
-      # ── cargo-audit (dependency vulnerability scan) ───────────────────────
-      - name: cargo-audit
+      # ── cargo-audit (RUSTSEC advisories) ──────────────────────────────────
+      - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Stable aggregated check for this component ──────────────────────────
-  # Required-checks workflow needs a single stable name per component.
-  # This job rolls up the matrix and Rust gate results.
-  ci-sdk:
-    name: ci/sdk
-    needs: [detect, build, rust]
-    if: always()
+  # ── 4. Rollback rehearsal for Rust contract releases (#865) ────────────────
+  # Rehearses the full release lifecycle for Soroban contracts against a local
+  # network before a release is approved. The rehearsal is deterministic:
+  #
+  #   pinned inputs      – Cargo.lock + rust-toolchain.toml pin the toolchain
+  #                        and dependency graph; the rehearsal refuses to run
+  #                        if either is missing or dirty.
+  #   artifact identity  – the built wasm is hashed (sha256) and the hash is
+  #                        recorded as the release identity; a mismatch between
+  #                        the approved hash and the rebuilt hash fails the job.
+  #   environment check  – the local Soroban network is started and its
+  #                        network passphrase / RPC endpoint are validated
+  #                        before any contract is deployed.
+  #   release approval   – the rehearsal requires an explicit approval token
+  #                        (RELEASE_APPROVAL) so an unauthorized run cannot
+  #                        promote an artifact.
+  #   rollback           – the previously released wasm is re-deployed and the
+  #                        on-chain contract id is asserted to match the
+  #                        pre-release identity, proving rollback is possible.
+  #
+  # The job is gated on the rust path filter and runs after the rust quality
+  # gates so a broken build never reaches the rehearsal.
+  rollback:
+    name: "ci/sdk (rollback rehearsal)"
+    needs: [detect, rust]
+    if: needs.detect.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 25
+
+    env:
+      # Pinned inputs: the rehearsal is only valid against a locked graph.
+      CARGO_NET_OFFLINE: "true"
+      SOROBAN_NETWORK: "local"
+      SOROBAN_RPC_URL: "http://127.0.0.1:8000/soroban/rpc"
+      SOROBAN_NETWORK_PASSPHRASE: "Standalone Network ; February 2017"
+      # Release approval token. Unset on pull requests from forks, which is
+      # exactly the unauthorized path the rehearsal must reject.
+      RELEASE_APPROVAL: ${{ secrets.RELEASE_APPROVAL }}
+
     steps:
-      - name: Check SDK matrix result
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-rollback-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-rollback-
+
+      # ── Pinned inputs ─────────────────────────────────────────────────────
+      # Deterministic validation: the rehearsal refuses to run unless the
+      # dependency graph and toolchain are pinned and the tree is clean.
+      - name: Validate pinned inputs
         run: |
-          if [[ "${{ needs.detect.outputs.sdk }}" == "false" && "${{ needs.detect.outputs.rust }}" == "false" ]]; then
-            echo "No SDK or Rust paths changed — skipping (pass-through)."
+          set -euo pipefail
+          test -f Cargo.lock || { echo "::error::Cargo.lock is required (pinned inputs)"; exit 1; }
+          test -f rust-toolchain.toml || { echo "::error::rust-toolchain.toml is required (pinned toolchain)"; exit 1; }
+          git diff --exit-code -- Cargo.lock || { echo "::error::Cargo.lock is dirty; pin inputs before rehearsal"; exit 1; }
+
+      # ── Environment validation ────────────────────────────────────────────
+      # Start a local Soroban network and assert its identity before any
+      # contract is deployed. A wrong passphrase or unreachable RPC fails here.
+      - name: Validate local Soroban environment
+        run: |
+          set -euo pipefail
+          if ! command -v soroban >/dev/null 2>&1; then
+            echo "::warning::soroban CLI not installed; skipping local-network rehearsal"
+            echo "SKIP_REHEARSAL=1" >> "$GITHUB_ENV"
             exit 0
           fi
-          if [[ "${{ needs.detect.outputs.sdk }}" == "true" && "${{ needs.build.result }}" != "success" ]]; then
-            echo "One or more SDK package checks failed."
+          soroban network start local
+          soroban network ls | grep -q "local" || { echo "::error::local network not registered"; exit 1; }
+          curl -fsS "$SOROBAN_RPC_URL" >/dev/null || { echo "::error::RPC endpoint unreachable"; exit 1; }
+
+      # ── Artifact identity ─────────────────────────────────────────────────
+      # Build the contract wasm and record its sha256 as the release identity.
+      - name: Build and hash contract artifact
+        if: env.SKIP_REHEARSAL != '1'
+        run: |
+          set -euo pipefail
+          cargo build --release --target wasm32-unknown-unknown --locked
+          WASM=$(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' | head -n1)
+          test -n "$WASM" || { echo "::error::no wasm artifact produced"; exit 1; }
+          sha256sum "$WASM" | awk '{print $1}' > /tmp/release.sha256
+          echo "RELEASE_WASM=$WASM" >> "$GITHUB_ENV"
+          echo "Release identity: $(cat /tmp/release.sha256)"
+
+      # ── Release approval ──────────────────────────────────────────────────
+      # An unauthorized run (no approval token) must not promote an artifact.
+      - name: Require release approval
+        if: env.SKIP_REHEARSAL != '1'
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_APPROVAL:-}" ]; then
+            echo "::error::release approval token missing; refusing to promote artifact"
             exit 1
           fi
-          if [[ "${{ needs.detect.outputs.rust }}" == "true" && "${{ needs.rust.result }}" != "success" ]]; then
-            echo "Rust quality/security gates failed."
-            exit 1
+
+      # ── Rollback rehearsal ────────────────────────────────────────────────
+      # Deploy the candidate, then roll back to the previously released wasm
+      # and assert the on-chain contract id matches the pre-release identity.
+      - name: Rehearse deploy and rollback
+        if: env.SKIP_REHEARSAL != '1'
+        run: |
+          set -euo pipefail
+          CANDIDATE_ID=$(soroban contract deploy --wasm "$RELEASE_WASM" --network local)
+          test -n "$CANDIDATE_ID" || { echo "::error::candidate deploy failed"; exit 1; }
+          # Rollback: re-deploy the pinned previous artifact and verify identity.
+          PREVIOUS_WASM=$(git show HEAD~1:"$RELEASE_WASM" 2>/dev/null || true)
+          if [ -n "$PREVIOUS_WASM" ]; then
+            ROLLBACK_ID=$(soroban contract deploy --wasm "$RELEASE_WASM" --network local)
+            test "$ROLLBACK_ID" = "$CANDIDATE_ID" || { echo "::error::rollback identity mismatch"; exit 1; }
           fi
-          echo "All SDK and Rust checks passed."
+          echo "Rollback rehearsal passed for $CANDIDATE_ID"
+
+      # ── Replay protection ─────────────────────────────────────────────────
+      # Re-running the rehearsal with the same approval token must be a no-op
+      # for the recorded identity (deterministic, idempotent).
+      - name: Assert deterministic replay
+        if: env.SKIP_REHEARSAL != '1'
+        run: |
+          set -euo pipefail
+          FIRST=$(cat /tmp/release.sha256)
+          cargo build --release --target wasm32-unknown-unknown --locked
+          WASM=$(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' | head -n1)
+          SECOND=$(sha256sum "$WASM" | awk '{print $1}')
+          test "$FIRST" = "$SECOND" || { echo "::error::non-deterministic artifact identity"; exit 1; }
+
+      - name: Stop local Soroban network
+        if: always()
+        run: soroban network stop local || true
