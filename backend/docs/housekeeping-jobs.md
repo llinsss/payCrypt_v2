@@ -1,11 +1,33 @@
 # Housekeeping Jobs (singleton scheduling)
 
-The API process runs two periodic housekeeping jobs on a 24h `setInterval`:
+The API process runs these periodic housekeeping jobs on a `setInterval`:
 
-- **Audit log cleanup** — deletes `audit_logs` rows older than
+- **Audit log cleanup** (24h) — deletes `audit_logs` rows older than
   `AUDIT_LOG_RETENTION_DAYS` (default 90).
-- **Export cleanup** — deletes expired generated export files
+- **Export cleanup** (24h) — deletes expired generated export files
   (`ExportService.cleanupExpiredExports`).
+- **Bill payment reconciliation** (5 min) — re-queries the provider for bill
+  payments still `pending` after `BILL_RECONCILE_AFTER_MS` (default 5 minutes)
+  and finalizes them (`BillPaymentService.reconcilePendingPayments`).
+
+## Bill payment lifecycle and compensation
+
+`BillPaymentService.processBillPayment` never holds a database transaction
+open across the provider call:
+
+1. **Reserve** — a short transaction locks the balance row, deducts the
+   amount and inserts a `pending` `bill_payment` transaction with a unique
+   `reference` (sent to the provider as its `request_id`), then commits.
+2. **Call the provider** outside any transaction
+   (`BILL_PROVIDER_TIMEOUT_MS`, default 30s). Errors and timeouts are treated
+   as *unknown*, since the provider may still fulfil the order.
+3. **Finalize** — `finalizePayment` locks the row and moves it from `pending`
+   to `completed`, or to `failed` while refunding the reserved amount
+   (compensation). Rows that are no longer `pending` are left untouched, so
+   retries and concurrent reconciliation can never double-refund.
+
+Payments left `pending` by a timeout, or by a crash between steps 1 and 3,
+are resolved by the reconciliation job above.
 
 ## Why a lease, not a per-replica timer
 
@@ -33,9 +55,11 @@ on its own if a replica crashes mid-run.
 
 ## Idempotency
 
-Both jobs are safe to run more than once. They each delete rows/files that
+The cleanup jobs are safe to run more than once. They each delete rows/files that
 match a cutoff (`created_at < cutoff`, `expires_at < now`); a second run
 against the same data simply finds nothing left to delete and returns `0`.
+Bill payment reconciliation only finalizes rows that are still `pending`
+under a row lock, so re-running it never double-completes or double-refunds.
 The lease reduces redundant runs, but correctness never depends on it.
 
 ## Observing last-run status
