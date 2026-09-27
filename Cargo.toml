@@ -16,6 +16,13 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
+# StrKey encoding/decoding for typed Stellar address and asset validation
+# (issue #747): validates G.../C... keys, asset codes, and network passphrases.
+stellar-strkey = "0.0.9"
+
+# Property-based tests for malformed and cross-network validation inputs.
+proptest = "1.4.0"
+
 # Pinned toolchain for reproducible contract builds. The verification workflow
 # (see scripts/verify-wasm.sh) reads this value to record the exact toolchain
 # used to produce each deployed WASM hash.
