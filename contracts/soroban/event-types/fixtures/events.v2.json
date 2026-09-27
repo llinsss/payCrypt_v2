@@ -1,0 +1,6 @@
+[
+  {"event_id":"tx-registry:0:0","event_type":"registry_tag_registered","schema_version":2,"contract_id":"CAREGISTRY","ledger":100,"transaction_hash":"tx-registry","operation_index":0,"event_index":0,"data":{"tag":"alice","owner":"GOWNER1","wallet_id":"CAWALLET1","created_at_ledger":99}},
+  {"event_id":"tx-wallet:0:0","event_type":"wallet_withdrawal_executed","schema_version":2,"contract_id":"CAWALLET1","ledger":101,"transaction_hash":"tx-wallet","operation_index":0,"event_index":0,"data":{"proposal_id":7,"nonce":7,"destination":"GDEST1","token":"CUSDC","amount":250,"approval_count":2}},
+  {"event_id":"tx-escrow:0:0","event_type":"escrow_released","schema_version":2,"contract_id":"CAESCROW","ledger":102,"transaction_hash":"tx-escrow","operation_index":0,"event_index":0,"data":{"escrow_id":"escrow-4","sender":"GSENDER1","recipient":"GRECIPIENT1","token":"CUSDC","amount":400,"release_reason":"condition_met"}},
+  {"event_id":"tx-payment:0:0","event_type":"payment_settled","schema_version":2,"contract_id":"CAPAYMENT","ledger":103,"transaction_hash":"tx-payment","operation_index":0,"event_index":0,"data":{"payment_id":"payment-8","sender":"GSENDER1","recipient":"GRECIPIENT1","token":"CUSDC","amount":500,"memo":"invoice-8"}}
+]

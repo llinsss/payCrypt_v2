@@ -56,3 +56,7 @@ coverage
 # Misc
 .cache
 .parcel-cache
+
+# Rust build artifacts
+target/
+**/target/

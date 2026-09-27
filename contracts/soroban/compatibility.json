@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "soroban_protocol": {"minimum": 23, "maximum_tested": 23},
+  "rust": {"minimum": "1.84", "ci": "stable"},
+  "crates": {
+    "soroban-sdk": "=23.5.3",
+    "wallet-contract": "0.1.0",
+    "event-types": "0.1.0",
+    "client-sim": "0.1.0"
+  },
+  "token_interfaces": ["SEP-41", "Stellar Asset Contract (SAC)"],
+  "networks": [
+    {"name": "testnet", "rpc_url": "https://soroban-testnet.stellar.org", "passphrase": "Test SDF Network ; September 2015", "ci": true},
+    {"name": "futurenet", "rpc_url": "https://rpc-futurenet.stellar.org", "passphrase": "Test SDF Future Network ; October 2022", "ci": true}
+  ]
+}
