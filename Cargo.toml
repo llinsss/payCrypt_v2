@@ -31,6 +31,24 @@ required-env = ["DOCGEN_OUTPUT_DIR"]
 release-approval = "manual"
 rollback = "restore-previous-artifact"
 
+# Changelog policy for Rust/Soroban contract releases (#869).
+# Pinned inputs, artifact identity, environment validation, release approval,
+# and rollback behavior for the contract changelog are declared here so the
+# policy is deterministic and machine-checkable.
+[workspace.metadata.changelog]
+# Pinned inputs: the changelog is generated only from these sources.
+sources = ["CHANGELOG.md", "contracts/*/CHANGELOG.md"]
+toolchain = "1.79.0"
+# Artifact identity: the changelog artifact is hashed over the pinned inputs.
+artifact-hash-algorithm = "sha256"
+artifact-version = "1"
+# Environment validation performed before changelog generation/release.
+required-env = ["CHANGELOG_OUTPUT_DIR"]
+# Release approval gate for publishing a changelog artifact.
+release-approval = "manual"
+# Rollback behavior when a released changelog artifact is rejected.
+rollback = "restore-previous-artifact"
+
 [profile.release]
 opt-level = "z"
 lto = true

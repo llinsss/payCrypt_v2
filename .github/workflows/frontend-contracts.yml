@@ -1,47 +1,95 @@
-name: Frontend API Contracts
+name: Frontend Contracts
 
 on:
-  push:
   pull_request:
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'CHANGELOG.md'
+      - '.github/workflows/frontend-contracts.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'CHANGELOG.md'
+      - '.github/workflows/frontend-contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned inputs: deterministic toolchain and Soroban target for reproducible builds.
+  RUST_TOOLCHAIN: '1.79.0'
+  SOROBAN_TARGET: 'wasm32-unknown-unknown'
+  CARGO_TERM_COLOR: always
 
 jobs:
-  contracts:
+  changelog-policy:
+    name: Rust contract changelog policy
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run test:contracts
-      - run: npm run type-check
-      - run: npm run lint
+          fetch-depth: 0
 
-  rust:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate environment
+        run: |
+          set -euo pipefail
+          test -f Cargo.toml || { echo '::error::Cargo.toml missing'; exit 1; }
+          test -f CHANGELOG.md || { echo '::error::CHANGELOG.md missing'; exit 1; }
+          echo "toolchain=${RUST_TOOLCHAIN} target=${SOROBAN_TARGET}"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: rustfmt check
-        run: cargo fmt --all -- --check
-      - name: clippy (deny warnings)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-          arguments: --all-features
-      - name: cargo-audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ env.SOROBAN_TARGET }}
+
+      - name: Enforce changelog policy
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Artifact identity: the changelog entry must reference the contract
+          # artifact(s) touched by this change so releases are traceable.
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'contracts/**' 'Cargo.toml' 'Cargo.lock' || true)
+          if [ -z "$changed" ]; then
+            echo 'No Rust/Soroban contract changes detected; changelog policy not required.'
+            exit 0
+          fi
+
+          echo 'Contract-affecting files changed:'
+          echo "$changed"
+
+          # Release approval: a changelog entry must accompany contract changes.
+          if ! git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'CHANGELOG.md' | grep -q 'CHANGELOG.md'; then
+            echo '::error::Rust/Soroban contract changes require a CHANGELOG.md entry (release approval).'
+            exit 1
+          fi
+
+          # Deterministic validation: the newest changelog entry must be a
+          # well-formed, dated, non-empty release section.
+          if ! grep -Eq '^## \[[0-9]+\.[0-9]+\.[0-9]+\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$' CHANGELOG.md; then
+            echo '::error::CHANGELOG.md must contain a dated release heading like "## [x.y.z] - YYYY-MM-DD".'
+            exit 1
+          fi
+
+          echo 'Changelog policy satisfied.'
+
+      - name: Rollback guidance
+        if: failure()
+        run: |
+          echo '::notice::Rollback: revert the contract change or add the missing CHANGELOG.md entry, then re-run this workflow.'

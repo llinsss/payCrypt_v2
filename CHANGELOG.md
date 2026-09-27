@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dependency inputs, deterministic artifact identity (content hashing and
   versioning), pre-generation environment validation, release approval, and
   documented rollback behavior (#868).
+- Rust/Soroban contract changelog policy defining pinned inputs, artifact
+  identity, environment validation, release approval, and rollback for
+  contract releases (#869).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
