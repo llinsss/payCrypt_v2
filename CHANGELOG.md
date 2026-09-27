@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust/Soroban SDK multi-signer transaction support: typed signer collection,
+  deterministic signature aggregation and validation, canonical serialization,
+  cancellation, and actionable error classification (#852).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are
