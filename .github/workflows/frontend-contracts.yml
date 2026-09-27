@@ -8,6 +8,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'CHANGELOG.md'
+      - 'docs/runbooks/**'
       - '.github/workflows/frontend-contracts.yml'
   push:
     branches:
@@ -18,6 +19,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'CHANGELOG.md'
+      - 'docs/runbooks/**'
       - '.github/workflows/frontend-contracts.yml'
 
 permissions:
@@ -32,6 +34,8 @@ env:
   RUST_TOOLCHAIN: '1.79.0'
   SOROBAN_TARGET: 'wasm32-unknown-unknown'
   CARGO_TERM_COLOR: always
+  # Operator runbook that must exist and stay well-formed for Rust contract failures.
+  RUNBOOK_PATH: 'docs/runbooks/rust-contract-failures.md'
 
 jobs:
   changelog-policy:
@@ -93,3 +97,52 @@ jobs:
         if: failure()
         run: |
           echo '::notice::Rollback: revert the contract change or add the missing CHANGELOG.md entry, then re-run this workflow.'
+
+  operator-runbook:
+    name: Rust contract failure runbook
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate environment
+        run: |
+          set -euo pipefail
+          test -f Cargo.toml || { echo '::error::Cargo.toml missing'; exit 1; }
+          test -f "$RUNBOOK_PATH" || { echo "::error::operator runbook missing at $RUNBOOK_PATH"; exit 1; }
+          echo "runbook=${RUNBOOK_PATH} toolchain=${RUST_TOOLCHAIN} target=${SOROBAN_TARGET}"
+
+      - name: Validate operator runbook
+        run: |
+          set -euo pipefail
+
+          # Deterministic validation: the runbook must document each required
+          # operator procedure for Rust/Soroban contract failures.
+          required_sections=(
+            'Pinned Inputs'
+            'Artifact Identity'
+            'Environment Validation'
+            'Release Approval'
+            'Rollback'
+          )
+
+          for section in "${required_sections[@]}"; do
+            if ! grep -Eq "^##+ .*${section}" "$RUNBOOK_PATH"; then
+              echo "::error::runbook missing required section: ${section}"
+              exit 1
+            fi
+          done
+
+          # The runbook must be non-trivial so operators have real guidance.
+          lines=$(grep -cve '^[[:space:]]*$' "$RUNBOOK_PATH" || true)
+          if [ "$lines" -lt 20 ]; then
+            echo '::error::runbook is too short to be actionable.'
+            exit 1
+          fi
+
+          echo 'Operator runbook validated.'
+
+      - name: Rollback guidance
+        if: failure()
+        run: |
+          echo '::notice::Rollback: restore the operator runbook at docs/runbooks/rust-contract-failures.md or revert the contract change, then re-run this workflow.'

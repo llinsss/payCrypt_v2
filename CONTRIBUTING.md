@@ -101,6 +101,71 @@ replay of an existing identity, and failure paths (missing lockfile, toolchain
 mismatch, dirty output directory, unreachable local network). Add or update
 tests alongside any change to the bootstrap flow.
 
+## Rust contract failure operator runbooks
+
+When a Rust/Soroban contract fails in a released or local environment, operators
+follow a runbook that is pinned, validated, and reversible. A runbook is a
+written procedure tied to a specific artifact identity; it is not a substitute
+for the release flow above.
+
+### Pinned inputs
+
+A runbook is only actionable when it can be tied back to the exact inputs that
+produced the failing contract. Pin and record:
+
+- **Toolchain**: the exact Rust toolchain from `rust-toolchain.toml`.
+- **Dependencies**: the committed `Cargo.lock`, built with `--locked`.
+- **Contract source**: the commit SHA of the contract crate that failed.
+- **Artifact identity**: the `contract-<digest>` of the failing artifact.
+
+Any change to a pinned input invalidates the runbook and requires a new one.
+
+### Artifact identity
+
+Every runbook references the failing artifact by its content-addressed identity
+(`contract-<digest>`). Operators must confirm the identity of the deployed
+artifact matches the identity recorded in the runbook before acting. A mismatch
+means the runbook does not apply and the operator must stop and escalate.
+
+### Environment validation
+
+Before executing any runbook step, validate the environment:
+
+- The active toolchain matches `rust-toolchain.toml`.
+- `Cargo.lock` is present and unmodified relative to the failing commit.
+- The pinned `soroban-cli` is available and reports the expected version.
+- The local network (or target network) is reachable with the expected
+  passphrase.
+
+Validation failures abort the runbook before any state is mutated.
+
+### Release approval
+
+Runbooks that change released state (redeploy, rollback, config change) require
+reviewer approval before execution, confirming the artifact identity and pinned
+inputs match the failing contract. Read-only diagnostic runbooks do not require
+approval but must still record the artifact identity.
+
+### Rollback
+
+If a runbook action makes things worse:
+
+1. Revert to the previously approved artifact identity and redeploy it.
+2. Re-run the failing scenario from the affected commit to confirm the failure
+   is reproducible.
+3. Fix the source or pinned inputs, rebuild, and re-approve through the normal
+   release flow.
+
+Rollback restores the last known-good identity; it never mutates a published
+artifact in place.
+
+### Tests
+
+Runbook behavior is covered by unit, property, and local-network tests for the
+success path, boundary inputs, unauthorized runbook execution, replay of an
+existing identity, and failure paths (missing lockfile, toolchain mismatch,
+unreachable network). Add or update tests alongside any change to a runbook.
+
 ## Rust contract documentation generation
 
 Rust/Soroban contracts in this repository generate their API documentation
@@ -206,55 +271,4 @@ always produce an identical identity:
 - Build the contract into a clean output directory.
 - Compute a deterministic digest over the built artifact and the recorded
   pinned inputs.
-- Reference that identity (e.g. `contract-<digest>`) in the changelog entry so
-  the entry, the artifact, and the source commit are linked.
-
-A mismatch between a released artifact and a rebuild from the same commit is a
-hard failure, not a warning.
-
-### Environment validation
-
-Before a changelog entry is merged or a contract is released, validate:
-
-- The active toolchain matches `rust-toolchain.toml`.
-- `Cargo.lock` is present and unmodified relative to the commit being built.
-- The build output directory is clean (no stale artifacts from a previous run).
-- Required contract tooling is available and reports the expected version.
-
-Validation failures abort the run before any artifact is produced or released.
-
-### Release approval
-
-A contract release and its changelog entry are approved only after:
-
-- Environment validation passes.
-- The artifact identity is computed and recorded in the changelog entry.
-- A reviewer approves the release, confirming the identity matches the source
-  commit and the pinned inputs.
-
-### Rollback
-
-If a released contract or its changelog entry is found to be incorrect:
-
-1. Revert the release to the previously approved artifact identity and restore
-   the prior changelog entry.
-2. Re-run the build from the affected commit to confirm the failure is
-   reproducible.
-3. Fix the source or pinned inputs, rebuild, and re-approve through the normal
-   release flow.
-
-Rollback restores the last known-good identity; it never mutates a published
-artifact or a merged changelog entry in place.
-
-### Tests
-
-Changelog policy behavior is covered by tests for the success path, boundary
-inputs, unauthorized release attempts, replay of an existing identity, and
-failure paths (missing lockfile, toolchain mismatch, dirty output directory).
-Add or update tests alongside any change to the policy.
-
-## Submitting changes
-
-- Keep pull requests scoped to a single issue.
-- Update documentation when behavior changes.
-- Ensure all local checks pass before requesting review.
+- 

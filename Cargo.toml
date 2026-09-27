@@ -71,6 +71,34 @@ release-approval = "manual"
 # Rollback behavior when a bootstrapped environment is rejected.
 rollback = "restore-previous-artifact"
 
+# Operator runbooks for Rust/Soroban contract failures (#871).
+# Pinned inputs, artifact identity, environment validation, release approval,
+# and rollback behavior for the failure runbooks are declared here so the
+# runbook set is deterministic and machine-checkable.
+[workspace.metadata.runbooks]
+# Pinned inputs: runbooks are generated only from these sources.
+sources = ["docs/runbooks/*.md", "contracts/*/RUNBOOK.md"]
+toolchain = "1.79.0"
+soroban-sdk = "21.7.6"
+# Failure classes each runbook must cover.
+failure-classes = [
+    "panic",
+    "auth",
+    "replay",
+    "storage",
+    "upgrade",
+    "resource-limit",
+]
+# Artifact identity: the runbook artifact is hashed over the pinned inputs.
+artifact-hash-algorithm = "sha256"
+artifact-version = "1"
+# Environment validation performed before a runbook is published/used.
+required-env = ["RUNBOOK_OUTPUT_DIR", "SOROBAN_NETWORK", "SOROBAN_RPC_URL"]
+# Release approval gate for publishing a runbook artifact.
+release-approval = "manual"
+# Rollback behavior when a published runbook is rejected.
+rollback = "restore-previous-artifact"
+
 [profile.release]
 opt-level = "z"
 lto = true

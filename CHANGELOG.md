@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rust/Soroban contract changelog policy defining pinned inputs, artifact
   identity, environment validation, release approval, and rollback for
   contract releases (#869).
+- Operator runbooks for Rust/Soroban contract failures covering pinned inputs,
+  artifact identity, environment validation, release approval, and rollback,
+  with deterministic validation and tests for success, boundary, unauthorized,
+  replay, and failure paths (#871).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
