@@ -288,3 +288,6 @@ Immutable transaction history for all tag operations
 
 <!-- handsoff-issue-713 -->
 - #713: Implement canonical tag normalization in Rust
+
+<!-- handsoff-issue-733 -->
+- #733: Add decimal-safe amount types to Rust contract interfaces
