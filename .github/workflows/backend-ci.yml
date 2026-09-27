@@ -5,6 +5,7 @@
 # Jobs:
 #   detect   – path filter (always runs, ~5 s)
 #   quality  – lint · dependency audit · jest test suite
+#   rust     – rustfmt · clippy · cargo-deny · cargo-audit (contracts & SDK crates)
 #
 # Services: PostgreSQL 14, Redis 6 (mirrors production services)
 # Artifacts: jest-results-<sha> retained 14 days
@@ -23,11 +24,21 @@ on:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
+      - "sdk/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
+      - "sdk/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
       - ".github/workflows/backend-ci.yml"
 
 concurrency:
@@ -49,6 +60,7 @@ jobs:
         working-directory: .
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +71,12 @@ jobs:
           filters: |
             backend:
               - "backend/**"
+            rust:
+              - "contracts/**"
+              - "sdk/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "deny.toml"
 
   # ── 2. Lint · Audit · Test ─────────────────────────────────────────────────
   quality:
@@ -152,3 +170,56 @@ jobs:
           path: /tmp/jest-results.json
           retention-days: 14
           if-no-files-found: warn
+
+  # ── 3. Rust quality & dependency security gates ────────────────────────────
+  rust:
+    name: ci/rust
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # ── Formatting ────────────────────────────────────────────────────────
+      - name: rustfmt check
+        run: cargo fmt --all -- --check
+
+      # ── Clippy (warnings denied) ──────────────────────────────────────────
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # ── Dependency license / ban / advisory checks ────────────────────────
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+          manifest-path: ./Cargo.toml
+
+      # ── Dependency vulnerability scan ─────────────────────────────────────
+      - name: cargo-audit
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

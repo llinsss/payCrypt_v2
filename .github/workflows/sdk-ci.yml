@@ -12,6 +12,9 @@
 #              browser (esbuild bundle) smoke fixtures against the packed
 #              tarball (#620) — this is the publish gate: a failure here
 #              means the package is not safe to publish.
+#   rust     – Rust quality & dependency-security gates (#741):
+#              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
+#              cargo-audit across every contract and SDK crate.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -23,6 +26,10 @@ on:
     branches: [master]
     paths:
       - "packages/**"
+      - "contracts/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
       - "tsconfig*.json"
       - "eslint.config.js"
       - ".github/workflows/sdk-ci.yml"
@@ -30,6 +37,10 @@ on:
     branches: [master]
     paths:
       - "packages/**"
+      - "contracts/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
       - "tsconfig*.json"
       - "eslint.config.js"
       - ".github/workflows/sdk-ci.yml"
@@ -46,6 +57,7 @@ jobs:
     timeout-minutes: 2
     outputs:
       sdk: ${{ steps.filter.outputs.sdk }}
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
 
@@ -58,6 +70,11 @@ jobs:
               - "packages/**"
               - "tsconfig*.json"
               - "eslint.config.js"
+            rust:
+              - "contracts/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "deny.toml"
 
   # ── 2. Lint · Type-check · Build (matrix) ──────────────────────────────────
   build:
@@ -177,25 +194,82 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # ── 3. Stable aggregated check for this component ──────────────────────────
+  # ── 3. Rust quality & dependency-security gates (#741) ─────────────────────
+  # Runs rustfmt, clippy (warnings denied), cargo-deny and cargo-audit over
+  # every contract and SDK crate in the workspace. Failures surface directly
+  # on the pull request via the aggregated ci/sdk check below.
+  rust:
+    name: "ci/sdk (rust)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # ── rustfmt ───────────────────────────────────────────────────────────
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      # ── clippy (warnings denied) ──────────────────────────────────────────
+      - name: cargo clippy -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      # ── cargo-deny (licenses, bans, advisories) ───────────────────────────
+      # Uses deny.toml at the repo root; advisories are pinned or documented
+      # as justified exceptions there.
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+
+      # ── cargo-audit (dependency vulnerability scan) ───────────────────────
+      - name: cargo-audit
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 4. Stable aggregated check for this component ──────────────────────────
   # Required-checks workflow needs a single stable name per component.
-  # This job rolls up the matrix result.
+  # This job rolls up the matrix and Rust gate results.
   ci-sdk:
     name: ci/sdk
-    needs: [detect, build]
+    needs: [detect, build, rust]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
       - name: Check SDK matrix result
         run: |
-          if [[ "${{ needs.detect.outputs.sdk }}" == "false" ]]; then
-            echo "No SDK paths changed — skipping (pass-through)."
+          if [[ "${{ needs.detect.outputs.sdk }}" == "false" && "${{ needs.detect.outputs.rust }}" == "false" ]]; then
+            echo "No SDK or Rust paths changed — skipping (pass-through)."
             exit 0
           fi
-          if [[ "${{ needs.build.result }}" == "success" ]]; then
-            echo "All SDK packages passed."
-          else
+          if [[ "${{ needs.detect.outputs.sdk }}" == "true" && "${{ needs.build.result }}" != "success" ]]; then
             echo "One or more SDK package checks failed."
             exit 1
           fi
+          if [[ "${{ needs.detect.outputs.rust }}" == "true" && "${{ needs.rust.result }}" != "success" ]]; then
+            echo "Rust quality/security gates failed."
+            exit 1
+          fi
+          echo "All SDK and Rust checks passed."

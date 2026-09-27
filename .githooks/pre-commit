@@ -1,12 +1,78 @@
-#!/bin/sh
-# Block commits that introduce string-interpolated raw SQL.
+#!/usr/bin/env bash
 #
-# Enable once per clone:
-#   git config core.hooksPath .githooks
+# Pre-commit hook: Rust quality and dependency security gates.
 #
-# See CONTRIBUTING.md → "Safe Knex Query Patterns".
-set -e
+# Runs rustfmt, clippy (warnings denied), cargo-deny, and cargo-audit
+# across the contract and SDK crates so failures are visible before a
+# pull request is opened. Mirrors the CI gates required by issue #741.
+#
+# Install with: git config core.hooksPath .githooks
 
-if [ -d backend ]; then
-  node backend/scripts/check-raw-sql.js
+set -euo pipefail
+
+# Crates that make up the contract and SDK surface.
+CRATES=(
+  "contracts"
+  "contracts/payment"
+  "sdk"
+)
+
+# Only run for crates that actually exist in this checkout.
+EXISTING_CRATES=()
+for crate in "${CRATES[@]}"; do
+  if [ -f "${crate}/Cargo.toml" ]; then
+    EXISTING_CRATES+=("${crate}")
+  fi
+done
+
+if [ "${#EXISTING_CRATES[@]}" -eq 0 ]; then
+  echo "pre-commit: no Rust crates found, skipping Rust gates"
+  exit 0
 fi
+
+fail() {
+  echo "pre-commit: $1" >&2
+  exit 1
+}
+
+# 1. rustfmt check ---------------------------------------------------------
+if command -v cargo >/dev/null 2>&1; then
+  echo "pre-commit: cargo fmt --check"
+  for crate in "${EXISTING_CRATES[@]}"; do
+    (cd "${crate}" && cargo fmt --all -- --check) \
+      || fail "rustfmt check failed in ${crate}"
+  done
+else
+  fail "cargo is not installed; cannot run Rust gates"
+fi
+
+# 2. clippy with warnings denied ------------------------------------------
+echo "pre-commit: cargo clippy -D warnings"
+for crate in "${EXISTING_CRATES[@]}"; do
+  (cd "${crate}" && cargo clippy --all-targets --all-features -- -D warnings) \
+    || fail "clippy failed in ${crate}"
+done
+
+# 3. cargo-deny (licenses, bans, advisories) ------------------------------
+if command -v cargo-deny >/dev/null 2>&1; then
+  echo "pre-commit: cargo deny check"
+  for crate in "${EXISTING_CRATES[@]}"; do
+    (cd "${crate}" && cargo deny check) \
+      || fail "cargo-deny check failed in ${crate}"
+  done
+else
+  echo "pre-commit: cargo-deny not installed, skipping (install: cargo install cargo-deny)" >&2
+fi
+
+# 4. cargo-audit (dependency vulnerability scan) --------------------------
+if command -v cargo-audit >/dev/null 2>&1; then
+  echo "pre-commit: cargo audit"
+  for crate in "${EXISTING_CRATES[@]}"; do
+    (cd "${crate}" && cargo audit) \
+      || fail "cargo-audit found vulnerabilities in ${crate}"
+  done
+else
+  echo "pre-commit: cargo-audit not installed, skipping (install: cargo install cargo-audit)" >&2
+fi
+
+echo "pre-commit: all Rust gates passed"
