@@ -20,6 +20,74 @@ changes that touch on-chain logic.
 - Update documentation when you change a public interface or a security-relevant
   assumption.
 
+## Rust/Soroban release checklist
+
+Every release of the Rust/Soroban components (contracts and the indexer) must
+follow this checklist. A release is not approved until every item below is
+checked and the evidence is linked in the release pull request.
+
+### 1. Pinned inputs
+
+- [ ] `Cargo.lock` is committed and up to date; the build uses `--locked`.
+- [ ] The Rust toolchain is pinned (`rust-toolchain.toml`) and matches CI.
+- [ ] The Soroban SDK version is pinned in `Cargo.toml` and recorded in the
+      release notes.
+- [ ] The target network (passphrase, RPC endpoint, network ID) is recorded.
+- [ ] No floating versions (`*`, `>=`, git branches) are introduced.
+
+### 2. Artifact identity
+
+- [ ] The contract WASM is built reproducibly from the tagged commit.
+- [ ] The SHA-256 of each WASM artifact is recorded in the release notes.
+- [ ] The deployed WASM hash matches the recorded hash on-chain
+      (`update_current_contract_wasm` / install hash).
+- [ ] The indexer binary/image is tagged with the commit SHA and its digest is
+      recorded.
+- [ ] Artifacts are signed or otherwise attributable to the release commit.
+
+### 3. Environment validation
+
+- [ ] The target network is reachable and reports the expected network ID.
+- [ ] The admin address and contract IDs match the intended environment.
+- [ ] Required environment variables/secrets are present and validated before
+      deploy (fail fast on missing or malformed values).
+- [ ] Storage layout compatibility with the currently deployed version is
+      confirmed (migration path exists if it changed).
+- [ ] Indexer checkpoints/cursors are recorded so indexing can resume.
+
+### 4. Release approval
+
+- [ ] All tests pass: unit, property, and local-network (integration) tests.
+- [ ] The security invariants table below is satisfied for any changed surface.
+- [ ] At least one maintainer has reviewed and approved the release PR.
+- [ ] The upgrade is authorized by the admin and emits an event.
+- [ ] The release notes list pinned inputs, artifact hashes, and the rollback
+      plan.
+
+### 5. Rollback
+
+- [ ] The previously deployed WASM hash is recorded and can be reinstalled.
+- [ ] The rollback procedure is documented and has been exercised on a local
+      network.
+- [ ] Storage migrations are reversible, or the forward-only migration is
+      explicitly documented with its consequences.
+- [ ] Indexer rollback restores the prior checkpoint and re-indexes from it.
+- [ ] Monitoring/alerting is in place to detect a failed or partial release
+      before rollback is triggered.
+
+### Migration, indexing, monitoring, and rollback notes
+
+- **Migration** — storage layout changes must ship with an explicit migration
+  path; never assume new code can read old storage. Record the migration in the
+  release notes and test it on a local network.
+- **Indexing** — record the indexer checkpoint before deploy so indexing can
+  resume deterministically; verify the indexer catches up to the new ledger
+  after the upgrade.
+- **Monitoring** — confirm ledger-gap alerts and upgrade-aware routing are
+  active for the target environment before and after the release.
+- **Rollback** — keep the prior artifact hash and checkpoint; a rollback must
+  restore both the contract and the indexer to a known-good state.
+
 ## Security: Soroban authorization and threat model
 
 Any change that touches authorization, admin controls, token movement, or

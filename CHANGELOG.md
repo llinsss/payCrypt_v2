@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust/Soroban release checklist covering pinned inputs, artifact identity,
+  environment validation, release approval, and rollback (#859).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are
