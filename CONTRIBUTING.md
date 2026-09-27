@@ -20,6 +20,48 @@ changes that touch on-chain logic.
 - Update documentation when you change a public interface or a security-relevant
   assumption.
 
+## WASM size and resource-budget gates
+
+Soroban contracts must stay within deployment and invocation resource limits as
+features grow. Every pull request that changes contract code must pass the
+resource-budget gates in CI, which measure the built WASM and representative
+invocations against agreed regression thresholds.
+
+### What is measured
+
+- **WASM size** — the byte size of each built contract `.wasm` artifact, which
+  must stay within the deployment limit.
+- **CPU instructions** — the instruction count consumed by representative
+  invocations.
+- **Memory** — the peak memory bytes consumed by representative invocations.
+- **Ledger reads/writes** — the number of ledger entries read and written by
+  representative invocations.
+
+### Thresholds
+
+The agreed thresholds live alongside the measurement tooling and are checked
+into the repository. CI fails when any measurement exceeds its threshold. When a
+change legitimately needs more budget, raise the threshold in the same pull
+request and explain why in the description; do not raise it silently.
+
+### Reproducible optimization workflow
+
+To build, measure, and optimize locally:
+
+1. Build the contracts in release mode so the artifacts match CI.
+2. Run the resource-budget measurement tooling against the built artifacts and
+   the representative invocations.
+3. Compare the reported WASM size, CPU, memory, and ledger reads/writes against
+   the checked-in thresholds.
+4. If a measurement regresses, optimize before raising a threshold. Common
+   levers: reduce stored data and ledger writes, avoid unnecessary
+   cross-contract calls, shrink serialized types, and remove unused code paths.
+5. Re-run the measurement tooling to confirm the change is within budget, then
+   open the pull request.
+
+The same steps run in CI, so a local pass is a reliable predictor of a green
+build.
+
 ## Security: Soroban authorization and threat model
 
 Any change that touches authorization, admin controls, token movement, or

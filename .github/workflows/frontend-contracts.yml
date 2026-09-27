@@ -45,3 +45,81 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  wasm-budget:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install stellar-cli
+        run: cargo install --locked stellar-cli --version 22.0.1
+      - name: Build Soroban contracts (wasm32)
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Measure WASM size
+        run: |
+          set -euo pipefail
+          MAX_WASM_BYTES="${MAX_WASM_BYTES:-65536}"
+          found=0
+          for wasm in $(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm'); do
+            found=1
+            size=$(stat -c%s "$wasm")
+            echo "$wasm: $size bytes (budget $MAX_WASM_BYTES)"
+            if [ "$size" -gt "$MAX_WASM_BYTES" ]; then
+              echo "::error file=$wasm::WASM size $size exceeds budget $MAX_WASM_BYTES bytes"
+              exit 1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No Soroban contract WASM artifacts found to measure"
+            exit 1
+          fi
+      - name: Measure CPU, memory, and ledger reads/writes
+        run: |
+          set -euo pipefail
+          MAX_CPU_INSTRUCTIONS="${MAX_CPU_INSTRUCTIONS:-100000000}"
+          MAX_MEMORY_BYTES="${MAX_MEMORY_BYTES:-41943040}"
+          MAX_LEDGER_READS="${MAX_LEDGER_READS:-40}"
+          MAX_LEDGER_WRITES="${MAX_LEDGER_WRITES:-20}"
+          found=0
+          for wasm in $(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm'); do
+            found=1
+            echo "::group::Resource budget for $wasm"
+            stellar contract invoke \
+              --wasm "$wasm" \
+              --id 1 \
+              --fee 1000000 \
+              --cost \
+              -- 2>&1 | tee /tmp/cost.txt || true
+            cpu=$(grep -oE 'cpu_insns[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            mem=$(grep -oE 'mem_bytes[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            reads=$(grep -oE 'read_entries[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            writes=$(grep -oE 'write_entries[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            echo "cpu_insns=$cpu mem_bytes=$mem read_entries=$reads write_entries=$writes"
+            if [ "$cpu" -gt "$MAX_CPU_INSTRUCTIONS" ]; then
+              echo "::error file=$wasm::CPU instructions $cpu exceed budget $MAX_CPU_INSTRUCTIONS"
+              exit 1
+            fi
+            if [ "$mem" -gt "$MAX_MEMORY_BYTES" ]; then
+              echo "::error file=$wasm::Memory $mem bytes exceeds budget $MAX_MEMORY_BYTES"
+              exit 1
+            fi
+            if [ "$reads" -gt "$MAX_LEDGER_READS" ]; then
+              echo "::error file=$wasm::Ledger reads $reads exceed budget $MAX_LEDGER_READS"
+              exit 1
+            fi
+            if [ "$writes" -gt "$MAX_LEDGER_WRITES" ]; then
+              echo "::error file=$wasm::Ledger writes $writes exceed budget $MAX_LEDGER_WRITES"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No Soroban contract WASM artifacts found to measure"
+            exit 1
+          fi
