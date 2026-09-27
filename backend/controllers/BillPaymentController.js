@@ -1,4 +1,4 @@
-import BillPaymentService from '../services/BillPaymentService.js';
+import BillPaymentService, { BILL_PAYMENT_DECLINED } from '../services/BillPaymentService.js';
 import Joi from 'joi';
 
 const billPaymentSchema = Joi.object({
@@ -110,6 +110,13 @@ class BillPaymentController {
 
             if (error.message === 'Insufficient wallet balance') {
                 return res.status(402).json({
+                    status: 'error',
+                    message: error.message
+                });
+            }
+
+            if (error.message === BILL_PAYMENT_DECLINED) {
+                return res.status(502).json({
                     status: 'error',
                     message: error.message
                 });

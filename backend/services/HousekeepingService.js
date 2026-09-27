@@ -10,6 +10,7 @@ const DEFAULT_LOCK_TTL_MS = parseInt(process.env.HOUSEKEEPING_LOCK_TTL_MS, 10) |
 
 const AUDIT_CLEANUP_JOB = "housekeeping:audit-log-cleanup";
 const EXPORT_CLEANUP_JOB = "housekeeping:export-cleanup";
+const BILL_RECONCILE_JOB = "housekeeping:bill-payment-reconciliation";
 
 // In-memory last-run metrics, per job name. Each replica only records the
 // outcome it actually observed (ran or skipped), but that's enough to answer
@@ -94,6 +95,17 @@ async function runExportCleanup() {
 }
 
 /**
+ * Finalizes bill payments left pending by provider timeouts or crashes.
+ * Singleton across replicas; finalization is idempotent regardless.
+ */
+async function runBillPaymentReconciliation() {
+  return runSingleton(BILL_RECONCILE_JOB, async () => {
+    const { default: BillPaymentService } = await import("./BillPaymentService.js");
+    return BillPaymentService.reconcilePendingPayments();
+  });
+}
+
+/**
  * Snapshot of last-run metrics for housekeeping jobs on this replica,
  * exposed via GET /api/health for operational visibility. `lastRunAt` is
  * only set on a replica that actually held the lease and executed the job;
@@ -103,6 +115,7 @@ function getHousekeepingStatus() {
   return {
     auditLogCleanup: jobState.get(AUDIT_CLEANUP_JOB) || null,
     exportCleanup: jobState.get(EXPORT_CLEANUP_JOB) || null,
+    billPaymentReconciliation: jobState.get(BILL_RECONCILE_JOB) || null,
   };
 }
 
@@ -117,6 +130,7 @@ function resetHousekeepingStatus() {
 export default {
   runAuditLogCleanup,
   runExportCleanup,
+  runBillPaymentReconciliation,
   getHousekeepingStatus,
   resetHousekeepingStatus,
 };
