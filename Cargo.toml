@@ -16,6 +16,10 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
+# Operational APIs for contract health (#861): deterministic validation,
+# idempotency/replay protection, and operational metrics.
+contract-health = { path = "crates/contract-health" }
+
 [profile.release]
 opt-level = "z"
 lto = true
