@@ -8,6 +8,8 @@ import {
 } from "../controllers/chainController.js";
 import { publicCache, invalidateCache } from "../middleware/cacheControl.js";
 import validate from "../middleware/validate.js";
+import { authenticate } from "../middleware/authenticate.js";
+import { requireAdmin } from "../middleware/requireAdmin.js";
 import { paginationSchema } from "../validators/paginationValidator.js";
 import { createChainSchema, updateChainSchema } from "../validators/chainSchemas.js";
 
@@ -25,8 +27,10 @@ const router = express.Router();
  * /api/chains:
  *   post:
  *     summary: Create a new chain configuration
- *     description: Add a new supported blockchain chain to the platform.
+ *     description: Add a new supported blockchain chain to the platform. Requires administrator authorization.
  *     tags: [Chains]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -58,6 +62,10 @@ const router = express.Router();
  *     responses:
  *       201:
  *         description: Chain created successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Administrator privileges required
  *       422:
  *         description: Validation error (invalid or unknown fields)
  *   get:
@@ -85,7 +93,14 @@ const router = express.Router();
  *       422:
  *         description: Validation error (invalid page or limit)
  */
-router.post("/", validate(createChainSchema), invalidateCache("chains"), createChain);
+router.post(
+  "/",
+  authenticate,
+  requireAdmin,
+  validate(createChainSchema),
+  invalidateCache("chains"),
+  createChain
+);
 router.get("/", validate(paginationSchema, "query"), publicCache(3600), getChains);
 
 /**
@@ -108,7 +123,10 @@ router.get("/", validate(paginationSchema, "query"), publicCache(3600), getChain
  *         description: Chain not found
  *   put:
  *     summary: Update a chain configuration
+ *     description: Requires administrator authorization.
  *     tags: [Chains]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -137,13 +155,20 @@ router.get("/", validate(paginationSchema, "query"), publicCache(3600), getChain
  *     responses:
  *       200:
  *         description: Chain updated
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Administrator privileges required
  *       404:
  *         description: Chain not found
  *       422:
  *         description: Validation error
  *   delete:
  *     summary: Delete a chain configuration
+ *     description: Requires administrator authorization.
  *     tags: [Chains]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -153,11 +178,22 @@ router.get("/", validate(paginationSchema, "query"), publicCache(3600), getChain
  *     responses:
  *       200:
  *         description: Chain deleted
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Administrator privileges required
  *       404:
  *         description: Chain not found
  */
 router.get("/:id", getChainById);
-router.put("/:id", validate(updateChainSchema), invalidateCache("chains"), updateChain);
-router.delete("/:id", invalidateCache("chains"), deleteChain);
+router.put(
+  "/:id",
+  authenticate,
+  requireAdmin,
+  validate(updateChainSchema),
+  invalidateCache("chains"),
+  updateChain
+);
+router.delete("/:id", authenticate, requireAdmin, invalidateCache("chains"), deleteChain);
 
 export default router;

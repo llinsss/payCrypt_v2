@@ -22,87 +22,6 @@ Tagged makes crypto as simple as mobile money, but with global reach and lower f
  Payments: Paystack, Monnify 
  Auth: OAuth 2.0 + KYC provider
 
-## Soroban Authorization & Threat Model
-
-This section documents the contract-level threat model for the Soroban (Stellar) payment contracts. It maps every privileged action to the authority that may perform it, records the assumptions the model relies on, lists out-of-scope cases, and links each invariant to the test that enforces it.
-
-### Auth Contexts
-
-Soroban authorization is expressed through `require_auth` on the address that must approve an invocation. The contracts use two contexts:
-
-- **Direct auth** — the caller signs the invocation directly (`address.require_auth()` inside the entrypoint). Used for user-initiated actions such as `send_payment`, `withdraw`, and `set_tag`.
-- **Delegated / cross-contract auth** — a contract invokes another contract on behalf of a user. The user's authorization is carried in the `SorobanAuthorizationEntry` and re-checked by the callee via `require_auth`. Used by the router/batch entrypoints that fan out to per-token transfers.
-
-### Privileged Actions → Authority
-
-| Privileged action | Authority | Enforcement |
-|-------------------|-----------|-------------|
-| `send_payment(from, to, amount)` | `from` address | `from.require_auth()` in entrypoint |
-| `batch_payment(from, recipients)` | `from` address | `from.require_auth()` once, reused for all legs |
-| `withdraw(owner, amount)` | `owner` address | `owner.require_auth()` |
-| `set_tag(owner, tag)` | `owner` address | `owner.require_auth()`; tag uniqueness checked |
-| `set_admin(new_admin)` | current admin | `admin.require_auth()` + stored admin equality |
-| `pause()` / `unpause()` | admin | `admin.require_auth()` + stored admin equality |
-| `upgrade(new_wasm_hash)` | admin | `admin.require_auth()` + stored admin equality |
-| Token `transfer` / `transfer_from` | token holder / approved spender | token contract's own `require_auth` + allowance |
-
-### Cross-Contract Calls
-
-- The payment router calls the token contract's `transfer` for each leg. The router never holds user funds between calls; it forwards the exact `amount` and reverts the whole invocation on any leg failure.
-- Authorization entries are scoped to the specific invocation (contract id, function, args). A signature valid for one leg is not reusable for a different leg or a different contract.
-- The router does not grant itself any allowance; it relies on the user's signed authorization for the exact transfer arguments.
-
-### Admin Power
-
-- The admin can pause/unpause, upgrade the contract, and rotate the admin key. The admin **cannot** move user funds, mint balances, or bypass `require_auth` on user entrypoints.
-- Admin rotation is a two-step handoff: the current admin authorizes `set_admin`, and the new admin must be a valid address. There is no timelock in the current version (see Out of Scope).
-
-### Token Behavior
-
-- The contracts assume a standard SEP-41 / Stellar Asset Contract token: `transfer` is atomic, returns `()` on success, and panics on insufficient balance or missing auth.
-- Fee-on-transfer and rebasing tokens are **not** supported; the router credits the exact `amount` it sends.
-- Token decimals are read from the token contract and are not assumed to be 7.
-
-### Replay
-
-- Soroban authorization entries include a nonce and an expiration ledger. The contracts reject entries whose nonce has already been consumed and whose `live_until_ledger` has passed.
-- Because each entry is bound to the exact invocation (contract, function, args), a captured signature cannot be replayed against a different call or a different amount.
-
-### Upgrades
-
-- Upgrades replace the contract WASM via `upgrade(new_wasm_hash)` and require admin auth. Storage layout is preserved across upgrades; migrations must be additive.
-- The upgrade entrypoint is the only path that can change contract logic; there is no self-destruct.
-
-### Assumptions
-
-- The Stellar network's ledger close time and auth-entry expiration are honored by the host.
-- The admin key is held in a secure signer and is not compromised.
-- Token contracts used are well-behaved SEP-41 tokens without transfer hooks that re-enter the payment contract.
-- Off-chain tag resolution (backend) is trusted only for display; on-chain `set_tag` is the source of truth for tag ownership.
-
-### Out of Scope
-
-- Compromise of the admin signing key.
-- Malicious or non-standard token contracts (fee-on-transfer, rebasing, reentrant hooks).
-- Frontend/backend auth (JWT, API keys) — covered by the API security docs.
-- Economic attacks on tag squatting and gas/ledger-fee griefing.
-- Timelock / multi-sig governance for admin actions (not implemented in this version).
-
-### Invariants → Tests
-
-| Invariant | Test |
-|-----------|------|
-| Only `from` can authorize `send_payment` | `test_send_payment_requires_from_auth` |
-| Batch legs all use the same authorized `from` | `test_batch_payment_single_auth` |
-| Only `owner` can `withdraw` | `test_withdraw_requires_owner_auth` |
-| Tag is unique and owned by `owner` | `test_set_tag_uniqueness` |
-| Only admin can pause/unpause/upgrade | `test_admin_only_entrypoints` |
-| Admin cannot move user funds | `test_admin_cannot_transfer_user_funds` |
-| Replayed auth entry is rejected | `test_replay_auth_entry_rejected` |
-| Expired auth entry is rejected | `test_expired_auth_entry_rejected` |
-| Failed leg reverts the whole batch | `test_batch_payment_atomic_revert` |
-| Upgrade preserves storage layout | `test_upgrade_preserves_storage` |
-
 ## API Documentation
 
 - **Interactive API Docs (Redoc):** [docs/api/](docs/api/) — Browse the full API reference online
@@ -284,3 +203,88 @@ Deep linking is configured via URL schemes in `Info.plist`:
  Demo Steps
 
 1. Register Account
+   - Create account with @tag (e.g., @john_lagos)
+   - Complete KYC verification
+
+2. Explore Dashboard
+   - View multi-chain balances
+   - See supported tokens (STRK, LSK, BASE, FLOW)
+   - Check transaction history
+
+3. Test @Tag Payments
+   - Share your @tag for receiving
+   - Use QR code generation
+   - Test cross-chain transfers
+
+4. Banking Integration
+   - Link Nigerian bank account
+   - Test crypto-to-NGN conversion
+   - Withdraw to bank account
+
+  Key Features to Demo
+- @Tag payments vs wallet addresses
+- Multi-chain support (4 networks)
+- Instant NGN conversion
+- Mobile-responsive design
+- Real-time balance updates
+
+  Troubleshooting
+- Ensure MySQL is running
+- Check ports 3000 (backend) and 5173 (frontend) are free
+- Run `npm install` in both root and backend directories
+
+Demo showcases how Tagged makes crypto payments as simple as WhatsApp for African users.
+
+U2U Network Integration Documentation
+
+To run the demo. go to https://taggedpay.xyz/ 
+login with: 
+email: llinsomouduu@gmail.com
+PW: Tanna!7!
+then test run the app
+Overview
+The U2U Network is integrated into the project through smart contracts, on-chain account creation, and token operations. The project leverages U2U’s EVM-compatible blockchain to provide decentralized, tag-based smart wallets and seamless asset transfers.
+
+1. Deployment on U2U Mainnet
+The core smart contracts, including the TagRouter and Wallet contracts, are written in Solidity and deployed directly on the U2U Mainnet. This integration enables:
+
+Low transaction fees
+Fast finality
+Full EVM compatibility
+
+2. On-Chain Smart Wallet Creation
+When a user registers a unique tag (e.g., @username), a dedicated smart wallet is automatically deployed for them on the U2U network via the TagRouter. 
+Each wallet:
+Exists fully on-chain
+Is controlled by contract logic (not private keys)
+Supports account abstraction-style operations
+
+3. Support for U2U and ERC-20 Tokens
+
+Each smart wallet can manage multiple asset types on the U2U blockchain:
+U2U native tokens
+ERC-20 tokens deployed on U2U
+Operations supported include:
+Deposits to a tag wallet
+Tag-to-tag transfers (wallet-to-wallet)
+Balance checks and withdrawals
+
+4. Router-Controlled Operations (Paymaster Model)
+The TagRouter contract acts as a controller and optional paymaster, 
+enabling:
+Gasless or sponsored transactions
+Secure withdrawals using withdrawETH and withdrawERC20
+Internal swaps between U2U and ERC-20 tokens
+This ensures a smooth user experience while maintaining full decentralization.
+
+5. Decentralization and Transparency
+All wallet logic, asset transfers, and swaps are executed via U2U blockchain transactions. 
+There are:
+No centralized servers managing funds
+Complete transparency through the public ledger
+Immutable transaction history for all tag operations
+
+## Handsoff notes
+
+<!-- handsoff-issue-713 -->
+- #713: Implement canonical tag normalization in Rust

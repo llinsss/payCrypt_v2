@@ -5,6 +5,7 @@ import http from "http";
 import { validateEnv } from "./config/env.validation.js";
 import { validateStartup } from "./services/deploymentValidator.js";
 import { syncRenamedMigrations } from "./utils/migrationIds.js";
+import stellarStreamService from "./services/StellarStreamService.js";
 
 let validatedEnv;
 try {
