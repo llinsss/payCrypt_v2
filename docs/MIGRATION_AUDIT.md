@@ -31,7 +31,7 @@ documented below. These numbers are left intentionally unused.
 - `services/ReconciliationService.js` (lines 213, 236, 260)
 - `services/EvmReconciliationService.js` (line 484)
 
-An ALTER migration (`20250324_add_chain_to_reconciliation_reports.js`) adds
+An ALTER migration (`20250324000001_add_chain_to_reconciliation_reports.js`, formerly `20250324_add_chain_to_reconciliation_reports.js`) adds
 columns `chain`, `native_symbol`, and `token_breakdown` to this table, but
 **no CREATE migration existed**.
 
@@ -74,8 +74,8 @@ standard `YYYYMMDDHHMMSS_description`.
 | File | Action |
 |------|--------|
 | `20250324000000_create_reconciliation_reports_table.js` | **NEW** — CREATE `reconciliation_reports` |
-| `20250324_add_chain_to_reconciliation_reports.js` | ALTER `reconciliation_reports` |
-| `20250324_add_search_vector_to_transactions.js` | ALTER `transactions` |
+| `20250324000001_add_chain_to_reconciliation_reports.js` | ALTER `reconciliation_reports` |
+| `20250324000002_add_search_vector_to_transactions.js` | ALTER `transactions` |
 | `20260121175000_create_stellar_tags.js` | CREATE `stellar_tags` |
 | `20260122000000_create_stellar_accounts.js` | CREATE `stellar_accounts` |
 | `20260122000001_create_stellar_transactions.js` | CREATE `stellar_transactions` |
@@ -84,7 +84,7 @@ standard `YYYYMMDDHHMMSS_description`.
 | `20260122000004_webhook_events_idempotency.js` | ALTER `webhook_events` |
 | `20260123000000_create_api_keys_table.js` | CREATE `api_keys` |
 | `20260220000000_create_audit_logs_table.js` | CREATE `audit_logs` |
-| `20260220000000_create_scheduled_payments.js` | CREATE `scheduled_payments` |
+| `20260220000001_create_scheduled_payments.js` | CREATE `scheduled_payments` |
 | `20260220115816_add_metadata_to_transactions.js` | ALTER `transactions` |
 | `20260220120000_create_disputes.js` | CREATE `disputes`, `dispute_comments` |
 | `20260220125315_create_tags_table.js` | CREATE `tags` |
@@ -122,7 +122,7 @@ migration:
 |-------|-----------------|------------------|
 | `users` | `001` | `20260220153000`, `20260220174000`, `20260301000000`, `20260301000002` |
 | `kyc` | `002` | `20260326000001` |
-| `transactions` | `004` | `20250324_add_search_vector`, `20260220115816`, `20260220150000`, `20260220205900`, `20260220211500`, `20260221200700`, `20260301000000`, `20260324000000`, `20260326000000` |
+| `transactions` | `004` | `20250324000002`, `20260220115816`, `20260220150000`, `20260220205900`, `20260220211500`, `20260221200700`, `20260301000000`, `20260324000000`, `20260326000000` |
 | `balances` | `005` | `010`, `012` |
 | `tokens` | `006` | — |
 | `chains` | `007` | — |
@@ -130,7 +130,7 @@ migration:
 | `wallets` | `009` | — |
 | `notifications` | `011` | — |
 | `notification_preferences` | `013` | — |
-| `reconciliation_reports` | **`20250324000000` (NEW)** | `20250324_add_chain` |
+| `reconciliation_reports` | **`20250324000000` (NEW)** | `20250324000001` |
 | `stellar_tags` | `20260121175000` | `20260326000003` |
 | `stellar_accounts` | `20260122000000` | — |
 | `stellar_transactions` | `20260122000001` | — |
@@ -139,7 +139,7 @@ migration:
 | `api_keys` | `20260123000000` | `20260220210500`, `20260301000002` |
 | `api_key_audit_logs` | `20260220210500` | — |
 | `audit_logs` | `20260220000000` | `20260724000000` |
-| `scheduled_payments` | `20260220000000` | — |
+| `scheduled_payments` | `20260220000001` | — |
 | `disputes` | `20260220120000` | — |
 | `dispute_comments` | `20260220120000` | — |
 | `tags` | `20260220125315` | — |
@@ -182,3 +182,7 @@ Example: `20260801120000_add_refresh_tokens_to_users.js`
 - Aligns with Knex's default `knex migrate:make` output.
 - The legacy `001`–`013` files are retained for backward compatibility with
   existing `knex_migrations` records.  They are never to be renamed.
+- IDs must be unique, and filename order must match numeric ID order.
+  `npm run check:migrations` enforces this in CI. Files renamed to remove
+  duplicate IDs are listed in `backend/docs/ROLLBACK_GUIDE.md` ("Renamed
+  migrations") and are rewritten in `knex_migrations` by `npm run migrate:sync`.

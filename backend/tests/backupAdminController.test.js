@@ -2,6 +2,7 @@ import { jest, describe, it, expect, beforeEach } from "@jest/globals";
 
 const mockResolveBackupConfig = jest.fn();
 const mockListBackupMetadata = jest.fn();
+const mockReadRestoreDrill = jest.fn();
 
 jest.unstable_mockModule("../scripts/backup.js", () => ({
   resolveBackupConfig: mockResolveBackupConfig,
@@ -9,12 +10,14 @@ jest.unstable_mockModule("../scripts/backup.js", () => ({
 
 jest.unstable_mockModule("../utils/backupMetadata.js", () => ({
   listBackupMetadata: mockListBackupMetadata,
+  readRestoreDrill: mockReadRestoreDrill,
 }));
 
 let listBackups;
 
 beforeEach(async () => {
   jest.clearAllMocks();
+  mockReadRestoreDrill.mockResolvedValue(null);
   ({ listBackups } = await import("../controllers/backupAdminController.js"));
 });
 
@@ -48,6 +51,7 @@ describe("backupAdminController.listBackups", () => {
       data: [{ filename: "taggedpay_20260301T000000Z.dump.enc", uploadedToS3: true }],
       retentionDays: 30,
       s3Enabled: true,
+      restoreDrill: null,
     });
   });
 

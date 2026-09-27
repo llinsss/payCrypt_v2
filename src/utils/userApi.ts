@@ -1,5 +1,6 @@
 import { apiClient } from './api';
 import { User } from '../types';
+import { parseUser } from './apiContracts';
 
 // User API interfaces
 export interface UpdateUserRequest {
@@ -24,8 +25,10 @@ export const userApi = {
   // Get all users (admin only)
   async getAllUsers(): Promise<UserResponse[]> {
     try {
-      const response = await apiClient.get<{ users: UserResponse[] }>('/users');
-      return response.users;
+      const response = await apiClient.get<unknown>('/users');
+      if (!Array.isArray(response)) throw new Error('Invalid user list response');
+      response.forEach((user) => parseUser(user));
+      return response as UserResponse[];
     } catch (error) {
       console.error('Failed to get users:', error);
       throw error;
@@ -35,8 +38,8 @@ export const userApi = {
   // Get user by ID
   async getUserById(id: string): Promise<UserResponse> {
     try {
-      const response = await apiClient.get<{ user: UserResponse }>(`/users/${id}`);
-      return response.user;
+      const response = await apiClient.get<unknown>(`/users/${id}`);
+      return parseUser(response) as UserResponse;
     } catch (error) {
       console.error('Failed to get user:', error);
       throw error;
@@ -46,8 +49,8 @@ export const userApi = {
   // Update user
   async updateUser(id: string, userData: UpdateUserRequest): Promise<UserResponse> {
     try {
-      const response = await apiClient.put<{ user: UserResponse }>(`/users/${id}`, userData);
-      return response.user;
+      const response = await apiClient.put<unknown>(`/users/${id}`, userData);
+      return parseUser(response) as UserResponse;
     } catch (error) {
       console.error('Failed to update user:', error);
       throw error;

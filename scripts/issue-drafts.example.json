@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Example: Add stellar payment gateway integration",
+    "body": "## Summary\nIntegrate the Stellar payment gateway to support XLM transfers.\n\n## Acceptance Criteria\n- [ ] Stellar SDK initialised\n- [ ] Send XLM transaction\n- [ ] Receive and parse Stellar webhooks",
+    "labels": ["enhancement", "stellar"],
+    "assignees": []
+  },
+  {
+    "title": "Example: Improve error handling in payment flow",
+    "body": "## Summary\nAdd structured error boundaries in the frontend payment flow so partial failures do not blank the UI.\n\n## Acceptance Criteria\n- [ ] Error boundary wraps each critical payment route\n- [ ] User can retry or navigate to dashboard safely",
+    "labels": ["bug", "frontend"],
+    "assignees": []
+  }
+]

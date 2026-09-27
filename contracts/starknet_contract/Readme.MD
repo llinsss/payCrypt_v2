@@ -12,14 +12,15 @@ The system allows users to register unique tags (e.g., "alice"), receive tokens 
 ## Features
 
 - **Tag Registration**: Users can register unique tags and deploy dedicated wallet contracts to receive tokens.
-- **Token Deposits**: Anyone can deposit tokens (e.g., USDC, STRK) to a user’s wallet using their tag.
-- **Withdrawals**: Users can withdraw tokens from their wallets, and the admin can withdraw from the PayCrypt contract.
+- **Token Deposits**: Anyone can deposit allowlisted tokens (e.g., USDC, STRK) to a user’s wallet using their tag. Deposits with `amount == 0` or unsupported tokens are strictly rejected.
+- **Withdrawals**: Users can withdraw allowlisted tokens from their wallets, and the admin can withdraw from the PayCrypt contract.
 - **Admin Controls**: The admin can set token addresses (e.g., USDC, STRK) and manage contract funds.
-- **Security**:
-  - Reentrancy guards to prevent recursive call attacks.
-  - Zero-address checks using `contract_address_const::<'0x0'>()`.
-  - Balance checks before transfers to ensure sufficient funds.
-- **Event Logging**: Emits events for tag registration, deposits, withdrawals, and token address updates for transparency and auditability.
+- **Security & Validation**:
+  - **Zero-Value Deposit Rejection**: `deposit_to_tag` validates `amount > 0` before making any external calls, returning `'Amount must be positive'` to prevent meaningless events and indexer/state spam.
+  - **Token Allowlist Enforcement**: All deposits, withdrawals, and balance queries enforce that token addresses match configured, allowlisted assets (`is_token_supported`), preventing rogue/malicious token interactions.
+  - **Reentrancy guards**: Prevents recursive call attacks across state mutations.
+  - **Zero-address checks**: Validates non-zero addresses using `contract_address_const::<0>()`.
+  - **Auditable Configuration**: Emits `TokenAddressUpdated` containing both previous and new token addresses upon every allowlist modification.
 
 ## Contracts
 
@@ -40,41 +41,48 @@ The `PayCrypt` contract serves as the central hub for tag-based payments, managi
   - Deposits tokens to the wallet associated with the given tag.
   - **Parameters**:
     - `tag`: The recipient’s tag.
-    - `amount`: The amount of tokens to deposit.
-    - `token`: The token contract address (e.g., USDC or STRK).
+    - `amount`: The amount of tokens to deposit (must be > 0).
+    - `token`: The allowlisted token contract address (e.g., USDC or STRK).
+  - **Error Behavior**:
+    - Panics with `'Amount must be positive'` if `amount == 0`.
+    - Panics with `'Token not supported'` if `token` is not in the allowlist.
   - **Emits**: `DepositReceived { tag, sender, amount, token }`.
 
 - **`withdraw_from_wallet(token: ContractAddress, tag: felt252, recipient_address: ContractAddress, amount: u256)`**:
   - Withdraws tokens from the user’s wallet (callable only by the tag’s owner).
   - **Parameters**:
-    - `token`: The token contract address.
+    - `token`: The allowlisted token contract address.
     - `tag`: The user’s tag.
     - `recipient_address`: The destination address for the tokens.
-    - `amount`: The amount to withdraw.
+    - `amount`: The amount to withdraw (must be > 0).
   - **Emits**: `WithdrawalCompleted { sender, amount, token }`.
 
 - **`withdraw(token: ContractAddress, recipient_address: ContractAddress, amount: u256) -> bool`**:
   - Withdraws tokens from the PayCrypt contract (admin-only).
   - **Parameters**:
-    - `token`: The token contract address.
+    - `token`: The allowlisted token contract address.
     - `recipient_address`: The destination address.
-    - `amount`: The amount to withdraw.
+    - `amount`: The amount to withdraw (must be > 0).
   - **Returns**: `true` if successful.
   - **Emits**: `WithdrawalCompleted { sender, amount, token }`.
 
 - **`set_token_address(token_key: felt252, token_address: ContractAddress)`**:
-  - Sets the address for a token (e.g., 'USDC' or 'STRK') (admin-only).
+  - Sets the address for a token (e.g., 'USDC' or 'STRK') and updates the allowlist (admin-only).
   - **Parameters**:
     - `token_key`: The token identifier (e.g., 'USDC').
     - `token_address`: The token contract address.
-  - **Emits**: `TokenAddressUpdated { token_key, token_address }`.
+  - **Emits**: `TokenAddressUpdated { token_key, previous_token_address, new_token_address }`.
 
+- **`is_token_supported(token: ContractAddress) -> bool`**:
+  - Returns `true` if the token contract address is currently configured and supported.
+- **`get_token_address(token_key: felt252) -> ContractAddress`**:
+  - Retrieves the token address associated with a key.
 - **`get_tag_wallet_address(tag: felt252) -> ContractAddress`**:
   - Retrieves the wallet address for a tag.
 - **`get_tag_wallet_balance(tag: felt252, token: ContractAddress) -> u256`**:
-  - Retrieves the token balance of a user’s wallet.
+  - Retrieves the token balance of a user’s wallet for an allowlisted token.
 - **`get_contract_token_balance(token: ContractAddress) -> u256`**:
-  - Retrieves the token balance of the PayCrypt contract.
+  - Retrieves the token balance of the PayCrypt contract for an allowlisted token.
 - **`get_user_profile(tag: felt252) -> UserProfile`**:
   - Retrieves the user profile (`tag`, `owner`, `user_wallet`, `exists`).
 - **`get_admin_address() -> ContractAddress`**:
@@ -87,6 +95,7 @@ The `PayCrypt` contract serves as the central hub for tag-based payments, managi
 - `wallet_class_hash`: Stores the class hash for deploying wallet contracts.
 - `user_profiles`: Maps tags to `UserProfile` structs (`tag`, `owner`, `user_wallet`, `exists`).
 - `token_addresses`: Maps token keys (e.g., 'USDC', 'STRK') to contract addresses.
+- `is_token_supported`: Maps token contract addresses to allowlist status boolean.
 - `reentrancy_guard`: Prevents reentrancy attacks.
 
 #### Events
@@ -94,7 +103,7 @@ The `PayCrypt` contract serves as the central hub for tag-based payments, managi
 - `TagRegistered { tag, wallet_address }`
 - `DepositReceived { tag, sender, amount, token }`
 - `WithdrawalCompleted { sender, amount, token }`
-- `TokenAddressUpdated { token_key, token_address }`
+- `TokenAddressUpdated { token_key, previous_token_address, new_token_address }`
 
 ### 2. Wallet Contract
 

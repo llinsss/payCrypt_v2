@@ -107,6 +107,38 @@ const WebhookEvent = {
       .orderBy("updated_at", "desc");
   },
 
+  /**
+   * Atomically claim a dead-letter event for a manual retry.
+   *
+   * The status transition `dead_letter -> retrying` happens in a single
+   * conditional UPDATE, so concurrent admin retries race on the database: the
+   * first wins (1 row updated), every other caller sees 0 rows and must treat
+   * the retry as already in flight.
+   *
+   * @returns {Promise<number>} number of rows updated (1 = claimed, 0 = duplicate)
+   */
+  async claimForManualRetry(id) {
+    return await db("webhook_events")
+      .where({ id, status: "dead_letter" })
+      .update({
+        status: "retrying",
+        updated_at: db.fn.now(),
+      });
+  },
+
+  /**
+   * Return a claimed-but-undelivered event to the dead-letter queue, e.g. when
+   * the manual dispatch throws before the delivery service records an outcome.
+   */
+  async releaseManualRetry(id) {
+    return await db("webhook_events")
+      .where({ id, status: "retrying" })
+      .update({
+        status: "dead_letter",
+        updated_at: db.fn.now(),
+      });
+  },
+
   async markDeadLetter(id, error_message) {
     await db("webhook_events")
       .where({ id })

@@ -119,6 +119,16 @@ export class TimeoutError extends TaggedError {
 }
 
 /**
+ * Error thrown when a request or a retry wait is cancelled via AbortSignal
+ */
+export class AbortedError extends TaggedError {
+  constructor(message: string = 'Request aborted') {
+    super(message, 'ABORTED_ERROR');
+    this.name = 'AbortedError';
+  }
+}
+
+/**
  * Error thrown when configuration is invalid
  */
 export class ConfigurationError extends TaggedError {

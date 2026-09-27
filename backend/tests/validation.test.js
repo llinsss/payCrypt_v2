@@ -229,7 +229,7 @@ describe("POST /transactions/payment validation", () => {
         const res = await request(app).post("/payment").send({
             senderTag: "alice",
             recipientTag: "bob",
-            amount: 10,
+            amount: "10",
             notes: "Test notes for this transaction",
             idempotencyKey: "abc123yz",
         });
@@ -243,7 +243,7 @@ describe("POST /batches validation", () => {
     it("returns 200 with a valid batch payload", async () => {
         const res = await request(app).post("/batches").send({
             senderTag: "alice",
-            payments: [{ recipientTag: "bob", amount: 10 }],
+            payments: [{ recipientTag: "bob", amount: "10" }],
         });
 
         expect(res.status).toBe(200);

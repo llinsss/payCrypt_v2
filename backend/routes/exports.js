@@ -9,7 +9,6 @@ import { validate, validateParams } from "../middleware/validation.js";
 import {
   exportRequestSchema,
   exportStatusSchema,
-  exportDownloadSchema,
 } from "../schemas/export.js";
 
 const router = express.Router();
@@ -74,26 +73,29 @@ router.post(
 
 /**
  * @swagger
- * /api/exports/download/{fileName}:
+ * /api/exports/download:
  *   get:
- *     summary: Download exported file
+ *     summary: Download exported file using one-time token (Issue #501)
  *     tags: [Exports]
- *     security:
- *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: fileName
+ *       - in: query
+ *         name: token
  *         required: true
  *         schema:
  *           type: string
+ *         description: Signed JWT download token (one-time use, 24-hour expiry)
  *     responses:
  *       200:
  *         description: File download
+ *       400:
+ *         description: Missing or invalid token
+ *       404:
+ *         description: Export not found or expired
+ *       410:
+ *         description: Token expired or already used (one-time-use violated)
  */
 router.get(
-  "/download/:fileName",
-  authenticate,
-  validateParams(exportDownloadSchema),
+  "/download",
   downloadExport,
 );
 

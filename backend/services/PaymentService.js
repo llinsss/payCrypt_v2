@@ -26,11 +26,35 @@ const PAYMENT_CONFIG = {
   DUPLICATE_WINDOW_MS: 60_000, // Reject identical submissions within 60 s
 };
 
+const STROOPS_PER_XLM = 10000000n;
+const MIN_AMOUNT_STROOPS = 1000n;
+const MAX_AMOUNT_STROOPS = 1000000n * STROOPS_PER_XLM;
+const NETWORK_FEE_STROOPS = 100n;
+
 class PaymentService {
   constructor() {
     this.server = new Server('https://horizon.stellar.org');
     this.networkPassphrase = Networks.PUBLIC;
     this.logger = console;
+  }
+
+  parseAmountToStroops(amount) {
+    const value = String(amount ?? '').trim();
+    const match = /^(\d+)(?:\.(\d{1,7}))?$/.exec(value);
+    if (!match) {
+      throw new Error('Invalid amount: use a positive decimal with at most 7 decimal places');
+    }
+
+    const whole = BigInt(match[1]);
+    const fraction = (match[2] || '').padEnd(7, '0');
+    return whole * STROOPS_PER_XLM + BigInt(fraction || '0');
+  }
+
+  formatStroops(stroops) {
+    const value = BigInt(stroops);
+    const whole = value / STROOPS_PER_XLM;
+    const fraction = (value % STROOPS_PER_XLM).toString().padStart(7, '0').replace(/0+$/, '');
+    return fraction ? `${whole}.${fraction}` : whole.toString();
   }
 
   /**
@@ -72,15 +96,12 @@ class PaymentService {
       throw new Error('Invalid recipient tag format. Must be 3-20 alphanumeric characters');
     }
 
-    // Validate amount
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount)) {
-      throw new Error('Invalid amount: must be a valid number');
-    }
-    if (numAmount < PAYMENT_CONFIG.MIN_AMOUNT) {
+    // Validate and normalize amount at Stellar's 7-decimal precision.
+    const amountStroops = this.parseAmountToStroops(amount);
+    if (amountStroops < MIN_AMOUNT_STROOPS) {
       throw new Error(`Amount must be at least ${PAYMENT_CONFIG.MIN_AMOUNT} XLM`);
     }
-    if (numAmount > PAYMENT_CONFIG.MAX_AMOUNT) {
+    if (amountStroops > MAX_AMOUNT_STROOPS) {
       throw new Error(`Amount exceeds maximum limit of ${PAYMENT_CONFIG.MAX_AMOUNT} XLM`);
     }
 
@@ -119,7 +140,7 @@ class PaymentService {
     return {
       senderAddress,
       recipientAddress,
-      amount: numAmount,
+      amount: this.formatStroops(amountStroops),
       asset,
       assetIssuer: assetIssuer || null
     };
@@ -130,7 +151,7 @@ class PaymentService {
    * @param {string} address - Stellar address
    * @param {string} asset - Asset code ('XLM' for native)
    * @param {string} assetIssuer - Issuer for custom assets
-   * @returns {Promise<number>} balance
+  * @returns {Promise<string>} balance in canonical decimal form
    * @throws {Error} if account not found or network error
    */
   async getBalance(address, asset = 'XLM', assetIssuer = null) {
@@ -147,7 +168,7 @@ class PaymentService {
           return b.asset_code === asset && (!assetIssuer || b.asset_issuer === assetIssuer);
         });
 
-        return balance ? parseFloat(balance.balance) : 0;
+        return balance ? this.formatStroops(this.parseAmountToStroops(balance.balance)) : '0';
       } catch (error) {
         lastError = error;
         this.logger.warn(`Balance check attempt ${attempt}/${PAYMENT_CONFIG.MAX_RETRIES} failed: ${error.message}`);
@@ -206,23 +227,24 @@ class PaymentService {
 
   /**
    * Calculate transaction fee based on amount and asset
-   * @param {number} amount - Transaction amount
+  * @param {string|number} amount - Transaction amount
    * @param {string} asset - Asset code
    * @returns {Object} { fee: number, baseFee: number, networkFee: number }
    */
   calculateFee(amount, _asset = 'XLM') {
-    // Base fee: 0.1% of transaction amount, minimum 0.00001 XLM
-    const baseFee = Math.max(amount * PAYMENT_CONFIG.BASE_FEE_PERCENTAGE, PAYMENT_CONFIG.MIN_FEE);
-
-    // Network fee (Stellar base fee in stroops converted to XLM)
-    const networkFee = 0.00001; // 100 stroops = 0.00001 XLM
-
-    const totalFee = baseFee + networkFee;
+    const amountStroops = this.parseAmountToStroops(amount);
+    // Round the percentage fee up to a stroop so the charge is deterministic.
+    const baseFeeStroops = amountStroops / 1000n + (amountStroops % 1000n === 0n ? 0n : 1n);
+    const effectiveBaseFeeStroops = baseFeeStroops < 1n ? 1n : baseFeeStroops;
+    const totalFeeStroops = effectiveBaseFeeStroops + NETWORK_FEE_STROOPS;
 
     return {
-      fee: totalFee,
-      baseFee,
-      networkFee,
+      fee: this.formatStroops(totalFeeStroops),
+      baseFee: this.formatStroops(effectiveBaseFeeStroops),
+      networkFee: this.formatStroops(NETWORK_FEE_STROOPS),
+      feeStroops: totalFeeStroops.toString(),
+      baseFeeStroops: effectiveBaseFeeStroops.toString(),
+      networkFeeStroops: NETWORK_FEE_STROOPS.toString(),
       percentage: PAYMENT_CONFIG.BASE_FEE_PERCENTAGE * 100
     };
   }
@@ -399,7 +421,7 @@ class PaymentService {
             success: true,
             transactionId: duplicate.id,
             txHash: duplicate.tx_hash,
-            amount: parseFloat(duplicate.amount),
+            amount: this.formatStroops(this.parseAmountToStroops(duplicate.amount)),
             asset,
             senderTag,
             recipientTag,
@@ -421,7 +443,7 @@ class PaymentService {
             success: true,
             transactionId: existingTransaction.id,
             txHash: existingTransaction.tx_hash,
-            amount: parseFloat(existingTransaction.amount),
+            amount: this.formatStroops(this.parseAmountToStroops(existingTransaction.amount)),
             asset: asset || 'XLM',
             senderTag,
             recipientTag,
@@ -456,11 +478,12 @@ class PaymentService {
       // Step 3: Check sender balance
       const balance = await this.getBalance(senderAddress, asset, validatedAssetIssuer);
       const feeInfo = this.calculateFee(validatedAmount, asset);
-      const totalCost = validatedAmount + feeInfo.fee;
+      const totalCostStroops = this.parseAmountToStroops(validatedAmount) + BigInt(feeInfo.feeStroops);
+      const totalCost = this.formatStroops(totalCostStroops);
 
       this.logger.log(`Balance check: ${balance} ${asset}, required: ${totalCost} ${asset}`);
 
-      if (balance < totalCost) {
+      if (this.parseAmountToStroops(balance) < totalCostStroops) {
         throw new Error(`Insufficient funds. Balance: ${balance} ${asset}, required: ${totalCost} ${asset}`);
       }
 
@@ -494,6 +517,7 @@ class PaymentService {
           fee: feeInfo.fee,
           baseFee: feeInfo.baseFee,
           networkFee: feeInfo.networkFee,
+          feeStroops: feeInfo.feeStroops,
           asset,
           assetIssuer: validatedAssetIssuer,
           senderTag,
@@ -769,7 +793,7 @@ class PaymentService {
   _generateIdempotencyKey({ senderTag, recipientTag, amount, asset = 'XLM', memo = '', userId }) {
     const hash = crypto
       .createHash('sha256')
-      .update(`${userId}:${senderTag.toLowerCase()}:${recipientTag.toLowerCase()}:${parseFloat(amount).toFixed(7)}:${asset.toUpperCase()}:${memo}`)
+      .update(`${userId}:${senderTag.toLowerCase()}:${recipientTag.toLowerCase()}:${this.formatStroops(this.parseAmountToStroops(amount))}:${asset.toUpperCase()}:${memo}`)
       .digest('hex');
 
     return `gen:${hash.substring(0, 60)}`;
@@ -799,7 +823,7 @@ class PaymentService {
       String(userId),
       senderTag.toLowerCase(),
       recipientTag.toLowerCase(),
-      parseFloat(amount).toFixed(7),
+      this.formatStroops(this.parseAmountToStroops(amount)),
       asset.toUpperCase(),
     ];
     return crypto.createHash('sha256').update(parts.join(':')).digest('hex');

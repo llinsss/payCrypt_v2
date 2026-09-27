@@ -7,9 +7,14 @@
 # Jobs:
 #   detect   – path filter (always runs)
 #   build    – matrix over [sdk, stellar-sdk]:
-#              lint · typecheck · tsup build
+#              lint · typecheck · tsup build · API-surface compatibility
+#              check · pack tarball · install-and-run Node (CJS+ESM) and
+#              browser (esbuild bundle) smoke fixtures against the packed
+#              tarball (#620) — this is the publish gate: a failure here
+#              means the package is not safe to publish.
 #
-# Artifacts: sdk-dist-<package>-<sha> retained 7 days
+# Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
+# retained 7 days
 
 name: SDK CI
 
@@ -67,9 +72,11 @@ jobs:
       matrix:
         include:
           - package: sdk
+            npmName: "@tagged/sdk"
             path: packages/sdk
             lock: packages/sdk/package-lock.json
           - package: stellar-sdk
+            npmName: "@tagged/stellar-sdk"
             path: packages/stellar-sdk
             lock: packages/stellar-sdk/package-lock.json
 
@@ -103,13 +110,70 @@ jobs:
       - name: Build (tsup)
         run: npm run build
 
-      # ── Upload artifact ───────────────────────────────────────────────────
+      # ── API compatibility gate (#620) ───────────────────────────────────────
+      # Fails if exports/types were silently added or removed from dist
+      # relative to the package's declared api-surface.json baseline.
+      - name: Validate exports/types (API compatibility)
+        run: node scripts/smoke/check-api-surface.mjs
+
+      # ── Pack (#620) ───────────────────────────────────────────────────────
+      # Simulates exactly what `npm publish` would ship: a tarball built from
+      # package.json's "files", not raw source.
+      - name: Pack tarball
+        run: |
+          mkdir -p /tmp/pack-${{ matrix.package }}
+          npm pack --pack-destination /tmp/pack-${{ matrix.package }}
+
+      # ── Node smoke fixture (#620) ────────────────────────────────────────
+      # Installs the *packed tarball* (not a workspace symlink) into a clean
+      # throwaway project and requires/imports it via both CJS and ESM, the
+      # way a real consumer would.
+      - name: Node smoke test (install tarball)
+        run: |
+          set -euo pipefail
+          FIXTURE=/tmp/smoke-node-${{ matrix.package }}
+          mkdir -p "$FIXTURE"
+          cd "$FIXTURE"
+          npm init -y >/dev/null
+          npm install /tmp/pack-${{ matrix.package }}/*.tgz
+          cp "$GITHUB_WORKSPACE/${{ matrix.path }}/scripts/smoke/require.cjs" .
+          cp "$GITHUB_WORKSPACE/${{ matrix.path }}/scripts/smoke/import.mjs" .
+          node require.cjs
+          node import.mjs
+
+      # ── Browser smoke fixture (#620) ─────────────────────────────────────
+      # Bundles an entry point that imports the packed tarball with esbuild
+      # targeting the browser platform, catching accidental Node-only APIs
+      # before they reach a published release.
+      - name: Browser smoke test (esbuild bundle)
+        run: |
+          set -euo pipefail
+          FIXTURE=/tmp/smoke-browser-${{ matrix.package }}
+          mkdir -p "$FIXTURE"
+          cd "$FIXTURE"
+          npm init -y >/dev/null
+          npm install /tmp/pack-${{ matrix.package }}/*.tgz
+          cp "$GITHUB_WORKSPACE/${{ matrix.path }}/scripts/smoke/browser-entry.mjs" entry.mjs
+          "$GITHUB_WORKSPACE/${{ matrix.path }}/node_modules/.bin/esbuild" entry.mjs \
+            --bundle --platform=browser --format=esm --outfile=bundle.js
+          node -e "if (!require('node:fs').existsSync('bundle.js')) process.exit(1)"
+
+      # ── Upload artifacts ─────────────────────────────────────────────────
       - name: Upload dist artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: sdk-dist-${{ matrix.package }}-${{ github.sha }}
           path: ${{ matrix.path }}/dist/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload tarball artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-tarball-${{ matrix.package }}-${{ github.sha }}
+          path: /tmp/pack-${{ matrix.package }}/*.tgz
           retention-days: 7
           if-no-files-found: error
 

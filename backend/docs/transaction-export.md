@@ -114,6 +114,13 @@ Large exports (>1000 transactions) are processed asynchronously using BullMQ que
 - Download URLs include authentication
 - Files expire after 24 hours
 - File paths are validated to prevent directory traversal
+- Expired-export cleanup (`ExportCleanupService`) only deletes files that
+  `resolveOwnedExportFile` (`utils/exportStorage.js`) confirms are regular
+  `.csv`/`.pdf` files inside the canonicalized export root
+  (`EXPORT_STORAGE_PATH`). Symlinks, files reached through symlinked
+  directories, `..` traversal and paths outside the root are rejected with
+  `UNSAFE_PATH`; the file and its database row are left in place and the
+  failure is logged by export ID only.
 
 ## Configuration
 
