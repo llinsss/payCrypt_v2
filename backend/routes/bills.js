@@ -1,6 +1,6 @@
 import express from 'express';
 import BillPaymentController from '../controllers/BillPaymentController.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
@@ -165,6 +165,6 @@ router.get('/providers/:category', BillPaymentController.getProviders);
  *       502:
  *         description: Declined by the provider; the reserved amount was refunded
  */
-router.post('/pay', authenticateToken, billPaymentLimiter, BillPaymentController.pay);
+router.post('/pay', authenticate, billPaymentLimiter, BillPaymentController.pay);
 
 export default router;
