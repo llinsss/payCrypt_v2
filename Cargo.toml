@@ -16,6 +16,14 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
+# Pinned toolchain for reproducible contract builds. The verification workflow
+# (see scripts/verify-wasm.sh) reads this value to record the exact toolchain
+# used to produce each deployed WASM hash.
+[workspace.metadata.contract-verification]
+toolchain = "1.78.0"
+lockfile = "Cargo.lock"
+optimization = "release"
+
 [profile.release]
 opt-level = "z"
 lto = true

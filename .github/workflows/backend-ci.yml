@@ -6,6 +6,8 @@
 #   detect   – path filter (always runs, ~5 s)
 #   quality  – lint · dependency audit · jest test suite
 #   rust     – rustfmt · clippy · cargo-deny · cargo-audit (contracts & SDK crates)
+#   wasm-verify – build contracts, record toolchain/lockfile/optimization/WASM hash,
+#                 verify deployed hash and detect drift vs backend config
 #
 # Services: PostgreSQL 14, Redis 6 (mirrors production services)
 # Artifacts: jest-results-<sha> retained 14 days
@@ -223,3 +225,114 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 4. Contract WASM hash & source verification ────────────────────────────
+  # Builds each deployed Rust contract, records the toolchain version, the
+  # dependency lockfile reference, the optimization settings and the resulting
+  # WASM hash into a verification manifest, then verifies the deployed hash and
+  # detects drift between the manifest and the backend configuration.
+  wasm-verify:
+    name: ci/wasm-verify
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-
+
+      - name: Install wasm-opt
+        run: |
+          curl -sSfL https://github.com/WebAssembly/binaryen/releases/download/version_116/binaryen-version_116-x86_64-linux.tar.gz \
+            | tar -xz -C /tmp
+          echo "/tmp/binaryen-version_116/bin" >> "$GITHUB_PATH"
+
+      - name: Build contracts and record verification manifest
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/wasm-verify
+          manifest=/tmp/wasm-verify/contract-verification.json
+          toolchain=$(rustc --version)
+          lockfile_hash=$(sha256sum Cargo.lock | awk '{print $1}')
+          optimization="wasm-opt -Oz"
+
+          echo '{"toolchain":"'"$toolchain"'","lockfile":"Cargo.lock","lockfile_sha256":"'"$lockfile_hash"'","optimization":"'"$optimization"'","contracts":{}}' > "$manifest"
+
+          for crate in contracts/*/Cargo.toml; do
+            name=$(basename "$(dirname "$crate")")
+            cargo build --release --target wasm32-unknown-unknown --manifest-path "$crate"
+            wasm=$(find "target/wasm32-unknown-unknown/release" -maxdepth 1 -name "${name//-/_}.wasm" | head -n1)
+            if [ -z "$wasm" ]; then
+              echo "::error::No WASM artifact produced for contract '$name'"
+              exit 1
+            fi
+            wasm-opt -Oz "$wasm" -o "/tmp/wasm-verify/$name.wasm"
+            hash=$(sha256sum "/tmp/wasm-verify/$name.wasm" | awk '{print $1}')
+            echo "Contract $name WASM hash: $hash"
+            jq --arg n "$name" --arg h "$hash" '.contracts[$n] = $h' "$manifest" > "$manifest.tmp"
+            mv "$manifest.tmp" "$manifest"
+          done
+
+          cat "$manifest"
+
+      - name: Verify deployed hash and detect drift
+        run: |
+          set -euo pipefail
+          manifest=/tmp/wasm-verify/contract-verification.json
+          config=backend/config/contracts.json
+
+          if [ ! -f "$config" ]; then
+            echo "::error::Backend contract configuration '$config' not found; cannot verify deployed hashes"
+            exit 1
+          fi
+
+          drift=0
+          for name in $(jq -r '.contracts | keys[]' "$manifest"); do
+            built=$(jq -r --arg n "$name" '.contracts[$n]' "$manifest")
+            deployed=$(jq -r --arg n "$name" '.contracts[$n].wasm_hash // empty' "$config")
+            if [ -z "$deployed" ]; then
+              echo "::error::Contract '$name' is missing from backend configuration '$config'"
+              drift=1
+              continue
+            fi
+            if [ "$built" != "$deployed" ]; then
+              echo "::error::WASM hash drift for contract '$name': built=$built deployed=$deployed"
+              drift=1
+            else
+              echo "Contract '$name' verified: $built"
+            fi
+          done
+
+          if [ "$drift" -ne 0 ]; then
+            echo "::error::Contract verification failed: deployed WASM hash does not match reviewed source build"
+            exit 1
+          fi
+
+      - name: Upload verification manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-verification-${{ github.sha }}
+          path: /tmp/wasm-verify/contract-verification.json
+          retention-days: 90
+          if-no-files-found: warn
