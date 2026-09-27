@@ -1,6 +1,8 @@
+import os from "os";
+import { randomUUID } from "crypto";
 import { Worker, Queue } from "bullmq";
 import { redisConnection } from "../config/redis.js";
-import ScheduledPayment from "../models/ScheduledPayment.js";
+import ScheduledPayment, { idempotencyKeyFor } from "../models/ScheduledPayment.js";
 import Notification from "../models/Notification.js";
 import AuditLog from "../models/AuditLog.js";
 import PaymentService from "../services/PaymentService.js";
@@ -24,7 +26,9 @@ const notifierQueue = redisConnection
 attachRedisErrorAlert(notifierQueue, "scheduled-payment-notifier-queue");
 
 // ========== Execution Worker ==========
-// Runs every 60 seconds — picks up due payments, executes them via PaymentService
+// Runs every 60 seconds — claims due payments, executes them via PaymentService
+
+const WORKER_ID = `${os.hostname()}:${process.pid}:${randomUUID()}`;
 
 export const executionWorker = redisConnection
     ? new Worker(
@@ -32,8 +36,9 @@ export const executionWorker = redisConnection
         async (job) => {
             console.log(`⏰ Scheduler: checking for due payments...`);
 
-            const now = new Date();
-            const duePayments = await ScheduledPayment.getDuePayments(now);
+            // Atomically claim due rows so competing replicas never execute the
+            // same payment; expired claims from crashed workers are recovered.
+            const duePayments = await ScheduledPayment.claimDuePayments({ workerId: WORKER_ID });
 
             if (duePayments.length === 0) {
                 console.log(`⏰ Scheduler: no due payments found.`);
@@ -49,11 +54,6 @@ export const executionWorker = redisConnection
             for (const payment of duePayments) {
                 let auditLogId = null;
                 try {
-                    // Mark as processing
-                    await ScheduledPayment.update(payment.id, {
-                        status: "processing",
-                    });
-
                     // Retrieve sender's signing key from vault (encrypted, in-memory only)
                     await KeyVaultService.withUserSecrets(payment.user_id, async (secrets) => {
                         // Log key access for audit trail
@@ -82,19 +82,19 @@ export const executionWorker = redisConnection
                             asset: payment.asset,
                             recipientTag: payment.recipient_tag,
                             signingKey: signingKey,
+                            idempotencyKey: idempotencyKeyFor(payment),
                         });
 
                         // Secrets are automatically cleared after callback execution
                     });
 
-                    // Mark as completed and clear any prior failure tracking
-                    await ScheduledPayment.update(payment.id, {
-                        status: "completed",
-                        executed_at: new Date(),
-                        failure_count: 0,
-                        failure_reason: null,
-                        last_failure_at: null,
-                    });
+                    // Mark as completed and clear any prior failure tracking. If our
+                    // claim expired and another replica recovered the row, that
+                    // replica owns completion (its payment replays via the key).
+                    if (!(await ScheduledPayment.completeClaim(payment.id, WORKER_ID))) {
+                        console.warn(`⚠️ Scheduler: claim on payment #${payment.id} was lost; leaving completion to its new owner`);
+                        continue;
+                    }
 
                     // Notify the user (creates the in-app record and sends the push)
                     await NotificationService.sendToUser(payment.user_id,
