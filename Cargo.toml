@@ -23,6 +23,10 @@ thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 tracing = "0.1"
 
+# Upgrade-aware indexer routing: deterministic route resolution and
+# replay-safe, crash-recoverable persistence of routing/upgrade state.
+indexer-routing = { path = "crates/indexer-routing" }
+
 [profile.release]
 opt-level = "z"
 lto = true
