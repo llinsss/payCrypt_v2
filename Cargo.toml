@@ -13,8 +13,11 @@ license = "Apache-2.0"
 repository = "https://github.com/Handsoff/soroban-contracts"
 
 [workspace.dependencies]
-soroban-sdk = "21.7.6"
-soroban-token-sdk = "21.7.6"
+# Soroban SDK versions are pinned exactly so generated WASM and
+# authorization behavior cannot silently change between builds.
+# See docs/soroban-upgrade-policy.md before bumping these.
+soroban-sdk = "=21.7.6"
+soroban-token-sdk = "=21.7.6"
 
 [profile.release]
 opt-level = "z"

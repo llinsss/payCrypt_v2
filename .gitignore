@@ -60,3 +60,8 @@ coverage
 # Rust build artifacts
 target/
 **/target/
+
+# Rust/Soroban: keep Cargo.lock checked in for reproducible WASM builds.
+# Do not ignore Cargo.lock (see docs/rust-toolchain-policy.md).
+!Cargo.lock
+!**/Cargo.lock
