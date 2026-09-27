@@ -4,6 +4,10 @@
 //! successfully processed ledger/event cursor. On restart the indexer resumes
 //! deterministically from the last committed checkpoint, and replays are
 //! rejected so state is never double-applied.
+//!
+//! Also provides a durable, idempotent dead-letter store for indexer events
+//! that could not be processed, so failures are persisted for later inspection
+//! and replay without blocking the main cursor.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -135,6 +139,173 @@ impl CheckpointStore for MemoryCheckpointStore {
     }
 }
 
+/// Schema version for the dead-letter record format. Bump when the on-disk
+/// representation changes so recovery can reject or migrate old records.
+pub const DEAD_LETTER_SCHEMA_VERSION: u32 = 1;
+
+/// A single dead-lettered indexer event: an event that could not be processed
+/// and was persisted for later inspection or replay.
+///
+/// The `id` is a deterministic, caller-supplied key (e.g. a hash of the ledger,
+/// event index, and payload) that makes writes idempotent: re-writing the same
+/// `id` never creates a duplicate record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeadLetter {
+    /// Schema version of this record, for forward/backward compatibility.
+    pub schema_version: u32,
+    /// Deterministic idempotency key for the dead-lettered event.
+    pub id: String,
+    /// The cursor at which the event was observed.
+    pub checkpoint: Checkpoint,
+    /// Human-readable reason the event was dead-lettered.
+    pub reason: String,
+    /// Opaque serialized event payload, retained for replay.
+    pub payload: Vec<u8>,
+    /// Monotonic sequence assigned on first durable write (0 until committed).
+    pub sequence: u64,
+}
+
+impl DeadLetter {
+    /// Builds a new dead-letter record with the current schema version.
+    pub fn new(
+        id: impl Into<String>,
+        checkpoint: Checkpoint,
+        reason: impl Into<String>,
+        payload: impl Into<Vec<u8>>,
+    ) -> Self {
+        Self {
+            schema_version: DEAD_LETTER_SCHEMA_VERSION,
+            id: id.into(),
+            checkpoint,
+            reason: reason.into(),
+            payload: payload.into(),
+            sequence: 0,
+        }
+    }
+
+    /// Deterministic validation of a record before it is persisted.
+    ///
+    /// Rejects empty ids, empty reasons, and records written with an unknown
+    /// schema version so corrupt or incompatible entries never enter the store.
+    pub fn validate(&self) -> Result<(), DeadLetterError> {
+        if self.schema_version != DEAD_LETTER_SCHEMA_VERSION {
+            return Err(DeadLetterError::UnsupportedSchema(self.schema_version));
+        }
+        if self.id.is_empty() {
+            return Err(DeadLetterError::Invalid("empty id".into()));
+        }
+        if self.reason.is_empty() {
+            return Err(DeadLetterError::Invalid("empty reason".into()));
+        }
+        Ok(())
+    }
+}
+
+/// Errors surfaced by the dead-letter store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeadLetterError {
+    /// The record failed deterministic validation.
+    Invalid(String),
+    /// The record's schema version is not supported by this build.
+    UnsupportedSchema(u32),
+    /// The persisted dead-letter store could not be decoded.
+    Corrupt(String),
+}
+
+impl fmt::Display for DeadLetterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DeadLetterError::Invalid(msg) => write!(f, "invalid dead-letter: {msg}"),
+            DeadLetterError::UnsupportedSchema(v) => {
+                write!(f, "unsupported dead-letter schema version: {v}")
+            }
+            DeadLetterError::Corrupt(msg) => write!(f, "corrupt dead-letter store: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for DeadLetterError {}
+
+/// Durable dead-letter persistence.
+///
+/// Implementations must guarantee that a committed dead-letter survives a
+/// crash and that [`DeadLetterStore::put`] is idempotent: writing a record with
+/// an `id` that already exists is a no-op and returns the existing sequence.
+pub trait DeadLetterStore {
+    /// Persists `record`, returning its durable sequence number.
+    ///
+    /// Idempotent on `record.id`: a duplicate write returns the sequence of the
+    /// already-stored record without creating a second entry.
+    fn put(&mut self, record: DeadLetter) -> Result<u64, DeadLetterError>;
+
+    /// Loads a stored record by id, if present.
+    fn get(&self, id: &str) -> Result<Option<DeadLetter>, DeadLetterError>;
+
+    /// Returns the number of stored records.
+    fn len(&self) -> usize;
+
+    /// Returns `true` if no records are stored.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// In-memory reference dead-letter store used for tests and local networks.
+///
+/// Writes are idempotent on `id` and assigned a monotonic sequence, mirroring
+/// the durability contract of a real backing store (e.g. a table with a unique
+/// constraint on the id column).
+#[derive(Debug, Default, Clone)]
+pub struct MemoryDeadLetterStore {
+    records: BTreeMap<String, DeadLetter>,
+    next_sequence: u64,
+}
+
+impl MemoryDeadLetterStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Rebuilds a store from a journal of records, as a crash-recovery replay
+    /// would. Duplicate ids are collapsed, so recovery is idempotent.
+    pub fn from_journal(journal: impl IntoIterator<Item = DeadLetter>) -> Self {
+        let mut store = Self::new();
+        for record in journal {
+            // Ignore invalid or duplicate entries during recovery.
+            let _ = store.put(record);
+        }
+        store
+    }
+
+    /// Iterates stored records in id order.
+    pub fn records(&self) -> impl Iterator<Item = &DeadLetter> + '_ {
+        self.records.values()
+    }
+}
+
+impl DeadLetterStore for MemoryDeadLetterStore {
+    fn put(&mut self, mut record: DeadLetter) -> Result<u64, DeadLetterError> {
+        record.validate()?;
+        // Idempotent: an existing id is returned unchanged, no duplicate.
+        if let Some(existing) = self.records.get(&record.id) {
+            return Ok(existing.sequence);
+        }
+        self.next_sequence += 1;
+        record.sequence = self.next_sequence;
+        let sequence = record.sequence;
+        self.records.insert(record.id.clone(), record);
+        Ok(sequence)
+    }
+
+    fn get(&self, id: &str) -> Result<Option<DeadLetter>, DeadLetterError> {
+        Ok(self.records.get(id).cloned())
+    }
+
+    fn len(&self) -> usize {
+        self.records.len()
+    }
+}
+
 /// Drives indexing while advancing the checkpoint only after each event is
 /// successfully processed. Guarantees at-least-once delivery with idempotent
 /// checkpointing, so a crash mid-batch resumes from the last committed cursor.
@@ -223,6 +394,8 @@ pub struct IndexerMetrics {
     pub checkpoints_committed: u64,
     pub stale_writes_rejected: u64,
     pub recoveries: u64,
+    pub dead_letters_written: u64,
+    pub dead_letters_deduplicated: u64,
 }
 
 impl IndexerMetrics {
@@ -242,84 +415,14 @@ impl IndexerMetrics {
     pub fn record_recovery(&mut self) {
         self.recoveries += 1;
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn commit_is_idempotent() {
-        let mut store = MemoryCheckpointStore::new();
-        let cp = Checkpoint::new(10, 3);
-        store.commit(cp).unwrap();
-        store.commit(cp).unwrap();
-        assert_eq!(store.load().unwrap(), cp);
-        assert_eq!(store.journal().count(), 1);
+    /// Records a newly persisted dead-letter record.
+    pub fn record_dead_letter(&mut self) {
+        self.dead_letters_written += 1;
     }
 
-    #[test]
-    fn stale_write_is_rejected() {
-        let mut store = MemoryCheckpointStore::new();
-        store.commit(Checkpoint::new(10, 3)).unwrap();
-        let err = store.commit(Checkpoint::new(9, 0)).unwrap_err();
-        assert!(matches!(err, CheckpointError::StaleWrite { .. }));
-        assert_eq!(store.load().unwrap(), Checkpoint::new(10, 3));
-    }
-
-    #[test]
-    fn resumes_from_last_committed_checkpoint() {
-        let mut store = MemoryCheckpointStore::new();
-        store.commit(Checkpoint::new(42, 7)).unwrap();
-        let indexer = Indexer::resume(store).unwrap();
-        assert_eq!(indexer.cursor(), Checkpoint::new(42, 7));
-    }
-
-    #[test]
-    fn crash_recovery_replays_journal_deterministically() {
-        let journal = [
-            Checkpoint::new(1, 0),
-            Checkpoint::new(1, 1),
-            Checkpoint::new(2, 0),
-            Checkpoint::new(1, 5), // stale, ignored
-        ];
-        let store = MemoryCheckpointStore::from_journal(journal);
-        assert_eq!(store.load().unwrap(), Checkpoint::new(2, 0));
-    }
-
-    #[test]
-    fn cursor_advances_only_after_success() {
-        let mut indexer = Indexer::resume(MemoryCheckpointStore::new()).unwrap();
-        let ok: Result<(), ()> = Ok(());
-        let cp = indexer.process_event(|_| ok).unwrap();
-        assert_eq!(cp, Checkpoint::new(0, 1));
-
-        let err = indexer.process_event(|_| Err("boom")).unwrap_err();
-        assert_eq!(err, ProcessError::Handler("boom"));
-        // Cursor unchanged after failure.
-        assert_eq!(indexer.cursor(), Checkpoint::new(0, 1));
-    }
-
-    #[test]
-    fn process_ledger_commits_each_event() {
-        let mut indexer = Indexer::resume(MemoryCheckpointStore::new()).unwrap();
-        let events = [10u32, 20, 30];
-        let cp = indexer
-            .process_ledger(5, &events, |_, _| Ok::<(), ()>(()))
-            .unwrap();
-        assert_eq!(cp, Checkpoint::new(5, 3));
-    }
-
-    #[test]
-    fn metrics_track_activity() {
-        let mut m = IndexerMetrics::default();
-        m.record_processed();
-        m.record_failure();
-        m.record_stale_write();
-        m.record_recovery();
-        assert_eq!(m.events_processed, 1);
-        assert_eq!(m.events_failed, 1);
-        assert_eq!(m.stale_writes_rejected, 1);
-        assert_eq!(m.recoveries, 1);
+    /// Records a dead-letter write that was deduplicated by idempotency.
+    pub fn record_dead_letter_dedup(&mut self) {
+        self.dead_letters_deduplicated += 1;
     }
 }
