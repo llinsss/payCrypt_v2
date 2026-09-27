@@ -18,6 +18,11 @@ soroban-token-sdk = "21.7.6"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
 tokio-util = "0.7"
 
+# Secure signer abstraction (issue #753): secret material is loaded from the
+# environment or a secret manager, never from request payloads.
+secrecy = { version = "0.8", features = ["serde"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
+
 [profile.release]
 opt-level = "z"
 lto = true
