@@ -283,3 +283,8 @@ There are:
 No centralized servers managing funds
 Complete transparency through the public ledger
 Immutable transaction history for all tag operations
+
+## Handsoff notes
+
+<!-- handsoff-issue-713 -->
+- #713: Implement canonical tag normalization in Rust

@@ -4,6 +4,8 @@ import * as Sentry from "@sentry/node";
 import { verifyToken } from "../config/jwt.js";
 import { ACCESS_COOKIE } from "../utils/authCookies.js";
 
+const ADMIN_ROLES = ["admin", "super_admin"];
+
 export const requireAdmin = (req, res, next) => {
   if (!ADMIN_ROLES.includes(req.user?.role)) {
     return res.status(403).json({ error: 'Admin access required' });
