@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rust/Soroban SDK transaction preparation API with typed request/response
   types, deterministic validation and serialization, cancellation of in-flight
   preparation, and actionable error classification (#839).
+- Rust/Soroban SDK network configuration types with typed network id, RPC and
+  Horizon endpoints, network passphrase, timeouts, retry/cancellation settings,
+  deterministic validation and serialization, and actionable error
+  classification (#841).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
