@@ -55,3 +55,10 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+[profile.test]
+# Deterministic, reproducible fuzz/property test runs for escrow operation
+# sequences. Keep debug assertions on so boundary and resource-limit checks
+# (CPU/memory/entry limits) surface as hard failures instead of silent wraps.
+debug-assertions = true
+overflow-checks = true
