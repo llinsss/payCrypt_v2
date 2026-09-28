@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust SDK domain types for payment amounts (`Amount`, `Asset`, `PaymentIntent`)
+  with deterministic validation, serialization/compatibility behavior, and
+  actionable error classification (validation, unauthorized, replay, failure),
+  plus unit/property/local-network tests covering success, boundary,
+  unauthorized, replay, and failure paths (#834).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are
