@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Horizon endpoints, network passphrase, timeouts, retry/cancellation settings,
   deterministic validation and serialization, and actionable error
   classification (#841).
+- Rust/Soroban SDK cancellation support with typed request/acknowledge/status
+  APIs, deterministic validation and serialization, compatibility handling, and
+  actionable error classification for unauthorized, replay, not-found and
+  already-cancelled failures (#843).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
