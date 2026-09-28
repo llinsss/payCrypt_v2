@@ -91,3 +91,35 @@ jobs:
               wasm-tools validate "${wasm}"
             fi
           done
+
+  migration-rehearsal:
+    runs-on: ubuntu-latest
+    needs: rust
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build migration rehearsal harness
+        run: cargo build --release --all-features -p upgrade_manager
+      - name: Run migration rehearsal (local/testnet)
+        env:
+          SOROBAN_NETWORK: ${{ vars.SOROBAN_NETWORK || 'local' }}
+          SOROBAN_RPC_URL: ${{ vars.SOROBAN_RPC_URL }}
+          SOROBAN_NETWORK_PASSPHRASE: ${{ vars.SOROBAN_NETWORK_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mkdir -p migration-report
+          cargo test --release --all-features -p upgrade_manager -- --nocapture \
+            migration_rehearsal 2>&1 | tee migration-report/rehearsal.log
+      - name: Upload migration report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-report
+          path: migration-report/
+          if-no-files-found: warn

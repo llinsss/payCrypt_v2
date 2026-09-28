@@ -56,6 +56,19 @@ unknown-git = "deny"
 artifacts = ["target/wasm32-unknown-unknown/release/*.wasm"]
 max-size-bytes = 262144
 
+[workspace.metadata.migration]
+# Migration rehearsal (#772): migrate populated registry, wallet, and escrow
+# state to a new Rust contract version on local/testnet and emit a report.
+# The rehearsal is driven by `cargo run -p migration-rehearsal` and is wired
+# into CI so every run produces a migration report artifact.
+contracts = ["registry", "wallet", "escrow"]
+# State fields that must be snapshotted and validated before and after cutover.
+validate = ["balances", "owners", "tags", "nonces", "statuses"]
+# Ordered rehearsal phases. Each phase must succeed before the next runs.
+phases = ["snapshot", "pause", "cutover", "validate", "rollback"]
+# Report artifact emitted by CI for every rehearsal run.
+report = "target/migration-rehearsal/report.json"
+
 [profile.release]
 opt-level = "z"
 lto = true
