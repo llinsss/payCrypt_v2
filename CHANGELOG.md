@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Rust SDK request correlation IDs for the Soroban migration, with a typed
+  `CorrelationId` newtype, deterministic generation and validation,
+  serialization/deserialization support, cancellation of in-flight correlated
+  requests, and actionable error classification (invalid ID, missing ID,
+  replay, unauthorized) (#845).
 - Rust SDK retry middleware for the Soroban migration, with typed retry
   configuration, deterministic validation, cancellation support, and
   actionable error classification (retryable, unauthorized, replay, terminal)
