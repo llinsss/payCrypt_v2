@@ -88,6 +88,34 @@ upgrade = { requires-auth = true, callers = ["authorized", "unauthorized", "forw
 pause = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
 unpause = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
 
+[workspace.metadata.resources]
+# Soroban resource and fee estimation (issue #760).
+# Typed Rust estimation lives in `crates/soroban-estimation`; this table
+# records the network submission limits and safety margins the estimator
+# enforces before signing. CI validates the crate against these values.
+schema-version = 1
+
+[workspace.metadata.resources.safety-margin]
+# Fraction of each limit reserved as headroom (0.0 - 1.0).
+cpu-instructions = 0.10
+memory-bytes = 0.10
+ledger-reads = 0.10
+ledger-writes = 0.10
+
+[workspace.metadata.resources.submission-limits]
+# Per-transaction submission limits enforced by the network.
+cpu-instructions = 100000000
+memory-bytes = 41943040
+ledger-reads = 40
+ledger-writes = 25
+transaction-size-bytes = 71680
+
+[workspace.metadata.resources.fees]
+# Base fee (stroops) and inclusion fee bounds used for fee estimation.
+base-fee = 100
+min-inclusion-fee = 100
+max-inclusion-fee = 10000000
+
 [profile.release]
 opt-level = "z"
 lto = true
