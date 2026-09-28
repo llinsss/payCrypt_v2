@@ -1,55 +1,51 @@
 # Changelog
 
-All notable changes to Tagged will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-### Security
-- Circuit breaker inspection and reset endpoints are now restricted to
-  authenticated admins, resets are rate-limited, and successful resets are
-  written to the audit log (#553).
-
-## [1.0.0] - 2024-02-21
-
 ### Added
-- Multi-chain support (Ethereum, Base, Starknet, Core, Flow, Lisk, U2U, Stellar)
-- @tag-based payment system
-- KYC integration
-- Bank withdrawal functionality
-- Real-time balance updates
-- QR code generation for payments
-- Transaction history and filtering
-- Mobile-responsive design
-- Stellar payment integration
-- U2U Network integration
-- Smart wallet creation on-chain
-- ERC-20 token support
 
-### Changed
-- Rebranded from TaggedPay to Tagged
-- Improved transaction validation
-- Enhanced error handling
-- Optimized database queries
+- Rust release and compatibility matrix (`compatibility-matrix.json`) tracking the
+  Rust toolchain version, Soroban SDK version, Soroban protocol version, network
+  passphrase, contract WASM hash, and client crate compatibility for each
+  supported release.
+- CI coverage that validates the compatibility matrix and exercises the
+  supported network combinations (testnet, futurenet, mainnet) against it.
+- Documentation of upgrade sequencing and rollback limits for contract and
+  client releases.
 
-### Fixed
-- Duplicate function definitions in Transaction model
-- Variable declaration conflicts in controllers
-- Package.json syntax errors
-- Build configuration issues
+### Compatibility Matrix
 
-### Security
-- Added input sanitization
-- Implemented rate limiting
-- Enhanced JWT authentication
-- Added SQL injection prevention
+The machine-readable matrix lives in `compatibility-matrix.json` at the
+repository root. Each entry describes a single supported release and pins the
+following fields:
 
-## [0.1.0] - Initial Release
+| Field | Description |
+| --- | --- |
+| `rustVersion` | Rust toolchain version used to build the release. |
+| `sorobanSdkVersion` | Soroban SDK crate version the contract targets. |
+| `protocolVersion` | Soroban protocol version the contract is compiled for. |
+| `networkPassphrase` | Stellar network passphrase the release is validated against. |
+| `contractWasm` | SHA-256 hash of the released contract WASM artifact. |
+| `clientCrate` | Client crate name and compatible version range. |
 
-### Added
-- Basic payment functionality
-- User authentication
-- Database setup
-- API endpoints
+### Upgrade Sequencing
+
+1. Publish the new contract WASM and record its hash in the compatibility
+   matrix before announcing the release.
+2. Release the client crate only after the contract WASM hash is recorded, so
+   clients can pin a known-good contract.
+3. Roll out to testnet, then futurenet, then mainnet, verifying each network
+   passphrase entry in the matrix.
+4. Update the matrix entry's `protocolVersion` and `sorobanSdkVersion` only
+   after the corresponding network has been upgraded.
+
+### Rollback Limits
+
+- A contract WASM can be rolled back only to a previously published hash that
+  is still present in the compatibility matrix.
+- Protocol version upgrades are not reversible on-chain; once a network is
+  upgraded, only forward-compatible contract and client releases may be used.
+- Client crate rollbacks are limited to versions whose `clientCrate` range
+  still matches the deployed contract's `sorobanSdkVersion`.
