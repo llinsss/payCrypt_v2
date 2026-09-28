@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actionable error classification (validation, unauthorized, replay, failure),
   plus unit/property/local-network tests covering success, boundary,
   unauthorized, replay, and failure paths (#834).
+- Rust SDK contract discovery manifest (`ContractManifest`, `ContractEntry`,
+  `ContractKind`) with typed APIs for serialization, compatibility checks,
+  cancellation, and actionable error classification, plus deterministic
+  validation and unit/property/local-network tests covering success, boundary,
+  unauthorized, replay, and failure paths. Includes migration, indexing,
+  monitoring, and rollback documentation (#842).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
