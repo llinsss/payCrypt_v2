@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancellation of in-flight operations, and typed, actionable error
   classification (validation, unauthorized, replay/duplicate, network,
   contract, timeout) (#849).
+- Rust SDK event decoding compatibility tests: typed decoding of Soroban
+  contract events into the canonical payment model with deterministic
+  validation, plus unit/property tests covering success, boundary,
+  unauthorized, replay, and failure paths, and actionable classification of
+  decoding errors (#850).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
