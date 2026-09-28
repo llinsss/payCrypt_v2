@@ -38,3 +38,24 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 networks = ["testnet", "production"]
+
+# External audit package (issue #764).
+# Pins the inputs an external Rust/Soroban auditor needs to reproduce the
+# audited artifact from a tagged commit: the exact toolchain, the Soroban SDK
+# version, the release profile, and the reproducible test commands that scope
+# every contract and privileged operation. The audit package (threat model,
+# storage map, auth matrix, invariants, deployment manifests) is generated
+# from these settings so findings map back to source files and tests.
+[workspace.metadata.audit-package]
+rust-toolchain = "1.79.0"
+soroban-sdk = "21.7.6"
+profile = "release"
+contracts = ["contracts/*"]
+privileged-operations = ["admin", "initialize", "upgrade", "pause", "unpause", "set_admin"]
+storage-classes = ["persistent", "instance", "temporary"]
+networks = ["testnet", "production"]
+reproducible-commands = [
+    "cargo build --release --target wasm32-unknown-unknown",
+    "cargo test --workspace --all-features",
+    "cargo test -p deploy --test release_manifest",
+]

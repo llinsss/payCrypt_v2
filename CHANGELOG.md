@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust/Soroban external audit package (#764). The package scopes every Rust
+  contract and privileged operation, and includes a threat model, storage map,
+  auth matrix, invariants, deployment manifests, and reproducible test
+  commands, all generated from a tagged commit.
+
 ### Changed
 - Replaced the Cairo/Starknet contract roadmap with a Rust/Soroban contract
   roadmap. The active roadmap now sequences registry, wallet, escrow, SDK,

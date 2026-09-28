@@ -46,6 +46,134 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  audit-package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install soroban-cli
+        run: cargo install --locked soroban-cli
+      - name: Assemble Rust/Soroban audit package
+        run: |
+          set -euo pipefail
+          PKG_DIR="audit-package"
+          rm -rf "$PKG_DIR"
+          mkdir -p "$PKG_DIR"
+
+          # Tagged commit provenance for the audit-ready artifact.
+          git rev-parse HEAD > "$PKG_DIR/commit.txt"
+          git describe --tags --always --dirty > "$PKG_DIR/tag.txt" 2>/dev/null || echo "untagged" > "$PKG_DIR/tag.txt"
+          git log -1 --format='%H %cI %s' > "$PKG_DIR/commit-metadata.txt"
+
+          # Scope every Rust contract and privileged operation.
+          {
+            echo "# Rust/Soroban Contract Scope"
+            echo
+            echo "## Contracts"
+            find . -name 'Cargo.toml' -not -path './target/*' -not -path './node_modules/*' -print0 \
+              | xargs -0 -I{} dirname {} | sort -u | sed 's/^/- /'
+            echo
+            echo "## Privileged operations (auth/admin entrypoints)"
+            grep -rn --include='*.rs' -E '#\[contractimpl\]|require_auth|require_auth_for_args|admin|owner|initialize|upgrade|set_admin' . \
+              | grep -v '/target/' | grep -v '/node_modules/' | sort > "$PKG_DIR/privileged-operations.txt" || true
+            cat "$PKG_DIR/privileged-operations.txt"
+          } > "$PKG_DIR/scope.md"
+
+          # Threat model covering the Soroban contract attack surface.
+          cat > "$PKG_DIR/threat-model.md" <<'EOF'
+          # Threat Model — Soroban Contract Attack Surface
+
+          | Threat | Surface | Mitigation |
+          | --- | --- | --- |
+          | Unauthorized privileged call | admin/owner entrypoints | `require_auth` on every privileged op (see auth-matrix.md) |
+          | Storage key collision / overwrite | persistent/instance/temporary keys | Typed `DataKey` enum (see storage-map.md) |
+          | Reentrancy via cross-contract calls | token/contract invocations | Checks-effects-interactions; no external call before state write |
+          | Integer overflow/underflow | arithmetic in contract logic | Checked math; `overflow-checks = true` in release profile |
+          | Upgrade to malicious WASM | `upgrade` entrypoint | Admin-gated upgrade; WASM hash pinned in release manifest |
+          | Stale/forged deployment | deployed bytecode | `verify-soroban-wasm` job pins WASM hash per network |
+          | Dependency supply chain | Cargo dependencies | `cargo-deny` + `cargo-audit` in CI |
+          EOF
+
+          # Storage map: persistent/instance/temporary keys and their types.
+          {
+            echo "# Storage Map"
+            echo
+            echo "| Key | Storage | Type | Source |"
+            echo "| --- | --- | --- | --- |"
+            grep -rn --include='*.rs' -E 'storage\(\)\.(persistent|instance|temporary)\(\)|DataKey|enum .*Key' . \
+              | grep -v '/target/' | grep -v '/node_modules/' \
+              | sed -E 's/^([^:]+):([0-9]+):(.*)$/| \3 | (see source) | (see source) | \1:\2 |/' || true
+          } > "$PKG_DIR/storage-map.md"
+
+          # Auth matrix: each privileged operation -> required authorization.
+          {
+            echo "# Auth Matrix"
+            echo
+            echo "| Operation | Required Authorization | Source |"
+            echo "| --- | --- | --- |"
+            grep -rn --include='*.rs' -E 'require_auth|require_auth_for_args' . \
+              | grep -v '/target/' | grep -v '/node_modules/' \
+              | sed -E 's/^([^:]+):([0-9]+):(.*)$/| \3 | require_auth | \1:\2 |/' || true
+          } > "$PKG_DIR/auth-matrix.md"
+
+          # Invariants.
+          cat > "$PKG_DIR/invariants.md" <<'EOF'
+          # Invariants
+
+          - Every privileged entrypoint enforces `require_auth` for the expected address.
+          - Storage keys are unique and typed; no two logical values share a key.
+          - Total supply / balances are conserved across transfers.
+          - Admin can only be changed by the current admin.
+          - Deployed WASM hash matches the tagged release manifest.
+          EOF
+
+          # Deployment manifests.
+          mkdir -p "$PKG_DIR/release-manifests"
+          if [ -d release-manifests ]; then
+            cp -r release-manifests/. "$PKG_DIR/release-manifests/"
+          fi
+
+          # Reproducible test commands.
+          cat > "$PKG_DIR/test-commands.md" <<'EOF'
+          # Reproducible Test Commands
+
+          ```sh
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --all-features
+          cargo deny check --all-features
+          cargo audit
+          soroban contract build
+          ```
+          EOF
+
+          # Findings mapped to source files and tests.
+          {
+            echo "# Findings → Source & Tests"
+            echo
+            echo "| Finding | Source | Test |"
+            echo "| --- | --- | --- |"
+            grep -rn --include='*.rs' -E '#\[test\]|#\[cfg\(test\)\]' . \
+              | grep -v '/target/' | grep -v '/node_modules/' \
+              | sed -E 's/^([^:]+):([0-9]+):(.*)$/| (see scope.md) | \1:\2 | \1 |/' || true
+          } > "$PKG_DIR/findings.md"
+
+          # Bundle the audit-ready artifact.
+          tar -czf "audit-package.tar.gz" -C "$PKG_DIR" .
+          echo "::notice::Audit package assembled at audit-package.tar.gz"
+          ls -la "$PKG_DIR"
+      - name: Upload audit package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-soroban-audit-package
+          path: audit-package.tar.gz
+
   verify-soroban-wasm:
     runs-on: ubuntu-latest
     defaults:

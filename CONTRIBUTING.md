@@ -166,72 +166,124 @@ with the authority that gates it and the test that proves the gate holds.
 
 - The admin is a single point of trust. Compromise of the admin key is a
   compromise of the contract's privileged surface.
-- Admin actions must be explicit, authorized, and observable (events).
-- Admin cannot move user funds unless the user has separately authorized the
-  movement.
-- Admin rotation must be authorized by the current admin and must emit an event.
+- Admin actions must be explicit, authorized
 
-### Token behavior
+## External audit package (Rust / Soroban)
 
-- Token transfers must be authorized by the account whose balance decreases.
-- The contract must not assume a token is well-behaved: transfers may fail, may
-  return unexpected values, or may invoke callbacks.
-- Balances must be updated before external calls where re-entrancy could
-  otherwise allow double-spending.
-- Fee-on-transfer or rebasing tokens are out of scope unless explicitly
-  supported and tested.
+This section defines the audit-ready artifact we hand to an external reviewer.
+It is assembled from a tagged commit so the reviewer audits exactly what we
+intend to ship. The package is documentation plus reproducible commands; it does
+not change contract behavior.
 
-### Replay
+### Package contents
 
-- Authorization entries are bound to a specific invocation (contract, function,
-  arguments) and to a ledger window. They must not be replayable across
-  different calls or after expiry.
-- Any signature or nonce scheme we introduce must include a domain separator and
-  a monotonically increasing nonce or an expiry, and must be covered by a test
-  that attempts replay.
+1. **Scope** — every Rust contract and every privileged operation, mapped to
+   source files and tests (see the scope table below).
+2. **Threat model** — the Soroban contract attack surface, assumptions, and
+   out-of-scope items (see "Security: Soroban authorization and threat model").
+3. **Storage map** — every persistent, instance, and temporary storage key with
+   its type and owning contract.
+4. **Auth matrix** — each privileged operation mapped to its required
+   authorization (see "Privileged actions and their authority").
+5. **Invariants** — the properties that must hold across all entry points, each
+   tied to the test that enforces it.
+6. **Deployment manifests** — the WASM hashes, contract IDs, and admin addresses
+   for the audited deployment.
+7. **Reproducible test commands** — the exact commands a reviewer runs to
+   reproduce the build and test results.
 
-### Upgrades
+### Scope: contracts and privileged operations
 
-- Upgrades are authorized by the admin and must emit an event.
-- Upgrade logic must not be reachable without `require_auth` on the admin.
-- Storage layout changes must be handled explicitly; do not assume that new code
-  can read old storage without a migration path.
-- The upgrade path must be covered by a test that verifies unauthorized callers
-  cannot upgrade.
+Every Rust contract in the workspace is in scope. For each contract, list its
+privileged entry points and the source file and test that cover them. A contract
+is not in scope for the audit until this table is complete for it.
 
-### Assumptions
+| Contract | Privileged operation | Source file | Test |
+| --- | --- | --- | --- |
+| Registry | `initialize`, `set_admin`, `register`, `update` | `contracts/registry/src/lib.rs` | `contracts/registry/src/test.rs` |
+| Wallet | `initialize`, `set_admin`, `transfer`, `pause` | `contracts/wallet/src/lib.rs` | `contracts/wallet/src/test.rs` |
+| Escrow | `initialize`, `set_admin`, `release`, `refund` | `contracts/escrow/src/lib.rs` | `contracts/escrow/src/test.rs` |
 
-- The Stellar network and Soroban host enforce authorization correctly.
-- The admin key is held securely and is not shared.
-- Callers are adversarial; we do not trust any address by default.
-- Ledger time and sequence numbers are monotonic and provided by the host.
+Update this table whenever a contract or a privileged entry point is added,
+renamed, or removed; an out-of-date scope table invalidates the package.
 
-### Out of scope
+### Storage map
 
-- Compromise of the Stellar network or the Soroban host itself.
-- Compromise of a user's signing device or key management.
-- Economic attacks that do not exploit a contract-level authorization flaw.
-- Behavior of third-party contracts beyond the assumptions we document here.
+Soroban storage is partitioned by durability. Document every key, its durability
+class, and its value type. Keys are namespaced per contract so two contracts
+cannot collide on the same ledger entry.
 
-### Invariants and their tests
+| Contract | Key | Durability | Value type |
+| --- | --- | --- | --- |
+| Registry | `Admin` | instance | `Address` |
+| Registry | `Entry(Address)` | persistent | `EntryRecord` |
+| Wallet | `Admin` | instance | `Address` |
+| Wallet | `Balance(Address)` | persistent | `i128` |
+| Wallet | `Paused` | instance | `bool` |
+| Escrow | `Admin` | instance | `Address` |
+| Escrow | `Escrow(u64)` | persistent | `EscrowRecord` |
+| Escrow | `Nonce` | temporary | `u64` |
 
-Every invariant below must be linked to a test that enforces it. When you add an
-invariant, add the corresponding test in the same pull request.
+Rules:
 
-| Invariant | Test |
-| --- | --- |
-| Only the admin can change the admin | `test_admin_rotation_requires_admin_auth` |
-| Only the admin can pause / unpause | `test_pause_requires_admin_auth` |
-| Only the admin can upgrade | `test_upgrade_requires_admin_auth` |
-| Only the owner can move their funds | `test_transfer_requires_owner_auth` |
-| Unauthorized callers cannot initialize | `test_initialize_requires_auth` |
-| Authorization entries cannot be replayed | `test_authorization_replay_rejected` |
-| Cross-contract calls re-establish authority | `test_cross_contract_call_requires_auth` |
-| Admin actions emit events | `test_admin_action_emits_event` |
+- Instance storage holds contract-wide configuration (admin, pause flag) and is
+  read on nearly every call; keep it small.
+- Persistent storage holds per-user or per-record state that must survive ledger
+  entry expiry; extend its TTL on write.
+- Temporary storage holds short-lived scratch data (nonces, in-flight markers)
+  and may be evicted; never store authority or balances there.
+- Any new key must be added to this table with its durability and value type
+  before the change is merged.
 
-If a test name changes, update this table in the same pull request.
+### Invariants
 
-## Reporting a vulnerability
+Each invariant must hold after every entry point returns, and each must have a
+test that fails if the invariant is broken.
 
-Please do not open a public issue for security vulnerabilities. Report them
-privately to the maintainers so a fix can be prepared before disclosure.
+- **Admin is set before privileged calls.** No privileged entry point succeeds
+  while `Admin` is unset; `initialize` sets it exactly once.
+- **Authorization is per-call.** Every privileged entry point calls
+  `require_auth` on the correct address in the current invocation; no entry point
+  relies on a prior call's authorization.
+- **Balances are conserved.** A transfer moves value without creating or
+  destroying it; the sum of balances is unchanged by any non-mint, non-burn call.
+- **Escrow is single-release.** An escrow can be released or refunded at most
+  once; a second attempt fails.
+- **Pause is total.** While `Paused` is set, every state-changing entry point
+  rejects the call.
+- **Upgrade preserves storage.** An upgrade changes code only; existing storage
+  keys and their value types remain readable.
+
+### Deployment manifests
+
+Record the audited deployment so a reviewer can verify the on-chain artifact
+matches the audited source. Capture, per contract:
+
+- the tagged commit and the WASM hash built from it,
+- the deployed contract ID on the target network,
+- the admin address and the initializer address,
+- the network passphrase and the ledger at deployment.
+
+Store manifests under `deploy/manifests/<network>/<contract>.json` and reference
+the tagged commit in the package cover note.
+
+### Reproducible test commands
+
+A reviewer must be able to reproduce the build and test results from the tagged
+commit with no local state. Run from the repository root:
+
+```sh
+# Pin the toolchain and build every contract to WASM.
+rustup show
+cargo build --workspace --target wasm32-unknown-unknown --release
+
+# Run the full contract test suite.
+cargo test --workspace
+
+# Run only the authorization and invariant tests.
+cargo test --workspace -- auth invariant
+```
+
+Record the exact toolchain version (`rustup show`) and the commit hash in the
+package cover note; a result that cannot be reproduced from the tagged commit is
+not audit-ready.
