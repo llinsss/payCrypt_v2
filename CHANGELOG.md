@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust/Soroban SDK typed contract errors: a typed `ContractError` enum with
+  deterministic `From`/`TryFrom` conversions, stable numeric codes, and
+  serialization for cross-contract and SDK boundaries (#838).
+- Actionable error classification (`ErrorClass`) distinguishing success,
+  boundary, unauthorized, replay, and failure paths, plus cancellation-aware
+  handling for in-flight contract calls (#838).
+- Unit, property, and local-network tests covering success, boundary,
+  unauthorized, replay, and failure paths for the typed contract errors (#838).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are

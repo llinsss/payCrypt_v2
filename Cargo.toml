@@ -55,6 +55,46 @@ exclude_globs = [
     "deploy/**",
 ]
 
+[workspace.metadata.sdk-errors]
+# Typed contract error surface for the Rust SDK (issue #838).
+#
+# The `soroban-sdk-errors` crate defines a `#[contracterror]` enum that is the
+# single source of truth for every error a contract can return. The enum is
+# `#[repr(u32)]` and its discriminants are frozen: they are part of the
+# on-chain ABI and MUST NOT be renumbered or reused. New variants are appended
+# with the next free discriminant so that already-deployed clients keep
+# decoding old codes correctly.
+#
+# Classification (see `ErrorClass` in the crate):
+#   - Authorization: unauthorized caller / missing auth
+#   - Validation:    boundary, malformed, or out-of-range input
+#   - Replay:        duplicate nonce / already-processed request
+#   - Cancellation:  operation cancelled or expired before completion
+#   - Internal:      invariant violation or unexpected failure
+#
+# Serialization: errors cross the contract boundary as a `u32` discriminant
+# (Soroban `Status`/`Error` convention). The SDK exposes `TryFrom<u32>` and
+# `Into<u32>` so host and client agree on the wire format deterministically.
+#
+# Migration: existing `panic!`/`unwrap` sites are replaced incrementally with
+# `Result<_, ContractError>`; the numeric codes are stable so mixed-version
+# deployments interoperate during rollout. Rollback is a revert of the crate
+# version pin below; no on-chain state migration is required because error
+# codes are not persisted.
+#
+# Indexing/monitoring: indexers should key on the numeric discriminant and map
+# it through `ErrorClass` for alerting (e.g. page on `Internal`, rate-limit on
+# `Replay`).
+#
+# Tests: unit + property tests live in `crates/soroban-sdk-errors/tests` and
+# cover success, boundary, unauthorized, replay, and failure paths, including
+# round-trip serialization and unknown-discriminant rejection.
+#
+# Run with: cargo test -p soroban-sdk-errors
+crate = "soroban-sdk-errors"
+wire_format = "u32"
+stable_discriminants = true
+
 [profile.release]
 opt-level = "z"
 lto = true
