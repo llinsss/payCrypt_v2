@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validation, plus unit/property tests covering success, boundary,
   unauthorized, replay, and failure paths, and actionable classification of
   decoding errors (#850).
+- Rust SDK mock transport and contract clients: typed contract client APIs
+  with deterministic request/response serialization and compatibility
+  handling, an in-memory mock transport for deterministic local testing, and
+  cancellation-aware transport/client layers with actionable error
+  classification (validation, unauthorized, replay/duplicate, transport,
+  contract, timeout). Includes unit/property/local-network tests covering
+  success, boundary, unauthorized, replay, and failure paths, plus migration,
+  indexing, monitoring, and rollback notes (#851).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
