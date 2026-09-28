@@ -1,0 +1,75 @@
+# cargo-deny configuration for the contract and SDK Rust graph.
+#
+# Referenced by the `cargo-deny` steps in:
+#   .github/workflows/backend-ci.yml
+#   .github/workflows/frontend-contracts.yml
+#   .github/workflows/sdk-ci.yml
+#
+# Three checks are configured, all of them denying by default:
+#
+#   advisories  – known vulnerabilities, unsound advisories, unmaintained
+#                 crates, and withdrawn crates, with two documented exceptions
+#                 below for transitive dependencies we cannot remove.
+#   licenses    – an explicit allow-list. Nothing is allowed implicitly, so a
+#                 new dependency with an unreviewed licence fails the gate
+#                 rather than passing silently.
+#   sources     – crates.io only. No git dependencies, no alternative
+#                 registries.
+
+[graph]
+# Analyse the same graph CI does. Kept here rather than passed as a CLI
+# argument because `cargo deny check` has no `--all-features` flag; putting it
+# in the config means local runs and CI runs cannot drift apart.
+all-features = true
+
+[advisories]
+version = 2
+
+# soroban-env-host 23.0.1 pulls these in through its own dependencies
+# (ark-*, wasmi). Neither has a maintained successor, and neither is reachable
+# from contract code: `derivative` is used for `Deref`/`DerefMut` impls in
+# `ark-ec`, and `paste` is a proc-macro helper in `wasmi_core` and `ark-ff`.
+# Both are build-time only and do not process untrusted input. Upgrading
+# requires a soroban-sdk release that no longer depends on them, so this
+# exception is expected to be removed rather than accumulate.
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0388"
+reason = "Transitive build-time dependency of soroban-env-host via ark-ec. Used only for Deref impls, does not process untrusted input, and has no maintained successor. Remove once a soroban-sdk release drops it."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0436"
+reason = "Transitive proc-macro helper of soroban-env-host via wasmi_core and ark-ff. Build-time only, no maintained successor. Remove once a soroban-sdk release drops it."
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+# Every licence that appears in the current graph. The graph is MIT, Apache-2.0,
+# BSD, Zlib, Unlicense, and Unicode-3.0; there is no copyleft licence in it, and
+# adding one here would be a deliberate decision rather than a consequence of a
+# new transitive dependency.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[bans]
+# Multiple major versions of a transitive crate are expected here: soroban-sdk
+# and soroban-env-host disagree on curve25519-dalek, and the SDK's `testutils`
+# path disagrees with the host's on ed25519-dalek. Pinning a single version
+# would mean either losing coverage or failing to build.
+multiple-versions = "allow"
+# Placeholder and example crates never carry a licence worth relying on.
+wildcards = "deny"
+allow-wildcard-paths = false
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
