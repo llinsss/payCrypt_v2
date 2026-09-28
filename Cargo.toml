@@ -16,6 +16,39 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
+# StrKey encoding/decoding for typed Stellar address and asset validation
+# (issue #747): validates G.../C... keys, asset codes, and network passphrases.
+stellar-strkey = "0.0.9"
+
+# Property-based tests for malformed and cross-network validation inputs.
+proptest = "1.4.0"
+
+# Async runtime and HTTP client for the Rust client's submission/status calls
+# (issue #748): retry policy wraps these calls and must not replay signed ops.
+tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread", "time"] }
+reqwest = { version = "0.12.5", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialization for persisted operation/payment IDs and Soroban error payloads
+# (issue #748): idempotency records are stored as JSON keyed by operation ID.
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+
+# CLI argument parsing for the Rust-native deployment command (issue #749):
+# explicit network selection, dry-run flag, and constructor/address inputs.
+clap = { version = "4.5.7", features = ["derive"] }
+
+# SHA-256 hashing to validate the contract WASM hash before submission
+# (issue #749): the deployment command refuses to submit on hash mismatch.
+sha2 = "0.10.8"
+
+# Pinned toolchain for reproducible contract builds. The verification workflow
+# (see scripts/verify-wasm.sh) reads this value to record the exact toolchain
+# used to produce each deployed WASM hash.
+[workspace.metadata.contract-verification]
+toolchain = "1.78.0"
+lockfile = "Cargo.lock"
+optimization = "release"
+
 [profile.release]
 opt-level = "z"
 lto = true
