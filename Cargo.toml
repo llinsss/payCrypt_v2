@@ -35,3 +35,7 @@ overflow-checks = true
 # authorization, boundary values, resource limits, and external-call
 # failure paths against deterministic ledger/time fixtures.
 proptest = "1.4.0"
+# Fuzz tests for payment amount arithmetic (issue #826) drive the same
+# deterministic ledger/time fixtures through success, boundary,
+# unauthorized, replay, and external-call failure paths.
+arbitrary = { version = "1.3.2", features = ["derive"] }

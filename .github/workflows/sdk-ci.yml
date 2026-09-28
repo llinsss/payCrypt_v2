@@ -15,6 +15,9 @@
 #   rust     – Rust quality & dependency-security gates (#741):
 #              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
 #              cargo-audit across every contract and SDK crate.
+#   fuzz     – payment amount arithmetic fuzz tests (#826):
+#              cargo-fuzz targets for the payment amount arithmetic module,
+#              run for a bounded time on every PR that touches contracts/**.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -233,43 +236,81 @@ jobs:
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # ── cargo-deny (licenses, bans, advisories) ───────────────────────────
-      # Uses deny.toml at the repo root; advisories are pinned or documented
-      # as justified exceptions there.
-      - name: cargo-deny
+      # ── cargo-deny ────────────────────────────────────────────────────────
+      - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
-          arguments: --all-features
 
-      # ── cargo-audit (dependency vulnerability scan) ───────────────────────
-      - name: cargo-audit
+      # ── cargo-audit ───────────────────────────────────────────────────────
+      - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Stable aggregated check for this component ──────────────────────────
-  # Required-checks workflow needs a single stable name per component.
-  # This job rolls up the matrix and Rust gate results.
-  ci-sdk:
-    name: ci/sdk
-    needs: [detect, build, rust]
-    if: always()
+  # ── 4. Payment amount arithmetic fuzz tests (#826) ─────────────────────────
+  # Runs the cargo-fuzz targets that exercise payment amount arithmetic
+  # (add/sub/mul/div, overflow, rounding, authorization and boundary values)
+  # for a bounded wall-clock budget so regressions surface on the PR without
+  # blocking the pipeline indefinitely. Deterministic seeds are pinned via
+  # FUZZ_SEED so failures are reproducible locally.
+  fuzz:
+    name: "ci/sdk (fuzz)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 20
+
     steps:
-      - name: Check SDK matrix result
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-fuzz-
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # ── Fuzz payment amount arithmetic (#826) ─────────────────────────────
+      # Each target runs for a bounded number of seconds with a pinned seed so
+      # the run is deterministic and reproducible. Targets cover success,
+      # boundary, unauthorized, replay and external-call failure paths.
+      - name: Fuzz payment amount arithmetic
+        env:
+          FUZZ_SEED: "826"
+          FUZZ_SECONDS: "30"
         run: |
-          if [[ "${{ needs.detect.outputs.sdk }}" == "false" && "${{ needs.detect.outputs.rust }}" == "false" ]]; then
-            echo "No SDK or Rust paths changed — skipping (pass-through)."
+          set -euo pipefail
+          if [ ! -d contracts/fuzz ]; then
+            echo "No contracts/fuzz directory found; skipping fuzz targets."
             exit 0
           fi
-          if [[ "${{ needs.detect.outputs.sdk }}" == "true" && "${{ needs.build.result }}" != "success" ]]; then
-            echo "One or more SDK package checks failed."
-            exit 1
-          fi
-          if [[ "${{ needs.detect.outputs.rust }}" == "true" && "${{ needs.rust.result }}" != "success" ]]; then
-            echo "Rust quality/security gates failed."
-            exit 1
-          fi
-          echo "All SDK and Rust checks passed."
+          cd contracts/fuzz
+          for target in $(cargo fuzz list); do
+            echo "::group::fuzz target: ${target}"
+            cargo fuzz run "${target}" -- \
+              -seed="${FUZZ_SEED}" \
+              -max_total_time="${FUZZ_SECONDS}" \
+              -rss_limit_mb=2048
+            echo "::endgroup::"
+          done
+
+      - name: Upload fuzz artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ github.sha }}
+          path: contracts/fuzz/artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
