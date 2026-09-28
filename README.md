@@ -288,3 +288,6 @@ Immutable transaction history for all tag operations
 
 <!-- handsoff-issue-713 -->
 - #713: Implement canonical tag normalization in Rust
+
+<!-- handsoff-issue-530 -->
+- #530: Improve Transaction History Usability on Small Screens
