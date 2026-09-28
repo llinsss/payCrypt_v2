@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust/Soroban SDK transaction preparation API with typed request/response
+  types, deterministic validation and serialization, cancellation of in-flight
+  preparation, and actionable error classification (#839).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are

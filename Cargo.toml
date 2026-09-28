@@ -15,6 +15,10 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 [workspace.dependencies]
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.38", features = ["sync", "rt", "macros"] }
 
 [profile.release]
 opt-level = "z"
