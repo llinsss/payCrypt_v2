@@ -4,17 +4,20 @@ name: Backend Extended Tests
 # - Standard unit and integration tests
 # - Database migration tests
 # - Regression test: verify demo data never loads in production scripts
+# - Rust/Soroban contract fuzzing and authorization coverage gates
 
 on:
   push:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
       - ".github/workflows/backend-tests.yml"
   pull_request:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
       - ".github/workflows/backend-tests.yml"
 
 concurrency:
@@ -36,6 +39,7 @@ jobs:
         working-directory: .
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      contracts: ${{ steps.filter.outputs.contracts }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +50,8 @@ jobs:
           filters: |
             backend:
               - "backend/**"
+            contracts:
+              - "contracts/**"
 
   # ── 2. Migration Tests ─────────────────────────────────────────────────────
   migration-tests:
@@ -149,3 +155,103 @@ jobs:
         run: node scripts/verify-no-demo-data.js
         continue-on-error: false
 
+  # ── 4. Rust/Soroban Contract Fuzzing & Authorization Coverage Gates ────────
+  contract-fuzz-and-auth-coverage:
+    name: Contract Fuzz & Authorization Coverage
+    needs: detect
+    if: needs.detect.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: contracts
+
+    env:
+      # Deterministic seeds so fuzz runs are reproducible in CI.
+      PROPTEST_CASES: "256"
+      PROPTEST_SEED: "0x5eed771"
+      CARGO_INCREMENTAL: "0"
+      RUST_BACKTRACE: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('contracts/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-fuzz-
+
+      - name: Install cargo-fuzz and cargo-llvm-cov
+        run: |
+          cargo install cargo-fuzz --locked
+          cargo install cargo-llvm-cov --locked
+
+      - name: Build contracts
+        run: cargo build --workspace --all-targets --locked
+
+      - name: Run unit and integration tests
+        run: cargo test --workspace --locked
+
+      # Fuzz tags, amounts, callers, ledger time, and operation sequences.
+      - name: Run fuzz targets (deterministic seeds)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          targets=(fuzz/fuzz_targets/*.rs)
+          if [ ${#targets[@]} -eq 0 ]; then
+            echo "::error::No fuzz targets found under contracts/fuzz/fuzz_targets"
+            exit 1
+          fi
+          for target in "${targets[@]}"; do
+            name="$(basename "${target}" .rs)"
+            echo "::group::fuzz target: ${name}"
+            cargo fuzz run "${name}" -- -runs=10000 -seed="${PROPTEST_SEED}"
+            echo "::endgroup::"
+          done
+
+      # Require an authorization test for every public method.
+      - name: Enforce authorization coverage for every public method
+        run: |
+          set -euo pipefail
+          cargo test --workspace --locked -- --include-ignored auth
+          node scripts/check-auth-coverage.js
+
+      # Publish coverage and deterministic seeds in CI.
+      - name: Generate coverage report
+        run: cargo llvm-cov --workspace --locked --lcov --output-path lcov.info
+
+      - name: Publish coverage and seeds summary
+        run: |
+          {
+            echo "## Contract fuzz & authorization coverage"
+            echo ""
+            echo "- Deterministic fuzz seed: \`${PROPTEST_SEED}\`"
+            echo "- Fuzz cases per target: \`${PROPTEST_CASES}\`"
+            echo "- Coverage report: \`contracts/lcov.info\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-coverage-lcov
+          path: contracts/lcov.info
+          if-no-files-found: error
+
+      - name: Upload fuzz corpus artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-fuzz-corpus
+          path: contracts/fuzz/corpus
+          if-no-files-found: ignore
