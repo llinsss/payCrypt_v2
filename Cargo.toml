@@ -59,6 +59,35 @@ sequence = [
 ]
 rollback = { supported = true, max-versions = 1, requires-state-snapshot = true }
 
+[workspace.metadata.authorization]
+# Authorization snapshot coverage for every public contract entry point (issue #759).
+# Each entry lists the public method, the required authorization, and the
+# caller classes exercised by the table-driven test suite in `tests/`.
+# CI fails when a public method is missing from this table.
+schema-version = 1
+
+[workspace.metadata.authorization.entry-points]
+# initialization
+initialize = { requires-auth = false, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+# tag ownership
+tag_register = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+tag_transfer = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+tag_revoke = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+# escrow settlement
+escrow_create = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+escrow_settle = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+escrow_cancel = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+# wallet withdrawals
+wallet_withdraw = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+# admin configuration
+admin_set = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+admin_configure = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+# upgrades
+upgrade = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+# pause controls
+pause = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+unpause = { requires-auth = true, callers = ["authorized", "unauthorized", "forwarded", "contract-to-contract"] }
+
 [profile.release]
 opt-level = "z"
 lto = true
