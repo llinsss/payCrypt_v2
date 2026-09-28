@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Rust SDK idempotency-key types for the Soroban migration, with a typed
+  `IdempotencyKey` newtype, deterministic generation and validation,
+  serialization/deserialization support, cancellation of in-flight
+  idempotent operations, and actionable error classification (invalid key,
+  missing key, replay, unauthorized) (#847).
 - Rust SDK request correlation IDs for the Soroban migration, with a typed
   `CorrelationId` newtype, deterministic generation and validation,
   serialization/deserialization support, cancellation of in-flight correlated
