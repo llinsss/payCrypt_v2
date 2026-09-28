@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust/Soroban SDK examples for end-to-end payments: typed APIs for building,
+  signing, submitting, and confirming Soroban payment transactions, with
+  deterministic (canonical) serialization of payment intents and results,
+  cancellation of in-flight operations, and typed, actionable error
+  classification (validation, unauthorized, replay/duplicate, network,
+  contract, timeout) (#849).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are
