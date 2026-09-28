@@ -22,3 +22,12 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+[profile.test]
+# Deterministic local-network authorization integration tests rely on the
+# Soroban test harness (soroban-sdk testutils) which is compiled with the
+# `test` profile. Keep optimizations off so ledger/time fixtures and
+# authorization traces are reproducible across machines.
+opt-level = 0
+debug = true
+incremental = true

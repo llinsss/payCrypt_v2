@@ -4,17 +4,20 @@ name: Backend Extended Tests
 # - Standard unit and integration tests
 # - Database migration tests
 # - Regression test: verify demo data never loads in production scripts
+# - Local-network authorization integration tests (Rust/Soroban)
 
 on:
   push:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
       - ".github/workflows/backend-tests.yml"
   pull_request:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
       - ".github/workflows/backend-tests.yml"
 
 concurrency:
@@ -36,6 +39,7 @@ jobs:
         working-directory: .
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      contracts: ${{ steps.filter.outputs.contracts }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +50,8 @@ jobs:
           filters: |
             backend:
               - "backend/**"
+            contracts:
+              - "contracts/**"
 
   # ── 2. Migration Tests ─────────────────────────────────────────────────────
   migration-tests:
@@ -149,3 +155,62 @@ jobs:
         run: node scripts/verify-no-demo-data.js
         continue-on-error: false
 
+  # ── 4. Local-Network Authorization Integration Tests (Rust/Soroban) ────────
+  soroban-auth-tests:
+    name: Soroban Local-Network Authorization Tests
+    needs: detect
+    if: needs.detect.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: contracts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install soroban-cli
+        run: cargo install --locked soroban-cli
+
+      - name: Build contracts (wasm)
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Run unit and property tests
+        run: cargo test --all-features
+
+      - name: Start local Soroban network
+        run: soroban network start local
+
+      - name: Deploy contracts to local network
+        run: soroban contract deploy --wasm target/wasm32-unknown-unknown/release/*.wasm --network local
+
+      - name: Run local-network authorization integration tests
+        run: cargo test --test local_network_auth -- --nocapture
+        env:
+          SOROBAN_NETWORK: local
+          SOROBAN_RPC_URL: http://localhost:8000/soroban/rpc
+          SOROBAN_NETWORK_PASSPHRASE: "Standalone Network ; February 2017"
+          # Deterministic ledger/time fixtures for reproducible runs
+          SOROBAN_TEST_LEDGER_SEQUENCE: "1000"
+          SOROBAN_TEST_TIMESTAMP: "1700000000"
+
+      - name: Stop local Soroban network
+        if: always()
+        run: soroban network stop local
