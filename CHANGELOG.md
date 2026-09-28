@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rust SDK retry middleware for the Soroban migration, with typed retry
+  configuration, deterministic validation, cancellation support, and
+  actionable error classification (retryable, unauthorized, replay, terminal)
+  (#844).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are
