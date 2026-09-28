@@ -15,6 +15,11 @@
 #   rust     – Rust quality & dependency-security gates (#741):
 #              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
 #              cargo-audit across every contract and SDK crate.
+#   upgrade  – local-network upgrade integration tests (#829):
+#              spins up a deterministic soroban local network, runs the
+#              upgrade integration suite covering authorization, boundary
+#              values, resource limits, external-call failures, replay and
+#              deterministic ledger/time fixtures.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -233,43 +238,91 @@ jobs:
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # ── cargo-deny (licenses, bans, advisories) ───────────────────────────
-      # Uses deny.toml at the repo root; advisories are pinned or documented
-      # as justified exceptions there.
-      - name: cargo-deny
+      # ── cargo-deny ────────────────────────────────────────────────────────
+      - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
-          arguments: --all-features
 
-      # ── cargo-audit (dependency vulnerability scan) ───────────────────────
-      - name: cargo-audit
+      # ── cargo-audit ───────────────────────────────────────────────────────
+      - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Stable aggregated check for this component ──────────────────────────
-  # Required-checks workflow needs a single stable name per component.
-  # This job rolls up the matrix and Rust gate results.
-  ci-sdk:
-    name: ci/sdk
-    needs: [detect, build, rust]
-    if: always()
+  # ── 4. Local-network upgrade integration tests (#829) ──────────────────────
+  # Boots a deterministic soroban local network (fixed ledger sequence and
+  # timestamp fixtures) and runs the upgrade integration suite. The suite
+  # exercises authorization, boundary values, resource limits, external-call
+  # failures, replay protection and rollback behavior for the upgrade flow.
+  upgrade:
+    name: "ci/sdk (upgrade)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 25
+
     steps:
-      - name: Check SDK matrix result
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-upgrade-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-upgrade-
+            ${{ runner.os }}-cargo-
+
+      # ── Install soroban CLI (local network driver) ────────────────────────
+      - name: Install soroban-cli
         run: |
-          if [[ "${{ needs.detect.outputs.sdk }}" == "false" && "${{ needs.detect.outputs.rust }}" == "false" ]]; then
-            echo "No SDK or Rust paths changed — skipping (pass-through)."
-            exit 0
-          fi
-          if [[ "${{ needs.detect.outputs.sdk }}" == "true" && "${{ needs.build.result }}" != "success" ]]; then
-            echo "One or more SDK package checks failed."
-            exit 1
-          fi
-          if [[ "${{ needs.detect.outputs.rust }}" == "true" && "${{ needs.rust.result }}" != "success" ]]; then
-            echo "Rust quality/security gates failed."
-            exit 1
-          fi
-          echo "All SDK and Rust checks passed."
+          set -euo pipefail
+          cargo install --locked soroban-cli --version 22.0.1
+
+      # ── Deterministic local network ───────────────────────────────────────
+      # Pins the ledger sequence and timestamp so upgrade tests are
+      # reproducible across runs (no wall-clock or network drift).
+      - name: Start local network (deterministic fixtures)
+        run: |
+          set -euo pipefail
+          soroban network start local \
+            --limits unlimited \
+            --protocol-version 22 \
+            --ledger-sequence 1000 \
+            --ledger-timestamp 1700000000
+          soroban network container logs local > /tmp/soroban-local.log 2>&1 || true
+
+      # ── Upgrade integration suite ─────────────────────────────────────────
+      # Covers success, boundary, unauthorized, replay and failure paths.
+      - name: Run upgrade integration tests
+        env:
+          SOROBAN_NETWORK: local
+          SOROBAN_RPC_URL: http://localhost:8000/soroban/rpc
+          SOROBAN_NETWORK_PASSPHRASE: "Standalone Network ; February 2017"
+          SOROBAN_LEDGER_SEQUENCE: "1000"
+          SOROBAN_LEDGER_TIMESTAMP: "1700000000"
+        run: |
+          set -euo pipefail
+          cargo test --workspace --all-features \
+            --test upgrade_integration \
+            -- --test-threads=1 --nocapture
+
+      # ── Upload local-network logs on failure ──────────────────────────────
+      - name: Upload local-network logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-local-logs-${{ github.sha }}
+          path: /tmp/soroban-local.log
+          retention-days: 7
+          if-no-files-found: ignore

@@ -45,3 +45,30 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  upgrade-integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: install soroban-cli
+        run: cargo install --locked soroban-cli
+      - name: start local network
+        run: soroban network start local
+      - name: upgrade integration tests (local network)
+        env:
+          SOROBAN_NETWORK: local
+          SOROBAN_RPC_URL: http://127.0.0.1:8000/soroban/rpc
+          SOROBAN_NETWORK_PASSPHRASE: "Standalone Network ; February 2017"
+          SOROBAN_FRIENDLY_FIXTURE_LEDGER: "1000"
+          SOROBAN_FRIENDLY_FIXTURE_TIMESTAMP: "1700000000"
+        run: cargo test --all-features --test upgrade_integration -- --nocapture
+      - name: stop local network
+        if: always()
+        run: soroban network stop local
