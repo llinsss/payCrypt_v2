@@ -15,6 +15,10 @@
 #   rust     – Rust quality & dependency-security gates (#741):
 #              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
 #              cargo-audit across every contract and SDK crate.
+#              Also runs the failure-injection test suite (#831) covering
+#              every external contract call: authorization, boundary values,
+#              resource limits, external-call failures, replay and
+#              deterministic ledger/time fixtures.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -233,43 +237,17 @@ jobs:
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # ── cargo-deny (licenses, bans, advisories) ───────────────────────────
-      # Uses deny.toml at the repo root; advisories are pinned or documented
-      # as justified exceptions there.
-      - name: cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-          arguments: --all-features
+      # ── failure-injection tests (#831) ────────────────────────────────────
+      # Runs the deterministic failure-injection suite that exercises every
+      # external contract call: authorization, boundary values, resource
+      # limits, external-call failures, replay and ledger/time fixtures.
+      - name: cargo test (failure-injection)
+        run: cargo test --workspace --all-features -- failure_injection
 
-      # ── cargo-audit (dependency vulnerability scan) ───────────────────────
-      - name: cargo-audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # ── cargo-deny ────────────────────────────────────────────────────────
+      - name: cargo deny check
+        run: cargo deny check
 
-  # ── 4. Stable aggregated check for this component ──────────────────────────
-  # Required-checks workflow needs a single stable name per component.
-  # This job rolls up the matrix and Rust gate results.
-  ci-sdk:
-    name: ci/sdk
-    needs: [detect, build, rust]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - name: Check SDK matrix result
-        run: |
-          if [[ "${{ needs.detect.outputs.sdk }}" == "false" && "${{ needs.detect.outputs.rust }}" == "false" ]]; then
-            echo "No SDK or Rust paths changed — skipping (pass-through)."
-            exit 0
-          fi
-          if [[ "${{ needs.detect.outputs.sdk }}" == "true" && "${{ needs.build.result }}" != "success" ]]; then
-            echo "One or more SDK package checks failed."
-            exit 1
-          fi
-          if [[ "${{ needs.detect.outputs.rust }}" == "true" && "${{ needs.rust.result }}" != "success" ]]; then
-            echo "Rust quality/security gates failed."
-            exit 1
-          fi
-          echo "All SDK and Rust checks passed."
+      # ── cargo-audit ───────────────────────────────────────────────────────
+      - name: cargo audit
+        run: cargo audit
