@@ -36,9 +36,33 @@ examine_globs = [
 # Authorization, boundary values, resource limits, and external-call failure
 # handling are all exercised by the unit/property/local-network tests.
 
+[workspace.metadata.bench]
+# Benchmark suite for contract hot paths (issue #837).
+# Run with: cargo bench --workspace
+#
+# Hot paths covered:
+#   - authorization: require_auth / require_auth_for_args on admin + user paths
+#   - boundary values: i128 min/max, zero, and u32 ledger bounds
+#   - resource limits: CPU instruction and memory budgets per invocation
+#   - external-call failures: cross-contract calls that trap or return errors
+#
+# Determinism: every benchmark builds its Env from a fixed ledger sequence and
+# timestamp fixture (see crates/bench-fixtures) so results are reproducible
+# across machines and CI runners. Benchmarks are excluded from the default
+# `cargo test` run and from mutation testing to keep those fast.
+harness = false
+exclude_globs = [
+    "deploy/**",
+]
+
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+[profile.bench]
+inherits = "release"
+debug = true
+strip = "none"
