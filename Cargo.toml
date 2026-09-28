@@ -16,6 +16,46 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
+[workspace.metadata.audit]
+# cargo-audit: fail on unreviewed advisories in Rust contract dependencies.
+# Exceptions must record an owner and an expiry date; entries past their
+# expiry are treated as unreviewed and fail the scan.
+ignore = []
+
+[workspace.metadata.audit.exceptions]
+# "RUSTSEC-0000-0000" = { owner = "@owner", expires = "2025-12-31", reason = "..." }
+
+[workspace.metadata.deny]
+# cargo-deny: fail on denied licenses, banned crates, and disallowed sources.
+[workspace.metadata.deny.licenses]
+allow = ["Apache-2.0", "MIT"]
+confidence-threshold = 0.9
+
+[workspace.metadata.deny.bans]
+multiple-versions = "deny"
+wildcards = "deny"
+
+[workspace.metadata.deny.sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[workspace.metadata.deny.exceptions]
+# "crate-name" = { owner = "@owner", expires = "2025-12-31", reason = "..." }
+
+[workspace.metadata.clippy]
+# clippy security-relevant lints for the Rust contract pipeline.
+[workspace.metadata.clippy.lints]
+"clippy::unwrap_used" = "deny"
+"clippy::expect_used" = "deny"
+"clippy::panic" = "deny"
+"clippy::integer_arithmetic" = "deny"
+"clippy::indexing_slicing" = "deny"
+
+[workspace.metadata.wasm]
+# WASM artifact checks: scan generated release artifacts as well as source deps.
+artifacts = ["target/wasm32-unknown-unknown/release/*.wasm"]
+max-size-bytes = 262144
+
 [profile.release]
 opt-level = "z"
 lto = true

@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   contracts:
     runs-on: ubuntu-latest
@@ -21,6 +25,17 @@ jobs:
       - run: npm run type-check
       - run: npm run lint
 
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          deny-licenses: GPL-3.0, AGPL-3.0
+
   rust:
     runs-on: ubuntu-latest
     defaults:
@@ -36,6 +51,15 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy (deny warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: clippy (security lints)
+        run: >
+          cargo clippy --all-targets --all-features --
+          -D clippy::unwrap_used
+          -D clippy::expect_used
+          -D clippy::panic
+          -D clippy::indexing_slicing
+          -D clippy::integer_arithmetic
+          -D clippy::cast_possible_truncation
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -45,3 +69,25 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build release artifacts
+        run: cargo build --release --all-features
+      - name: Scan release artifacts for advisories
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --file Cargo.lock
+      - name: WASM artifact checks
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wasm_files=(target/wasm32-unknown-unknown/release/*.wasm target/wasm32-unknown-unknown/release/**/*.wasm)
+          if [ ${#wasm_files[@]} -eq 0 ]; then
+            echo "No WASM artifacts found; skipping WASM checks."
+            exit 0
+          fi
+          for wasm in "${wasm_files[@]}"; do
+            echo "Checking ${wasm}"
+            test -s "${wasm}" || { echo "Empty WASM artifact: ${wasm}"; exit 1; }
+            if command -v wasm-tools >/dev/null 2>&1; then
+              wasm-tools validate "${wasm}"
+            fi
+          done
