@@ -20,6 +20,94 @@ changes that touch on-chain logic.
 - Update documentation when you change a public interface or a security-relevant
   assumption.
 
+## Contract roadmap (Rust / Soroban)
+
+All on-chain work targets Rust contracts compiled to Soroban WASM and deployed to
+Stellar. There are no Cairo or Starknet deliverables in the active roadmap; any
+remaining references to them are historical and must not be treated as planned
+work. The milestones below are sequenced: a milestone may not start until every
+milestone it depends on has met its definition of done and passed its testnet
+gate.
+
+### M1 — Registry contract
+
+- **Scope:** Rust/Soroban registry contract: entry registration, lookup, and
+  admin-gated updates.
+- **Depends on:** none.
+- **Definition of done:** registry entry points implemented with `require_auth`
+  on every privileged action; unit tests cover registration, lookup, and
+  unauthorized updates; contract builds to WASM.
+- **Testnet gate:** deploy to Stellar testnet, register and look up an entry, and
+  confirm an unauthorized update is rejected.
+
+### M2 — Wallet contract
+
+- **Scope:** Rust/Soroban wallet contract: account authority, balance movement,
+  and admin controls.
+- **Depends on:** M1.
+- **Definition of done:** wallet entry points implemented with `require_auth` on
+  the owning account for any balance change; unit tests cover authorized and
+  unauthorized transfers; contract builds to WASM.
+- **Testnet gate:** deploy to Stellar testnet, move funds with owner
+  authorization, and confirm an unauthorized transfer is rejected.
+
+### M3 — Escrow contract
+
+- **Scope:** Rust/Soroban escrow contract: fund locking, release, and refund
+  paths, built on the wallet and registry contracts.
+- **Depends on:** M1, M2.
+- **Definition of done:** escrow entry points implemented with `require_auth` on
+  the funding account and on the release/refund authority; unit tests cover
+  release, refund, and unauthorized release; contract builds to WASM.
+- **Testnet gate:** deploy to Stellar testnet, complete a full lock → release
+  cycle and a lock → refund cycle, and confirm an unauthorized release is
+  rejected.
+
+### M4 — SDK
+
+- **Scope:** client SDK that builds and submits Soroban invocations for the
+  registry, wallet, and escrow contracts, including authorization entry
+  construction.
+- **Depends on:** M1, M2, M3.
+- **Definition of done:** SDK exposes typed calls for each contract entry point;
+  tests cover invocation construction and authorization entry assembly against
+  the deployed testnet contracts.
+- **Testnet gate:** drive a registry lookup, a wallet transfer, and an escrow
+  release end-to-end through the SDK against Stellar testnet.
+
+### M5 — Indexer
+
+- **Scope:** indexer that ingests Soroban contract events emitted by the
+  registry, wallet, and escrow contracts and exposes queryable state.
+- **Depends on:** M1, M2, M3.
+- **Definition of done:** indexer ingests events for each contract, handles
+  reorgs/ledger gaps, and exposes queries matching on-chain state; tests cover
+  event ingestion and query correctness.
+- **Testnet gate:** run the indexer against Stellar testnet, emit events from
+  each contract, and confirm indexed state matches on-chain state.
+
+### M6 — Deployment
+
+- **Scope:** deployment tooling and runbooks for the Rust/Soroban contracts,
+  including WASM upload, initialization, and admin setup.
+- **Depends on:** M1, M2, M3, M4, M5.
+- **Definition of done:** deployment scripts upload and initialize each contract
+  on testnet reproducibly; runbook documents admin setup and upgrade steps;
+  tests cover the deployment flow.
+- **Testnet gate:** perform a clean deployment of all contracts to Stellar
+  testnet from scratch and verify each contract is initialized and reachable
+  through the SDK and indexer.
+
+### Migration boundaries
+
+- Cairo/Starknet artifacts are not part of the active roadmap and must not be
+  extended. New work is Rust/Soroban only.
+- Any migration of existing behavior must land as a Rust/Soroban contract with
+  its own tests and testnet gate before the corresponding Cairo/Starknet path is
+  retired.
+- Storage layout changes across contract versions require an explicit migration
+  path; do not assume new code can read old storage.
+
 ## Security: Soroban authorization and threat model
 
 Any change that touches authorization, admin controls, token movement, or

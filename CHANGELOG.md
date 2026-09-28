@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Replaced the Cairo/Starknet contract roadmap with a Rust/Soroban contract
+  roadmap. The active roadmap now sequences registry, wallet, escrow, SDK,
+  indexer, and deployment milestones with explicit dependencies and testnet
+  gates, and removes the ambiguous Cairo deliverables (#761).
+
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to
   authenticated admins, resets are rate-limited, and successful resets are
