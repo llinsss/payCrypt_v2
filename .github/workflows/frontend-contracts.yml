@@ -45,3 +45,5 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: golden tests (contract events)
+        run: cargo test --all-features --test golden_contract_events

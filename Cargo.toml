@@ -22,3 +22,10 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+[profile.test]
+# Golden tests for contract events rely on deterministic ledger/time fixtures
+# and stable event ordering; keep debug assertions on for boundary checks.
+opt-level = 0
+debug-assertions = true
+overflow-checks = true
