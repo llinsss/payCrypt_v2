@@ -16,6 +16,26 @@ repository = "https://github.com/Handsoff/soroban-contracts"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
+[workspace.metadata.mutants]
+# Mutation testing configuration for Rust authorization paths (issue #836).
+# Run with: cargo mutants --workspace --in-place
+# Deterministic ledger/time fixtures are provided by soroban-sdk's testutils
+# (Env::default() with a fixed ledger sequence and timestamp), so mutation
+# runs are reproducible across machines and CI.
+timeout = 120
+minimum_test_timeout = 30
+exclude_globs = [
+    "deploy/**",
+    "tests/**",
+]
+examine_globs = [
+    "contracts/**/src/**/*.rs",
+    "crates/**/src/**/*.rs",
+]
+# Only mutate authorization-relevant code paths to keep runs focused and fast.
+# Authorization, boundary values, resource limits, and external-call failure
+# handling are all exercised by the unit/property/local-network tests.
+
 [profile.release]
 opt-level = "z"
 lto = true

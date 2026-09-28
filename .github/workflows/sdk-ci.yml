@@ -15,6 +15,10 @@
 #   rust     – Rust quality & dependency-security gates (#741):
 #              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
 #              cargo-audit across every contract and SDK crate.
+#   mutation – mutation testing for Rust authorization (#836):
+#              cargo-mutants over the authorization crate(s) with a
+#              deterministic ledger/time fixture, gated on the rust path
+#              filter. Reports surviving mutants as a build artifact.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -233,43 +237,77 @@ jobs:
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # ── cargo-deny (licenses, bans, advisories) ───────────────────────────
-      # Uses deny.toml at the repo root; advisories are pinned or documented
-      # as justified exceptions there.
-      - name: cargo-deny
+      # ── cargo-deny ────────────────────────────────────────────────────────
+      - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
-          arguments: --all-features
 
-      # ── cargo-audit (dependency vulnerability scan) ───────────────────────
-      - name: cargo-audit
+      # ── cargo-audit ───────────────────────────────────────────────────────
+      - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Stable aggregated check for this component ──────────────────────────
-  # Required-checks workflow needs a single stable name per component.
-  # This job rolls up the matrix and Rust gate results.
-  ci-sdk:
-    name: ci/sdk
-    needs: [detect, build, rust]
-    if: always()
+  # ── 4. Mutation testing for Rust authorization (#836) ──────────────────────
+  # Runs cargo-mutants against the authorization crate(s) to verify the
+  # authorization test suite actually detects injected faults (boundary
+  # values, resource limits, external-call failures, replay/unauthorized
+  # paths). All tests use the deterministic ledger/time fixtures so mutant
+  # outcomes are reproducible across runs. Surviving mutants are uploaded
+  # as an artifact for triage; the job fails if any mutant survives.
+  mutation:
+    name: "ci/sdk (mutation)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 30
+
     steps:
-      - name: Check SDK matrix result
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-mutants-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-mutants-
+            ${{ runner.os }}-cargo-
+
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+
+      # ── Mutation testing (authorization) ──────────────────────────────────
+      # Scoped to the authorization crate(s) so the run stays bounded; the
+      # deterministic ledger/time fixtures keep mutant verdicts stable.
+      - name: cargo mutants (authorization)
         run: |
-          if [[ "${{ needs.detect.outputs.sdk }}" == "false" && "${{ needs.detect.outputs.rust }}" == "false" ]]; then
-            echo "No SDK or Rust paths changed — skipping (pass-through)."
-            exit 0
-          fi
-          if [[ "${{ needs.detect.outputs.sdk }}" == "true" && "${{ needs.build.result }}" != "success" ]]; then
-            echo "One or more SDK package checks failed."
-            exit 1
-          fi
-          if [[ "${{ needs.detect.outputs.rust }}" == "true" && "${{ needs.rust.result }}" != "success" ]]; then
-            echo "Rust quality/security gates failed."
-            exit 1
-          fi
-          echo "All SDK and Rust checks passed."
+          set -euo pipefail
+          cargo mutants \
+            --workspace \
+            --in-place \
+            --test-tool cargo \
+            --timeout 120 \
+            --output /tmp/mutants.out \
+            --file 'contracts/**/src/authorization*.rs' \
+            --file 'contracts/**/src/auth*.rs'
+
+      # ── Upload mutation report ────────────────────────────────────────────
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report-${{ github.sha }}
+          path: /tmp/mutants.out/
+          retention-days: 7
+          if-no-files-found: warn

@@ -45,3 +45,25 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  mutation:
+    name: Rust authorization mutation testing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: install cargo-mutants
+        run: cargo install cargo-mutants --locked
+      - name: mutation testing (authorization)
+        run: cargo mutants --in-place --no-shuffle --test-tool cargo --file 'src/**/auth*.rs' --file 'src/**/authorization*.rs' --timeout 120 -- --all-features
+      - name: upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants.out
+          if-no-files-found: ignore
