@@ -22,3 +22,19 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# Release manifest verification (issue #762).
+# The `deploy` crate records the toolchain, Cargo.lock hash, Soroban SDK
+# version, optimization settings, contract ID, and WASM hash into a signed
+# release manifest, then verifies the deployed WASM bytecode hash and the
+# target network metadata against that manifest for both testnet and
+# production. These settings pin the reproducible build inputs the manifest
+# captures so verification fails on any bytecode or network mismatch.
+[workspace.metadata.release-manifest]
+soroban-sdk = "21.7.6"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+networks = ["testnet", "production"]

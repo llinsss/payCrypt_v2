@@ -45,3 +45,96 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-soroban-wasm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [testnet, production]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install soroban-cli
+        run: cargo install --locked soroban-cli
+      - name: Verify deployed WASM against release manifest
+        env:
+          NETWORK: ${{ matrix.network }}
+          SOROBAN_RPC_URL: ${{ matrix.network == 'production' && secrets.SOROBAN_MAINNET_RPC_URL || secrets.SOROBAN_TESTNET_RPC_URL }}
+        run: |
+          set -euo pipefail
+          MANIFEST="release-manifests/${NETWORK}.json"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "::error::Missing release manifest for network '$NETWORK' at $MANIFEST"
+            exit 1
+          fi
+
+          read_manifest() { jq -r "$1" "$MANIFEST"; }
+
+          CONTRACT_ID=$(read_manifest '.contract_id')
+          EXPECTED_WASM_HASH=$(read_manifest '.wasm_hash')
+          EXPECTED_NETWORK=$(read_manifest '.network')
+          EXPECTED_TOOLCHAIN=$(read_manifest '.toolchain')
+          EXPECTED_CARGO_LOCK_HASH=$(read_manifest '.cargo_lock_hash')
+          EXPECTED_SDK_VERSION=$(read_manifest '.soroban_sdk_version')
+          EXPECTED_OPTIMIZATION=$(read_manifest '.optimization')
+
+          echo "Manifest ($NETWORK):"
+          echo "  contract_id:        $CONTRACT_ID"
+          echo "  wasm_hash:          $EXPECTED_WASM_HASH"
+          echo "  network:            $EXPECTED_NETWORK"
+          echo "  toolchain:          $EXPECTED_TOOLCHAIN"
+          echo "  cargo_lock_hash:    $EXPECTED_CARGO_LOCK_HASH"
+          echo "  soroban_sdk:        $EXPECTED_SDK_VERSION"
+          echo "  optimization:       $EXPECTED_OPTIMIZATION"
+
+          # Fail on network metadata mismatch.
+          if [ "$EXPECTED_NETWORK" != "$NETWORK" ]; then
+            echo "::error::Manifest network '$EXPECTED_NETWORK' does not match target network '$NETWORK'"
+            exit 1
+          fi
+
+          # Fail on toolchain mismatch.
+          ACTUAL_TOOLCHAIN=$(rustc --version)
+          if [ "$ACTUAL_TOOLCHAIN" != "$EXPECTED_TOOLCHAIN" ]; then
+            echo "::error::Toolchain mismatch: manifest '$EXPECTED_TOOLCHAIN' vs actual '$ACTUAL_TOOLCHAIN'"
+            exit 1
+          fi
+
+          # Fail on Cargo.lock mismatch.
+          ACTUAL_CARGO_LOCK_HASH=$(sha256sum Cargo.lock | awk '{print $1}')
+          if [ "$ACTUAL_CARGO_LOCK_HASH" != "$EXPECTED_CARGO_LOCK_HASH" ]; then
+            echo "::error::Cargo.lock hash mismatch: manifest '$EXPECTED_CARGO_LOCK_HASH' vs actual '$ACTUAL_CARGO_LOCK_HASH'"
+            exit 1
+          fi
+
+          # Fail on Soroban SDK version mismatch.
+          ACTUAL_SDK_VERSION=$(cargo tree -p soroban-sdk --depth 0 2>/dev/null | awk '/soroban-sdk/ {print $2; exit}')
+          if [ -n "$ACTUAL_SDK_VERSION" ] && [ "$ACTUAL_SDK_VERSION" != "$EXPECTED_SDK_VERSION" ]; then
+            echo "::error::Soroban SDK mismatch: manifest '$EXPECTED_SDK_VERSION' vs actual '$ACTUAL_SDK_VERSION'"
+            exit 1
+          fi
+
+          # Fetch the deployed WASM bytecode hash from the target network.
+          ACTUAL_WASM_HASH=$(soroban contract fetch \
+            --id "$CONTRACT_ID" \
+            --network "$NETWORK" \
+            --rpc-url "$SOROBAN_RPC_URL" \
+            --out /tmp/deployed.wasm >/dev/null 2>&1 && sha256sum /tmp/deployed.wasm | awk '{print $1}')
+
+          if [ -z "$ACTUAL_WASM_HASH" ]; then
+            echo "::error::Unable to fetch deployed WASM for contract '$CONTRACT_ID' on '$NETWORK'"
+            exit 1
+          fi
+
+          # Fail on deployed bytecode mismatch.
+          if [ "$ACTUAL_WASM_HASH" != "$EXPECTED_WASM_HASH" ]; then
+            echo "::error::Deployed WASM hash mismatch on '$NETWORK': manifest '$EXPECTED_WASM_HASH' vs deployed '$ACTUAL_WASM_HASH'"
+            exit 1
+          fi
+
+          echo "::notice::Verified deployed Soroban WASM for '$NETWORK' (contract $CONTRACT_ID)"

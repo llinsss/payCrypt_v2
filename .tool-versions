@@ -2,3 +2,5 @@ nodejs 20.18.0
 foundry 1.0.0
 scarb 2.11.4
 cairo 2.11.4
+rust 1.81.0
+soroban 22.0.0
