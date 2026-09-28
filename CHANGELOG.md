@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handling for in-flight contract calls (#838).
 - Unit, property, and local-network tests covering success, boundary,
   unauthorized, replay, and failure paths for the typed contract errors (#838).
+- Rust/Soroban SDK pagination iterators: typed cursor- and page-based
+  iterators with deterministic cursor validation and page-bound checks (#840).
+- Serialization and backward-compatibility guarantees for pagination
+  requests, responses, and cursors, including cancellation semantics for
+  in-flight iteration and actionable pagination error classification
+  (invalid cursor, unauthorized, replay, transient/network, exhausted) (#840).
+- Unit, property, and local-network tests covering success, boundary,
+  unauthorized, replay, and failure paths for the pagination iterators (#840).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to

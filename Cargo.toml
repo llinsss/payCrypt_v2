@@ -95,6 +95,67 @@ crate = "soroban-sdk-errors"
 wire_format = "u32"
 stable_discriminants = true
 
+[workspace.metadata.sdk-pagination]
+# Pagination iterators for the Rust SDK (issue #840).
+#
+# The `soroban-sdk-pagination` crate exposes typed, cursor- and page-based
+# iterators over contract collections. It is the single source of truth for
+# how clients walk large result sets without loading them into memory.
+#
+# API surface (see `crates/soroban-sdk-pagination/src/lib.rs`):
+#   - `PageRequest` / `CursorRequest`: typed request envelopes
+#   - `Page<T>` / `Cursor<T>`: typed response envelopes
+#   - `PageIter` / `CursorIter`: lazy iterators that fetch the next page on
+#     demand and stop at exhaustion
+#   - `PaginationError` + `ErrorClass`: actionable failure classification
+#
+# Deterministic validation: cursors are opaque, versioned, and validated
+# before use. A cursor encodes the last-seen key plus a schema version; a
+# cursor whose version does not match the current schema is rejected with
+# `PaginationError::InvalidCursor` rather than silently mis-paginating.
+# Page bounds (`limit`) are validated against `MIN_LIMIT`/`MAX_LIMIT` so a
+# malformed request fails fast and deterministically.
+#
+# Serialization / compatibility: requests and responses serialize through
+# Soroban's `Xdr`/`ScVal` conventions. Cursors are forward-compatible: new
+# fields are appended and unknown trailing bytes are ignored, so a client on
+# an older SDK can still consume pages produced by a newer contract. The
+# numeric error discriminants are frozen (append-only) for the same reason.
+#
+# Cancellation: iterators are lazy and hold no server-side state. Dropping an
+# iterator, or calling `cancel()`, stops further fetches immediately; an
+# in-flight fetch observes the cancellation token and returns
+# `PaginationError::Cancelled` instead of continuing to page.
+#
+# Error classification (see `ErrorClass`):
+#   - InvalidCursor: malformed, stale, or version-mismatched cursor
+#   - Unauthorized:  caller lacks auth for the requested collection
+#   - Replay:        duplicate cursor / already-consumed page token
+#   - Transient:     network or host error; safe to retry with backoff
+#   - Exhausted:     no more pages; terminal, not an error to retry
+#   - Cancelled:     iteration cancelled before completion
+#
+# Migration: existing call sites that hand-roll `start`/`limit` loops are
+# replaced incrementally with `PageIter`/`CursorIter`. Cursors are not
+# persisted on-chain, so rollback is a revert of the crate version pin below;
+# no state migration is required.
+#
+# Indexing/monitoring: indexers should key on the numeric error discriminant
+# and map it through `ErrorClass` for alerting (page on `Transient` only after
+# retries are exhausted; treat `Exhausted` as normal termination).
+#
+# Tests: unit + property tests live in `crates/soroban-sdk-pagination/tests`
+# and cover success, boundary (empty page, max limit, last page), unauthorized,
+# replay, cancellation, and failure paths, including cursor round-trip and
+# version-mismatch rejection.
+#
+# Run with: cargo test -p soroban-sdk-pagination
+crate = "soroban-sdk-pagination"
+cursor_version = 1
+min_limit = 1
+max_limit = 1000
+stable_discriminants = true
+
 [profile.release]
 opt-level = "z"
 lto = true
