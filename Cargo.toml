@@ -29,3 +29,9 @@ strip = "symbols"
 opt-level = 0
 debug-assertions = true
 overflow-checks = true
+
+[dev-dependencies]
+# Property tests for nonce replay protection (issue #824) exercise
+# authorization, boundary values, resource limits, and external-call
+# failure paths against deterministic ledger/time fixtures.
+proptest = "1.4.0"
