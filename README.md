@@ -291,3 +291,7 @@ Immutable transaction history for all tag operations
 
 <!-- handsoff-issue-744 -->
 - #744: Add cross-contract rollback tests
+<!-- handsoff-issue-757 -->
+- #757: Add contract incident monitoring and alerting for Rust deployments
+<!-- handsoff-issue-736 -->
+- #736: Add expiry and clock semantics to Rust payment intents
