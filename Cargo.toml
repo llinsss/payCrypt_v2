@@ -1,23 +1,67 @@
 [workspace]
 resolver = "2"
+# Explicit members only. `contracts/*` cannot be used because the glob would
+# match the non-Rust contract trees (solidity_contract, starknet_contract) and
+# would fail to load the workspace.
+#
+# `contracts/tag` is the only crate with a manifest: `contracts/payment` and
+# `contracts/soroban` are not part of this workspace (see contracts/soroban/
+# COMPATIBILITY.md for the nested Soroban workspace and its own lockfile).
 members = [
-    "contracts/*",
-    "crates/*",
-    "tests",
-    "deploy",
+    "contracts/tag",
+]
+# Cargo-fuzz targets are built by `cargo fuzz`, which manages its own
+# dependency graph and nightly toolchain.
+exclude = [
+    "contracts/soroban",
+    "contracts/tag/fuzz",
 ]
 
 [workspace.package]
 edition = "2021"
+rust-version = "1.84"
 license = "Apache-2.0"
-repository = "https://github.com/Handsoff/soroban-contracts"
+repository = "https://github.com/llinsss/payCrypt_v2"
 
 [workspace.dependencies]
 # Soroban SDK versions are pinned exactly so generated WASM and
 # authorization behavior cannot silently change between builds.
 # See docs/soroban-upgrade-policy.md before bumping these.
-soroban-sdk = "=21.7.6"
+soroban-sdk = "=23.5.3"
 soroban-token-sdk = "=21.7.6"
+
+# StrKey encoding/decoding for typed Stellar address and asset validation
+# (issue #747): validates G.../C... keys, asset codes, and network passphrases.
+stellar-strkey = "0.0.9"
+
+# Property-based tests for malformed and cross-network validation inputs.
+proptest = "1.4.0"
+
+# Async runtime and HTTP client for the Rust client's submission/status calls
+# (issue #748): retry policy wraps these calls and must not replay signed ops.
+tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread", "time"] }
+reqwest = { version = "0.12.5", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialization for persisted operation/payment IDs and Soroban error payloads
+# (issue #748): idempotency records are stored as JSON keyed by operation ID.
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+
+# CLI argument parsing for the Rust-native deployment command (issue #749):
+# explicit network selection, dry-run flag, and constructor/address inputs.
+clap = { version = "4.5.7", features = ["derive"] }
+
+# SHA-256 hashing to validate the contract WASM hash before submission
+# (issue #749): the deployment command refuses to submit on hash mismatch.
+sha2 = "0.10.8"
+
+# Pinned toolchain for reproducible contract builds. The verification workflow
+# (see scripts/verify-wasm.sh) reads this value to record the exact toolchain
+# used to produce each deployed WASM hash.
+[workspace.metadata.contract-verification]
+toolchain = "1.78.0"
+lockfile = "Cargo.lock"
+optimization = "release"
 
 [profile.release]
 opt-level = "z"
@@ -25,3 +69,10 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+[profile.test]
+# Deterministic, reproducible fuzz/property test runs for escrow operation
+# sequences. Keep debug assertions on so boundary and resource-limit checks
+# (CPU/memory/entry limits) surface as hard failures instead of silent wraps.
+debug-assertions = true
+overflow-checks = true

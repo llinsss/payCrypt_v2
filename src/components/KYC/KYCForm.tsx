@@ -53,7 +53,6 @@ const KYCForm: React.FC = () => {
     updatedAt: string | null;
   } | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
-  const [activeField, setActiveField] = useState<string | null>(null);
 
   const {
     register,
@@ -147,7 +146,6 @@ const KYCForm: React.FC = () => {
       return;
     }
 
-    setActiveField(fieldName);
     setUploadedFiles((prev) => ({ ...prev, [fieldName]: file }));
     setUploadingFiles((prev) => ({ ...prev, [fieldName]: true }));
 
@@ -169,7 +167,6 @@ const KYCForm: React.FC = () => {
       });
     } finally {
       setUploadingFiles((prev) => ({ ...prev, [fieldName]: false }));
-      setActiveField(null);
     }
   };
 

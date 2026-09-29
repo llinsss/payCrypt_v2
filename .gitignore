@@ -65,3 +65,11 @@ target/
 # Do not ignore Cargo.lock (see docs/rust-toolchain-policy.md).
 !Cargo.lock
 !**/Cargo.lock
+
+# Soroban SDK ledger snapshots, written only when a test fails
+test_snapshots/
+**/test_snapshots/
+
+# cargo-fuzz crash reproductions; the seed corpus in fuzz/corpus is committed
+fuzz/artifacts/
+**/fuzz/artifacts/

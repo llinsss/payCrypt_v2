@@ -2,9 +2,9 @@
 #
 # Pre-commit hook: Rust quality and dependency security gates.
 #
-# Runs rustfmt, clippy (warnings denied), cargo-deny, and cargo-audit
-# across the contract and SDK crates so failures are visible before a
-# pull request is opened. Mirrors the CI gates required by issue #741.
+# Runs rustfmt, clippy (warnings denied), the test suite, cargo-deny, and
+# cargo-audit across the contract and SDK crates so failures are visible before
+# a pull request is opened. Mirrors the CI gates required by issue #741.
 #
 # Install with: git config core.hooksPath .githooks
 
@@ -12,8 +12,7 @@ set -euo pipefail
 
 # Crates that make up the contract and SDK surface.
 CRATES=(
-  "contracts"
-  "contracts/payment"
+  "contracts/tag"
   "sdk"
 )
 
@@ -53,7 +52,14 @@ for crate in "${EXISTING_CRATES[@]}"; do
     || fail "clippy failed in ${crate}"
 done
 
-# 3. cargo-deny (licenses, bans, advisories) ------------------------------
+# 3. Test suite -----------------------------------------------------------
+echo "pre-commit: cargo test"
+for crate in "${EXISTING_CRATES[@]}"; do
+  (cd "${crate}" && cargo test --all-features) \
+    || fail "tests failed in ${crate}"
+done
+
+# 4. cargo-deny (licenses, bans, advisories) ------------------------------
 if command -v cargo-deny >/dev/null 2>&1; then
   echo "pre-commit: cargo deny check"
   for crate in "${EXISTING_CRATES[@]}"; do
@@ -64,7 +70,7 @@ else
   echo "pre-commit: cargo-deny not installed, skipping (install: cargo install cargo-deny)" >&2
 fi
 
-# 4. cargo-audit (dependency vulnerability scan) --------------------------
+# 5. cargo-audit (dependency vulnerability scan) --------------------------
 if command -v cargo-audit >/dev/null 2>&1; then
   echo "pre-commit: cargo audit"
   for crate in "${EXISTING_CRATES[@]}"; do
