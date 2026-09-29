@@ -72,6 +72,62 @@ optimization = "release"
 [workspace.dependencies.soroban-cli]
 version = "21.7.6"
 
+# Pinned inputs for environment-specific configuration validation (#866).
+# These versions are the deterministic toolchain/dependency inputs that the
+# config validator checks against per environment (local/testnet/mainnet).
+[workspace.metadata.env-config]
+rust-toolchain = "1.79.0"
+soroban-sdk = "21.7.6"
+soroban-token-sdk = "21.7.6"
+
+[workspace.metadata.env-config.environments.local]
+network-passphrase = "Standalone Network ; February 2017"
+release-approval-required = false
+rollback-enabled = true
+
+[workspace.metadata.env-config.environments.testnet]
+network-passphrase = "Test SDF Network ; September 2015"
+release-approval-required = true
+rollback-enabled = true
+
+[workspace.metadata.env-config.environments.mainnet]
+network-passphrase = "Public Global Stellar Network ; September 2015"
+release-approval-required = true
+rollback-enabled = true
+
+# Pinned inputs for the contract deployment dry-run command (#867).
+# The dry-run simulates a deployment without broadcasting any transaction.
+# These values are the deterministic, pinned inputs the dry-run validates
+# against before producing a plan (artifact identity, environment, approval).
+[workspace.metadata.deploy-dry-run]
+# Default network the dry-run targets when none is supplied on the CLI.
+default-network = "local"
+# Whether the dry-run must refuse to run when release approval is missing.
+require-release-approval = true
+# Whether the dry-run must emit a rollback plan alongside the deployment plan.
+emit-rollback-plan = true
+
+[workspace.metadata.deploy-dry-run.environments.local]
+network-passphrase = "Standalone Network ; February 2017"
+rpc-endpoint = "http://127.0.0.1:8000/soroban/rpc"
+expected-chain-id = "standalone"
+release-approval-required = false
+rollback-enabled = true
+
+[workspace.metadata.deploy-dry-run.environments.testnet]
+network-passphrase = "Test SDF Network ; September 2015"
+rpc-endpoint = "https://soroban-testnet.stellar.org"
+expected-chain-id = "testnet"
+release-approval-required = true
+rollback-enabled = true
+
+[workspace.metadata.deploy-dry-run.environments.mainnet]
+network-passphrase = "Public Global Stellar Network ; September 2015"
+rpc-endpoint = "https://soroban-mainnet.stellar.org"
+expected-chain-id = "mainnet"
+release-approval-required = true
+rollback-enabled = true
+
 [profile.release]
 opt-level = "z"
 lto = true
