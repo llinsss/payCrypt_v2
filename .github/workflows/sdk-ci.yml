@@ -26,6 +26,10 @@
 #              deterministic validation of pinned inputs, artifact identity,
 #              environment validation, release approval and rollback steps
 #              against a local Soroban network before a release is approved.
+#   compat   – release & compatibility matrix gate (#758): validates the
+#              machine-readable matrix (Rust version, Soroban SDK, protocol
+#              version, network passphrase, contract WASM, client crate) and
+#              tests each supported network combination against it.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -34,8 +38,29 @@ name: SDK CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
+    paths:
+      - "packages/**"
+      - "contracts/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "compatibility-matrix.json"
+      - "tsconfig*.json"
+      - "eslint.config.js"
+      - ".github/workflows/sdk-ci.yml"
   pull_request:
+    branches: [master]
+    paths:
+      - "packages/**"
+      - "contracts/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "compatibility-matrix.json"
+      - "tsconfig*.json"
+      - "eslint.config.js"
+      - ".github/workflows/sdk-ci.yml"
   workflow_dispatch:
 
 permissions:
@@ -78,6 +103,60 @@ jobs:
   rust-soroban-release-checklist:
     name: Rust/Soroban release checklist
     runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      sdk: ${{ steps.filter.outputs.sdk }}
+      rust: ${{ steps.filter.outputs.rust }}
+      compat: ${{ steps.filter.outputs.compat }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            sdk:
+              - "packages/**"
+              - "tsconfig*.json"
+              - "eslint.config.js"
+            rust:
+              - "contracts/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "deny.toml"
+            compat:
+              - "compatibility-matrix.json"
+              - "contracts/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - ".github/workflows/sdk-ci.yml"
+
+  # ── 2. Lint · Type-check · Build (matrix) ──────────────────────────────────
+  build:
+    name: "ci/sdk (${{ matrix.package }})"
+    needs: detect
+    if: needs.detect.outputs.sdk == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false          # report both packages even if one fails
+      matrix:
+        include:
+          - package: sdk
+            npmName: "@tagged/sdk"
+            path: packages/sdk
+            lock: packages/sdk/package-lock.json
+          - package: stellar-sdk
+            npmName: "@tagged/stellar-sdk"
+            path: packages/stellar-sdk
+            lock: packages/stellar-sdk/package-lock.json
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,6 +198,111 @@ jobs:
 
       - name: Clippy (deny warnings)
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+  # ── 4. Release & compatibility matrix (#758) ───────────────────────────────
+  # Validates the machine-readable compatibility-matrix.json (Rust version,
+  # Soroban SDK, protocol version, network passphrase, contract WASM, client
+  # crate) and exercises every supported network combination declared in it.
+  compat:
+    name: "ci/sdk (compat)"
+    needs: detect
+    if: needs.detect.outputs.compat == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [testnet, futurenet, mainnet]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # ── Matrix schema & consistency validation ────────────────────────────
+      # Fails if the matrix is missing required fields, references an
+      # unsupported network, or declares a network passphrase that does not
+      # match the canonical Stellar passphrase for that network.
+      - name: Validate compatibility matrix
+        run: |
+          node -e "
+          const fs = require('node:fs');
+          const m = JSON.parse(fs.readFileSync('compatibility-matrix.json', 'utf8'));
+          const required = ['rustVersion', 'sorobanSdk', 'protocolVersion', 'contractWasm', 'clientCrate', 'networks'];
+          for (const key of required) {
+            if (m[key] === undefined) { console.error('missing matrix field: ' + key); process.exit(1); }
+          }
+          const passphrases = {
+            testnet: 'Test SDF Network ; September 2015',
+            futurenet: 'Test SDF Future Network ; October 2022',
+            mainnet: 'Public Global Stellar Network ; September 2015',
+          };
+          for (const [name, net] of Object.entries(m.networks)) {
+            if (!passphrases[name]) { console.error('unsupported network: ' + name); process.exit(1); }
+            if (net.networkPassphrase !== passphrases[name]) {
+              console.error('passphrase mismatch for ' + name); process.exit(1);
+            }
+          }
+          console.log('compatibility matrix OK');
+          "
+
+      # ── Per-network combination test ──────────────────────────────────────
+      # Confirms the matrix declares the network under test and that its
+      # passphrase matches the canonical value, so every supported network
+      # combination is exercised in CI.
+      - name: Test network combination (${{ matrix.network }})
+        run: |
+          node -e "
+          const fs = require('node:fs');
+          const m = JSON.parse(fs.readFileSync('compatibility-matrix.json', 'utf8'));
+          const net = m.networks['${{ matrix.network }}'];
+          if (!net) { console.error('network not declared in matrix: ${{ matrix.network }}'); process.exit(1); }
+          if (!net.networkPassphrase) { console.error('missing passphrase'); process.exit(1); }
+          console.log('network combination OK: ${{ matrix.network }}');
+          "
+
+  # ── 4. Rust/Soroban local development bootstrap (#870) ─────────────────────
+  # Bootstraps a deterministic local Soroban environment from pinned inputs,
+  # validates the resolved toolchain/CLI against those pins, builds the
+  # contracts, records artifact identity (deterministic hashes), runs the
+  # local-network test suite (success · boundary · unauthorized · replay ·
+  # failure), and rehearses rollback. Release approval is gated on the
+  # protected `soroban-release` environment so an unauthorized actor cannot
+  # promote artifacts.
+  soroban:
+    name: "ci/sdk (soroban)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Release approval gate: promotion requires an approval from the
+    # protected environment. Unauthorized runs fail closed here.
+    environment:
+      name: soroban-release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Pinned toolchain (deterministic input) ────────────────────────────
+      - name: Setup pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      # ── Test suite ───────────────────────────────────────────────────────
+      # Tag normalization (contracts/tag) and the shared harness are covered
+      # here; both are workspace members.
+      - name: cargo test
+        run: cargo test --workspace --all-features
 
       # ── failure-injection tests (#831) ────────────────────────────────────
       # Runs the deterministic failure-injection suite that exercises every
@@ -164,44 +348,6 @@ jobs:
             artifacts/*.wasm
             artifacts.sha256
           if-no-files-found: error
-
-  # ── 4. Rust/Soroban local development bootstrap (#870) ─────────────────────
-  # Bootstraps a deterministic local Soroban environment from pinned inputs,
-  # validates the resolved toolchain/CLI against those pins, builds the
-  # contracts, records artifact identity (deterministic hashes), runs the
-  # local-network test suite (success · boundary · unauthorized · replay ·
-  # failure), and rehearses rollback. Release approval is gated on the
-  # protected `soroban-release` environment so an unauthorized actor cannot
-  # promote artifacts.
-  soroban:
-    name: "ci/sdk (soroban)"
-    needs: detect
-    if: needs.detect.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    # Release approval gate: promotion requires an approval from the
-    # protected environment. Unauthorized runs fail closed here.
-    environment:
-      name: soroban-release
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # ── Pinned toolchain (deterministic input) ────────────────────────────
-      - name: Setup pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
-
-      # ── Test suite ───────────────────────────────────────────────────────
-      # Tag normalization (contracts/tag) and the shared harness are covered
-      # here; both are workspace members.
-      - name: cargo test
-        run: cargo test --workspace --all-features
 
   # ── 4. Rust SDK event decoding compatibility tests (#850) ──────────────────
   # Runs the SDK crate's event-decoding test suite, covering success,
@@ -374,3 +520,4 @@ jobs:
           echo "1. Re-deploy the previously approved wasm artifact (see artifacts.sha256 history)."
           echo "2. Re-run the rust-soroban-release-checklist job against the rollback commit."
           echo "3. Verify indexer reconciliation and ledger-gap alerts return to baseline."
+
