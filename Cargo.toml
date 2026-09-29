@@ -79,3 +79,67 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# Release manifest verification (issue #762).
+# The `deploy` crate records the toolchain, Cargo.lock hash, Soroban SDK
+# version, optimization settings, contract ID, and WASM hash into a signed
+# release manifest, then verifies the deployed WASM bytecode hash and the
+# target network metadata against that manifest for both testnet and
+# production. These settings pin the reproducible build inputs the manifest
+# captures so verification fails on any bytecode or network mismatch.
+[workspace.metadata.release-manifest]
+soroban-sdk = "21.7.6"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+networks = ["testnet", "production"]
+
+# External audit package (issue #764).
+# Pins the inputs an external Rust/Soroban auditor needs to reproduce the
+# audited artifact from a tagged commit: the exact toolchain, the Soroban SDK
+# version, the release profile, and the reproducible test commands that scope
+# every contract and privileged operation. The audit package (threat model,
+# storage map, auth matrix, invariants, deployment manifests) is generated
+# from these settings so findings map back to source files and tests.
+[workspace.metadata.audit-package]
+rust-toolchain = "1.79.0"
+soroban-sdk = "21.7.6"
+profile = "release"
+contracts = ["contracts/*"]
+privileged-operations = ["admin", "initialize", "upgrade", "pause", "unpause", "set_admin"]
+storage-classes = ["persistent", "instance", "temporary"]
+networks = ["testnet", "production"]
+reproducible-commands = [
+    "cargo build --release --target wasm32-unknown-unknown",
+    "cargo test --workspace --all-features",
+    "cargo test -p deploy --test release_manifest",
+]
+
+# Contract fuzzing and authorization coverage gates (issue #771).
+# Makes fuzz and authorization coverage mandatory for every public
+# Rust/Soroban entry point. The fuzz corpus exercises tags, amounts, callers,
+# ledger time, and operation sequences; the authorization matrix requires an
+# auth test for every public method. Coverage and the deterministic seeds are
+# published in CI so a regression in either gate fails the build.
+[workspace.metadata.fuzz-coverage]
+contracts = ["contracts/*"]
+entry-points = "public"
+fuzz-targets = ["tags", "amounts", "callers", "ledger-time", "operation-sequences"]
+require-authorization-test = true
+coverage-threshold = 100
+publish-coverage = true
+publish-seeds = true
+deterministic-seeds = [
+    "0x5eed0001",
+    "0x5eed0002",
+    "0x5eed0003",
+    "0x5eed0004",
+    "0x5eed0005",
+]
+ci-commands = [
+    "cargo test --workspace --all-features",
+    "cargo test --workspace --all-features -- --nocapture fuzz",
+    "cargo test --workspace --all-features -- --nocapture authorization",
+]

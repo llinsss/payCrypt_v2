@@ -1,23 +1,19 @@
-# Backend CI
-# Stable check name: ci/backend
-#
-# Runs on pull_request when backend source files or their workflow change.
-# Jobs:
-#   detect   – path filter (always runs, ~5 s)
-#   quality  – lint · dependency audit · jest test suite
-#   rust     – rustfmt · clippy · cargo test · cargo-deny · cargo-audit (contracts & SDK crates)
-#   wasm-verify – build contracts, record toolchain/lockfile/optimization/WASM hash,
-#                 verify deployed hash and detect drift vs backend config
-#
-# Services: PostgreSQL 14, Redis 6 (mirrors production services)
-# Artifacts: jest-results-<sha> retained 14 days
-#
-# MIGRATION & SEED STRATEGY:
-# - Tests use pre-configured test database; no migrations run in CI
-# - No seed data is loaded during CI; tests use fixtures or in-memory setup
-# - This prevents demo data from ever being included in CI artifacts
-# - Production deployments handle migrations & seeding separately at runtime
-# See: backend/docs/SEED_CATEGORIZATION.md for seed categorization details
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Deterministic fuzz seed published in CI so failures are reproducible.
+  FUZZ_SEED: "0x5eed771"
+  FUZZ_RUNS: "4096"
+
+jobs:
+  rust-contracts:
+    name: Rust/Soroban contracts (fuzz + authorization coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
 name: Backend CI
 
@@ -29,6 +25,12 @@ on:
 
 permissions:
   contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Deterministic fuzz seed published in CI so failures are reproducible.
+  FUZZ_SEED: "0x5eed771"
+  FUZZ_RUNS: "4096"
 
 jobs:
   rust-security:
@@ -44,37 +46,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt, llvm-tools-preview
 
-      - name: Cache cargo registry and
-name: Backend CI
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
-
-jobs:
-  rust-security:
-    name: Rust Security Scanning
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Cache cargo registry and build
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -82,8 +56,6 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked

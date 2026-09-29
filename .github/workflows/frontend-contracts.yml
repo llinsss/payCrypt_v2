@@ -171,6 +171,13 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+      - name: Fuzz public entry points (deterministic seeds)
+        env:
+          # Deterministic seeds published with the coverage report.
+          FUZZ_SEEDS: "0x5eed0001,0x5eed0002,0x5eed0003,0
       - name: Build release artifacts
         run: cargo build --release --all-features
       - name: Scan release artifacts for advisories
@@ -326,3 +333,14 @@ jobs:
           name: mutants-report
           path: mutants.out
           if-no-files-found: ignore
+
+  mutation:
+    name: Rust authorization mutation testing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+

@@ -11,6 +11,7 @@ on:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
       - "indexer/**"
       - ".github/workflows/backend-tests.yml"
   pull_request:
@@ -195,6 +196,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build
+
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
