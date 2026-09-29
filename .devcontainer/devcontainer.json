@@ -49,6 +49,8 @@
     }
   },
 
+  "initializeCommand": "test -f backend/.env || cp backend/.env.example backend/.env",
+
   "remoteEnv": {
     "NODE_ENV": "development"
   }
