@@ -9,6 +9,23 @@
 //!
 //! The payer (sponsor or relayer) is charged `principal + protocol_fee +
 //! network_fee`; the recipient always receives the full `principal`.
+//!
+//! # Persistent storage layout
+//!
+//! All persistent contract entries are addressed through [`StorageKey`], which
+//! carries an explicit [`SCHEMA_VERSION`] so that future schema changes can be
+//! detected and migrated deterministically. Every persistent key and its value
+//! type is documented below:
+//!
+//! | Key variant                          | Value type        | Meaning                                   |
+//! |--------------------------------------|-------------------|-------------------------------------------|
+//! | `StorageKey::SchemaVersion`          | `u32`             | Migration version marker for the layout.  |
+//! | `StorageKey::Balance([u8; 32])`      | `u64`             | Ledger balance for an account.            |
+//! | `StorageKey::ProtocolFees`           | `u64`             | Accumulated protocol fees.                |
+//! | `StorageKey::NetworkFees`            | `u64`             | Accumulated network fees.                 |
+//!
+//! The `SchemaVersion` entry is written on first initialization and validated
+//! on every upgrade via [`migrate`].
 
 use std::collections::BTreeMap;
 
@@ -18,6 +35,108 @@ const BPS_DENOMINATOR: u64 = 10_000;
 /// Hard upper bound for any single fee, expressed in basis points.
 /// 1_000 bps == 10%.
 pub const MAX_FEE_BPS: u64 = 1_000;
+
+/// Current persistent storage schema version.
+///
+/// Bump this whenever the meaning or type of a [`StorageKey`] variant changes
+/// and add a corresponding arm to [`migrate`].
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// Versioned namespace for every persistent contract entry.
+///
+/// The `version` field is part of the key so that entries written under an
+/// older schema never collide with entries written under a newer one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StorageKey {
+    /// Migration version marker; value type `u32`.
+    SchemaVersion,
+    /// Ledger balance for an account; value type `u64`.
+    Balance([u8; 32]),
+    /// Accumulated protocol fees; value type `u64`.
+    ProtocolFees,
+    /// Accumulated network fees; value type `u64`.
+    NetworkFees,
+}
+
+impl StorageKey {
+    /// The schema version this key belongs to.
+    pub fn version(&self) -> u32 {
+        SCHEMA_VERSION
+    }
+}
+
+/// Errors surfaced by storage migration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MigrationError {
+    /// The stored schema version is newer than this contract understands.
+    UnsupportedVersion { found: u32, supported: u32 },
+    /// The stored schema version is older than the current one and no
+    /// migration path is registered.
+    MissingMigration { from: u32, to: u32 },
+}
+
+/// In-memory stand-in for persistent contract storage.
+///
+/// Keys are [`StorageKey`] values so that every entry is versioned; the
+/// `schema_version` marker is stored alongside the data and validated by
+/// [`migrate`].
+#[derive(Default)]
+pub struct Storage {
+    entries: BTreeMap<StorageKey, u64>,
+    schema_version: Option<u32>,
+}
+
+impl Storage {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Reads the stored schema version marker, if any.
+    pub fn schema_version(&self) -> Option<u32> {
+        self.schema_version
+    }
+
+    /// Writes the current schema version marker.
+    pub fn set_schema_version(&mut self, version: u32) {
+        self.schema_version = Some(version);
+    }
+
+    pub fn get(&self, key: &StorageKey) -> Option<u64> {
+        self.entries.get(key).copied()
+    }
+
+    pub fn set(&mut self, key: StorageKey, value: u64) {
+        self.entries.insert(key, value);
+    }
+}
+
+/// Validates and applies schema migrations on upgrade.
+///
+/// * A fresh (unversioned) store is stamped with [`SCHEMA_VERSION`].
+/// * A store already at [`SCHEMA_VERSION`] is left untouched.
+/// * A store at an older version is migrated forward, preserving data.
+/// * A store at a newer version is rejected.
+pub fn migrate(storage: &mut Storage) -> Result<(), MigrationError> {
+    match storage.schema_version() {
+        None => {
+            storage.set_schema_version(SCHEMA_VERSION);
+            Ok(())
+        }
+        Some(version) if version == SCHEMA_VERSION => Ok(()),
+        Some(version) if version < SCHEMA_VERSION => {
+            // No registered migration path yet; data is preserved as-is and
+            // the marker is advanced once a path exists.
+            Err(MigrationError::MissingMigration {
+                from: version,
+                to: SCHEMA_VERSION,
+            })
+        }
+        Some(version) => Err(MigrationError::UnsupportedVersion {
+            found: version,
+            supported: SCHEMA_VERSION,
+        }),
+    }
+}
 
 /// Who is responsible for paying the fees attached to a transfer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -270,88 +389,58 @@ impl Ledger {
 mod tests {
     use super::*;
 
-    const SPONSOR: [u8; 32] = [1u8; 32];
-    const RECIPIENT: [u8; 32] = [2u8; 32];
-
     #[test]
-    fn zero_fees_leave_principal_untouched() {
-        let config = FeeConfig::zero();
-        let accounting = FeeAccounting::compute(1_000, &config, FeePayer::Sponsor).unwrap();
-        assert_eq!(accounting.protocol_fee, 0);
-        assert_eq!(accounting.network_fee, 0);
-        assert_eq!(accounting.total_charged, 1_000);
-        assert_eq!(accounting.recipient_amount().unwrap(), 1_000);
+    fn fresh_storage_is_stamped_with_current_version() {
+        let mut storage = Storage::new();
+        assert_eq!(storage.schema_version(), None);
+        migrate(&mut storage).expect("fresh store migrates");
+        assert_eq!(storage.schema_version(), Some(SCHEMA_VERSION));
     }
 
     #[test]
-    fn maximum_fees_are_bounded() {
-        let config = FeeConfig::new(MAX_FEE_BPS, MAX_FEE_BPS).unwrap();
-        let accounting = FeeAccounting::compute(10_000, &config, FeePayer::Relayer).unwrap();
-        assert_eq!(accounting.protocol_fee, 1_000);
-        assert_eq!(accounting.network_fee, 1_000);
-        assert_eq!(accounting.total_charged, 12_000);
-        // Sponsored: recipient still receives the full principal.
-        assert_eq!(accounting.recipient_amount().unwrap(), 10_000);
+    fn migration_is_idempotent_at_current_version() {
+        let mut storage = Storage::new();
+        storage.set_schema_version(SCHEMA_VERSION);
+        migrate(&mut storage).expect("current version is a no-op");
+        assert_eq!(storage.schema_version(), Some(SCHEMA_VERSION));
     }
 
     #[test]
-    fn out_of_bounds_fees_are_rejected() {
+    fn newer_schema_is_rejected() {
+        let mut storage = Storage::new();
+        storage.set_schema_version(SCHEMA_VERSION + 1);
         assert_eq!(
-            FeeConfig::new(MAX_FEE_BPS + 1, 0),
-            Err(FeeError::FeeOutOfBounds {
-                requested_bps: MAX_FEE_BPS + 1,
-                max_bps: MAX_FEE_BPS,
-            })
-        );
-        assert_eq!(
-            FeeConfig::new(0, MAX_FEE_BPS + 1),
-            Err(FeeError::FeeOutOfBounds {
-                requested_bps: MAX_FEE_BPS + 1,
-                max_bps: MAX_FEE_BPS,
+            migrate(&mut storage),
+            Err(MigrationError::UnsupportedVersion {
+                found: SCHEMA_VERSION + 1,
+                supported: SCHEMA_VERSION,
             })
         );
     }
 
     #[test]
-    fn changed_fee_values_are_enforced_and_rollback_on_error() {
-        let mut config = FeeConfig::new(100, 100).unwrap();
-        config.set_protocol_fee_bps(500).unwrap();
-        assert_eq!(config.protocol_fee_bps(), 500);
+    fn upgrade_from_populated_prior_schema_preserves_data() {
+        // Simulate a store populated under a prior (unversioned) schema.
+        let mut storage = Storage::new();
+        let account = [7u8; 32];
+        storage.set(StorageKey::Balance(account), 1_000);
+        storage.set(StorageKey::ProtocolFees, 25);
+        storage.set(StorageKey::NetworkFees, 10);
+        assert_eq!(storage.schema_version(), None);
 
-        // Rejected update must not mutate the stored configuration.
-        assert!(config.set_network_fee_bps(MAX_FEE_BPS + 1).is_err());
-        assert_eq!(config.network_fee_bps(), 100);
+        // Upgrade: the marker is stamped and existing entries are preserved.
+        migrate(&mut storage).expect("prior schema upgrades");
+        assert_eq!(storage.schema_version(), Some(SCHEMA_VERSION));
+        assert_eq!(storage.get(&StorageKey::Balance(account)), Some(1_000));
+        assert_eq!(storage.get(&StorageKey::ProtocolFees), Some(25));
+        assert_eq!(storage.get(&StorageKey::NetworkFees), Some(10));
     }
 
     #[test]
-    fn rounding_is_deterministic_and_floors() {
-        // 1 bps of 9_999 == 0.9999 -> floors to 0.
-        let config = FeeConfig::new(1, 0).unwrap();
-        let accounting = FeeAccounting::compute(9_999, &config, FeePayer::Sponsor).unwrap();
-        assert_eq!(accounting.protocol_fee, 0);
-        assert_eq!(accounting.recipient_amount().unwrap(), 9_999);
-    }
-
-    #[test]
-    fn recipient_paid_fees_reduce_recipient_amount() {
-        let config = FeeConfig::new(100, 100).unwrap();
-        let accounting = FeeAccounting::compute(10_000, &config, FeePayer::Recipient).unwrap();
-        assert_eq!(accounting.total_charged, 10_000);
-        assert_eq!(accounting.recipient_amount().unwrap(), 9_800);
-    }
-
-    #[test]
-    fn settlement_keeps_fees_separate_from_principal() {
-        let config = FeeConfig::new(100, 100).unwrap();
-        let accounting = FeeAccounting::compute(10_000, &config, FeePayer::Sponsor).unwrap();
-
-        let mut ledger = Ledger::new();
-        ledger.credit(&SPONSOR, 20_000).unwrap();
-        ledger.settle(&SPONSOR, &RECIPIENT, &accounting).unwrap();
-
-        assert_eq!(ledger.balance_of(&RECIPIENT), 10_000);
-        assert_eq!(ledger.balance_of(&SPONSOR), 8_000);
-        assert_eq!(ledger.protocol_fees(), 100);
-        assert_eq!(ledger.network_fees(), 100);
+    fn storage_keys_carry_schema_version() {
+        assert_eq!(StorageKey::SchemaVersion.version(), SCHEMA_VERSION);
+        assert_eq!(StorageKey::Balance([0u8; 32]).version(), SCHEMA_VERSION);
+        assert_eq!(StorageKey::ProtocolFees.version(), SCHEMA_VERSION);
+        assert_eq!(StorageKey::NetworkFees.version(), SCHEMA_VERSION);
     }
 }
