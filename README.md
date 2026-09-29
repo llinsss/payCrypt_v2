@@ -289,6 +289,11 @@ Immutable transaction history for all tag operations
 <!-- handsoff-issue-713 -->
 - #713: Implement canonical tag normalization in Rust
 
+<!-- handsoff-issue-721 -->
+- #721: Use checked token transfer wrappers in Rust contracts
+<!-- handsoff-issue-733 -->
+- #733: Add decimal-safe amount types to Rust contract interfaces
+
 <!-- handsoff-issue-727 -->
 - #727: Add deterministic wallet deployment salts in Rust
 
