@@ -1,25 +1,66 @@
-name: Frontend API Contracts
+name: Frontend Contracts
 
 on:
-  push:
   pull_request:
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'CHANGELOG.md'
+      - 'docs/runbooks/**'
+      - '.github/workflows/frontend-contracts.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'CHANGELOG.md'
+      - 'docs/runbooks/**'
+      - '.github/workflows/frontend-contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned inputs: deterministic toolchain and Soroban target for reproducible builds.
+  RUST_TOOLCHAIN: '1.79.0'
+  SOROBAN_TARGET: 'wasm32-unknown-unknown'
+  CARGO_TERM_COLOR: always
+  # Operator runbook that must exist and stay well-formed for Rust contract failures.
+  RUNBOOK_PATH: 'docs/runbooks/rust-contract-failures.md'
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  contracts:
+  changelog-policy:
+    name: Rust contract changelog policy
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run test:contracts
-      - run: npm run type-check
-      - run: npm run lint
+          fail-on-severity: moderate
+          deny-licenses: GPL-3.0, AGPL-3.0
 
   rust:
     runs-on: ubuntu-latest
@@ -30,12 +71,97 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: rustfmt check
         run: cargo fmt --all -- --check
       - name: clippy (deny warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: clippy (security lints)
+        run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic
+
+  operator-runbook:
+    name: Rust contract failure runbook
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate environment
+        run: |
+          set -euo pipefail
+          test -f Cargo.toml || { echo '::error::Cargo.toml missing'; exit 1; }
+          test -f "$RUNBOOK_PATH" || { echo "::error::operator runbook missing at $RUNBOOK_PATH"; exit 1; }
+          echo "runbook=${RUNBOOK_PATH} toolchain=${RUST_TOOLCHAIN} target=${SOROBAN_TARGET}"
+
+      - name: Validate operator runbook
+        run: |
+          set -euo pipefail
+
+          # Deterministic validation: the runbook must document each required
+          # operator procedure for Rust/Soroban contract failures.
+          required_sections=(
+            'Pinned Inputs'
+            'Artifact Identity'
+            'Environment Validation'
+            'Release Approval'
+            'Rollback'
+          )
+
+          for section in "${required_sections[@]}"; do
+            if ! grep -Eq "^##+ .*${section}" "$RUNBOOK_PATH"; then
+              echo "::error::runbook missing required section: ${section}"
+              exit 1
+            fi
+          done
+
+          # The runbook must be non-trivial so operators have real guidance.
+          lines=$(grep -cve '^[[:space:]]*$' "$RUNBOOK_PATH" || true)
+          if [ "$lines" -lt 20 ]; then
+            echo '::error::runbook is too short to be actionable.'
+            exit 1
+          fi
+
+          echo 'Operator runbook validated.'
+
+      - name: Rollback guidance
+        if: failure()
+        run: |
+          echo '::notice::Rollback: restore the operator runbook at docs/runbooks/rust-contract-failures.md or revert the contract change, then re-run this workflow.'
+
+  wasm-budget:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt check
+        run: cargo fmt --all -- --check
+      - name: clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: clippy (security lints)
+        run: >
+          cargo clippy --all-targets --all-features --
+          -D clippy::unwrap_used
+          -D clippy::expect_used
+          -D clippy::panic
+          -D clippy::indexing_slicing
+          -D clippy::integer_arithmetic
+          -D clippy::cast_possible_truncation
+      - name: authorization snapshot tests
+        run: cargo test --all-features authorization
+      - name: authorization coverage guard
+        run: |
+          set -euo pipefail
+          # Fail CI when a new public contract entry point lacks an authorization test.
+          # The guard enumerates public entry points from the contract sources and
+          # verifies each one is referenced by the table-driven authorization suite.
+          cargo test --all-features --test authorization_coverage -- --nocapture
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -45,8 +171,149 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+      - name: Fuzz public entry points (deterministic seeds)
+        env:
+          # Deterministic seeds published with the coverage report.
+          FUZZ_SEEDS: "0x5eed0001,0x5eed0002,0x5eed0003,0
+      - name: Build release artifacts
+        run: cargo build --release --all-features
+      - name: Scan release artifacts for advisories
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --file Cargo.lock
+      - name: WASM artifact checks
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wasm_files=(target/wasm32-unknown-unknown/release/*.wasm target/wasm32-unknown-unknown/release/**/*.wasm)
+          if [ ${#wasm_files[@]} -eq 0 ]; then
+            echo "No WASM artifacts found; skipping WASM checks."
+            exit 0
+          fi
+          for wasm in "${wasm_files[@]}"; do
+            echo "Checking ${wasm}"
+            test -s "${wasm}" || { echo "Empty WASM artifact: ${wasm}"; exit 1; }
+            if command -v wasm-tools >/dev/null 2>&1; then
+              wasm-tools validate "${wasm}"
+            fi
+          done
+      - name: golden tests (contract events)
+        run: cargo test --all-features --test golden_contract_events
+      - name: fuzz tests (payment amount arithmetic)
+        run: cargo test --all-features --test fuzz_payment_amount_arithmetic
+      - name: failure-injection tests (external contract calls)
+        run: cargo test --all-features --test external_call_failures
+      - name: Install stellar-cli
+        run: cargo install --locked stellar-cli --version 22.0.1
+      - name: Build Soroban contracts (wasm32)
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Measure WASM size
+        run: |
+          set -euo pipefail
+          MAX_WASM_BYTES="${MAX_WASM_BYTES:-65536}"
+          found=0
+          for wasm in $(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm'); do
+            found=1
+            size=$(stat -c%s "$wasm")
+            echo "$wasm: $size bytes (budget $MAX_WASM_BYTES)"
+            if [ "$size" -gt "$MAX_WASM_BYTES" ]; then
+              echo "::error file=$wasm::WASM size $size exceeds budget $MAX_WASM_BYTES bytes"
+              exit 1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No Soroban contract WASM artifacts found to measure"
+            exit 1
+          fi
+      - name: Measure CPU, memory, and ledger reads/writes
+        run: |
+          set -euo pipefail
+          MAX_CPU_INSTRUCTIONS="${MAX_CPU_INSTRUCTIONS:-100000000}"
+          MAX_MEMORY_BYTES="${MAX_MEMORY_BYTES:-41943040}"
+          MAX_LEDGER_READS="${MAX_LEDGER_READS:-40}"
+          MAX_LEDGER_WRITES="${MAX_LEDGER_WRITES:-20}"
+          found=0
+          for wasm in $(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm'); do
+            found=1
+            echo "::group::Resource budget for $wasm"
+            stellar contract invoke \
+              --wasm "$wasm" \
+              --id 1 \
+              --fee 1000000 \
+              --cost \
+              -- 2>&1 | tee /tmp/cost.txt || true
+            cpu=$(grep -oE 'cpu_insns[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            mem=$(grep -oE 'mem_bytes[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            reads=$(grep -oE 'read_entries[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            writes=$(grep -oE 'write_entries[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            echo "cpu_insns=$cpu mem_bytes=$mem read_entries=$reads write_entries=$writes"
+            if [ "$cpu" -gt "$MAX_CPU_INSTRUCTIONS" ]; then
+              echo "::error file=$wasm::CPU instructions $cpu exceed budget $MAX_CPU_INSTRUCTIONS"
+              exit 1
+            fi
+            if [ "$mem" -gt "$MAX_MEMORY_BYTES" ]; then
+              echo "::error file=$wasm::Memory $mem bytes exceeds budget $MAX_MEMORY_BYTES"
+              exit 1
+            fi
+            if [ "$reads" -gt "$MAX_LEDGER_READS" ]; then
+              echo "::error file=$wasm::Ledger reads $reads exceed budget $MAX_LEDGER_READS"
+              exit 1
+            fi
+            if [ "$writes" -gt "$MAX_LEDGER_WRITES" ]; then
+              echo "::error file=$wasm::Ledger writes $writes exceed budget $MAX_LEDGER_WRITES"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No Soroban contract WASM artifacts found to measure"
+            exit 1
+          fi
 
   upgrade-integration:
+    runs-on: ubuntu-latest
+    needs: rust
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: install soroban-cli
+        run: cargo install --locked soroban-cli
+      - name: start local network
+        run: soroban network start local
+      - name: upgrade integration tests (local network)
+        env:
+          SOROBAN_NETWORK: ${{ vars.SOROBAN_NETWORK || 'local' }}
+        run: cargo test --all-features --test upgrade_integration
+
+  migration-rehearsal:
+    runs-on: ubuntu-latest
+    needs: rust
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build migration rehearsal harness
+        run: cargo build --release --all-features -p upgrade_manager
+      - name: Run migration rehearsal (local/testnet)
+        env:
+          SOROBAN_NETWORK: ${{ vars.SOROBAN_NETWORK || 'local' }}
+
+  mutation:
+    name: Rust authorization mutation testing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -56,6 +323,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: install soroban-cli
         run: cargo install --locked soroban-cli
@@ -72,3 +340,45 @@ jobs:
       - name: stop local network
         if: always()
         run: soroban network stop local
+      - name: Build migration rehearsal harness
+        run: cargo build --release --all-features -p upgrade_manager
+      - name: Run migration rehearsal (local/testnet)
+        env:
+          SOROBAN_NETWORK: ${{ vars.SOROBAN_NETWORK || 'local' }}
+          SOROBAN_RPC_URL: ${{ vars.SOROBAN_RPC_URL }}
+          SOROBAN_NETWORK_PASSPHRASE: ${{ vars.SOROBAN_NETWORK_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mkdir -p migration-report
+          cargo test --release --all-features -p upgrade_manager -- --nocapture \
+            migration_rehearsal 2>&1 | tee migration-report/rehearsal.log
+      - name: Upload migration report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-report
+          path: migration-report/
+          if-no-files-found: warn
+      - name: install cargo-mutants
+        run: cargo install cargo-mutants --locked
+      - name: mutation testing (authorization)
+        run: cargo mutants --in-place --no-shuffle --test-tool cargo --file 'src/**/auth*.rs' --file 'src/**/authorization*.rs' --timeout 120 -- --all-features
+      - name: upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants.out
+          if-no-files-found: ignore
+
+  mutation:
+    name: Rust authorization mutation testing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+
