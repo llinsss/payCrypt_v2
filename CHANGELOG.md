@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Local-network authorization integration tests for the Rust/Soroban migration,
+  covering success, boundary, unauthorized, replay, and external-call failure
+  paths with deterministic ledger/time fixtures (#830).
 - Rust SDK domain types for payment amounts (`Amount`, `Asset`, `PaymentIntent`)
   with deterministic validation, serialization/compatibility behavior, and
   actionable error classification (validation, unauthorized, replay, failure),

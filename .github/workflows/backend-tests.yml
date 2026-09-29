@@ -4,7 +4,7 @@ name: Backend Extended Tests
 # - Standard unit and integration tests
 # - Database migration tests
 # - Regression test: verify demo data never loads in production scripts
-# - Rust integration tests against a deterministic local Stellar/Soroban network
+# - Local-network authorization integration tests (Rust/Soroban)
 
 on:
   push:
@@ -12,12 +12,14 @@ on:
     paths:
       - "backend/**"
       - "contracts/**"
+      - "contracts/**"
       - "indexer/**"
       - ".github/workflows/backend-tests.yml"
   pull_request:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
       - "indexer/**"
       - ".github/workflows/backend-tests.yml"
 
@@ -40,7 +42,10 @@ jobs:
         working-directory: .
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
-      indexer: ${{ steps.filter.outputs.indexer }}
+            contracts:
+              - "contracts/**"
+            indexer:
+              - "indexer/**"
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +56,8 @@ jobs:
           filters: |
             backend:
               - "backend/**"
+            contracts:
+              - "contracts/**"
             indexer:
               - "indexer/**"
 
@@ -201,8 +208,22 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Cache cargo registry and build
 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy, llvm-tools-preview
+
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build
 
     steps:
       - name: Checkout
