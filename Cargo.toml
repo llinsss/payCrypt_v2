@@ -73,6 +73,23 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 
+# WASM size and resource-budget gates (issue #743).
+# `cargo build --profile release` produces the deployable WASM artifacts that
+# the size gate measures; the resource gate measures CPU instructions, memory,
+# and ledger reads/writes for representative invocations via the Soroban host.
+[profile.release.build-override]
+opt-level = "z"
+codegen-units = 1
+
+[workspace.metadata.resource-budget]
+# Agreed regression thresholds enforced by CI. Values are ceilings: a build or
+# invocation that exceeds any of them fails the gate.
+wasm-size-bytes = 65536
+cpu-instructions = 100000000
+memory-bytes = 41943040
+ledger-reads = 40
+ledger-writes = 20
+
 [profile.test]
 # Deterministic, reproducible fuzz/property test runs for escrow operation
 # sequences. Keep debug assertions on so boundary and resource-limit checks
