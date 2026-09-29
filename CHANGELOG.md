@@ -9,6 +9,22 @@ All notable changes to this project are documented in this file.
 governance-gated process, separate from ordinary user-controlled transfer,
 and requires a mandatory delay plus supporting evidence before it can
 execute.
+- Rust/Soroban SDK typed contract errors: a typed `ContractError` enum with
+  deterministic `From`/`TryFrom` conversions, stable numeric codes, and
+  serialization for cross-contract and SDK boundaries (#838).
+- Actionable error classification (`ErrorClass`) distinguishing success,
+  boundary, unauthorized, replay, and failure paths, plus cancellation-aware
+  handling for in-flight contract calls (#838).
+- Unit, property, and local-network tests covering success, boundary,
+  unauthorized, replay, and failure paths for the typed contract errors (#838).
+- Rust/Soroban SDK pagination iterators: typed cursor- and page-based
+  iterators with deterministic cursor validation and page-bound checks (#840).
+- Serialization and backward-compatibility guarantees for pagination
+  requests, responses, and cursors, including cancellation semantics for
+  in-flight iteration and actionable pagination error classification
+  (invalid cursor, unauthorized, replay, transient/network, exhausted) (#840).
+- Unit, property, and local-network tests covering success, boundary,
+  unauthorized, replay, and failure paths for the pagination iterators (#840).
 - Rust/Soroban SDK examples for end-to-end payments: typed APIs for building,
 signing, submitting, and confirming Soroban payment transactions, with
 deterministic (canonical) serialization of payment intents and results,

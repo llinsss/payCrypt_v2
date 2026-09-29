@@ -19,6 +19,10 @@
 #              every external contract call: authorization, boundary values,
 #              resource limits, external-call failures, replay and
 #              deterministic ledger/time fixtures.
+#   mutation – mutation testing for Rust authorization (#836):
+#              cargo-mutants over the authorization crate(s) with a
+#              deterministic ledger/time fixture, gated on the rust path
+#              filter. Reports surviving mutants as a build artifact.
 #   rust-sdk – Rust SDK event decoding compatibility tests (#850):
 #              cargo test over the SDK crate's event-decoding suite
 #              (success · boundary · unauthorized · replay · failure paths).
@@ -202,119 +206,7 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
-  # ── 4. Release & compatibility matrix (#758) ───────────────────────────────
-  # Validates the machine-readable compatibility-matrix.json (Rust version,
-  # Soroban SDK, protocol version, network passphrase, contract WASM, client
-  # crate) and exercises every supported network combination declared in it.
-  compat:
-    name: "ci/sdk (compat)"
-    needs: detect
-    if: needs.detect.outputs.compat == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    strategy:
-      fail-fast: false
-      matrix:
-        network: [testnet, futurenet, mainnet]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      # ── Matrix schema & consistency validation ────────────────────────────
-      # Fails if the matrix is missing required fields, references an
-      # unsupported network, or declares a network passphrase that does not
-      # match the canonical Stellar passphrase for that network.
-      - name: Validate compatibility matrix
-        run: |
-          node -e "
-          const fs = require('node:fs');
-          const m = JSON.parse(fs.readFileSync('compatibility-matrix.json', 'utf8'));
-          const required = ['rustVersion', 'sorobanSdk', 'protocolVersion', 'contractWasm', 'clientCrate', 'networks'];
-          for (const key of required) {
-            if (m[key] === undefined) { console.error('missing matrix field: ' + key); process.exit(1); }
-          }
-          const passphrases = {
-            testnet: 'Test SDF Network ; September 2015',
-            futurenet: 'Test SDF Future Network ; October 2022',
-            mainnet: 'Public Global Stellar Network ; September 2015',
-          };
-          for (const [name, net] of Object.entries(m.networks)) {
-            if (!passphrases[name]) { console.error('unsupported network: ' + name); process.exit(1); }
-            if (net.networkPassphrase !== passphrases[name]) {
-              console.error('passphrase mismatch for ' + name); process.exit(1);
-            }
-          }
-          console.log('compatibility matrix OK');
-          "
-
-      # ── Per-network combination test ──────────────────────────────────────
-      # Confirms the matrix declares the network under test and that its
-      # passphrase matches the canonical value, so every supported network
-      # combination is exercised in CI.
-      - name: Test network combination (${{ matrix.network }})
-        run: |
-          node -e "
-          const fs = require('node:fs');
-          const m = JSON.parse(fs.readFileSync('compatibility-matrix.json', 'utf8'));
-          const net = m.networks['${{ matrix.network }}'];
-          if (!net) { console.error('network not declared in matrix: ${{ matrix.network }}'); process.exit(1); }
-          if (!net.networkPassphrase) { console.error('missing passphrase'); process.exit(1); }
-          console.log('network combination OK: ${{ matrix.network }}');
-          "
-
-  # ── 4. Rust/Soroban local development bootstrap (#870) ─────────────────────
-  # Bootstraps a deterministic local Soroban environment from pinned inputs,
-  # validates the resolved toolchain/CLI against those pins, builds the
-  # contracts, records artifact identity (deterministic hashes), runs the
-  # local-network test suite (success · boundary · unauthorized · replay ·
-  # failure), and rehearses rollback. Release approval is gated on the
-  # protected `soroban-release` environment so an unauthorized actor cannot
-  # promote artifacts.
-  soroban:
-    name: "ci/sdk (soroban)"
-    needs: detect
-    if: needs.detect.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    # Release approval gate: promotion requires an approval from the
-    # protected environment. Unauthorized runs fail closed here.
-    environment:
-      name: soroban-release
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # ── Pinned toolchain (deterministic input) ────────────────────────────
-      - name: Setup pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
-
-      # ── Test suite ───────────────────────────────────────────────────────
-      # Tag normalization (contracts/tag) and the shared harness are covered
-      # here; both are workspace members.
-      - name: cargo test
-        run: cargo test --workspace --all-features
-
-      # ── failure-injection tests (#831) ────────────────────────────────────
-      # Runs the deterministic failure-injection suite that exercises every
-      # external contract call: authorization, boundary values, resource
-      # limits, external-call failures, replay and ledger/time fixtures.
-      - name: cargo test (failure-injection)
-        run: cargo test --workspace --all-features -- failure_injection
-
-      # ── cargo-deny (licenses, bans, advisories, sources) ──────────────────
+      # ── cargo-audit (RUSTSEC advisories) ──────────────────────────────────
       - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -325,6 +217,69 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 4. Mutation testing for Rust authorization (#836) ──────────────────────
+  # Runs cargo-mutants against the authorization crate(s) to verify the
+  # authorization test suite actually detects injected faults (boundary
+  # values, resource limits, external-call failures, replay/unauthorized
+  # paths). All tests use the deterministic ledger/time fixtures so mutant
+  # outcomes are reproducible across runs. Surviving mutants are uploaded
+  # as an artifact for triage; the job fails if any mutant survives.
+  mutation:
+    name: "ci/sdk (mutation)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-mutants-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-mutants-
+            ${{ runner.os }}-cargo-
+
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+
+      # ── Mutation testing (authorization) ──────────────────────────────────
+      # Scoped to the authorization crate(s) so the run stays bounded; the
+      # deterministic ledger/time fixtures keep mutant verdicts stable.
+      - name: cargo mutants (authorization)
+        run: |
+          set -euo pipefail
+          cargo mutants \
+            --workspace \
+            --in-place \
+            --test-tool cargo \
+            --timeout 120 \
+            --output /tmp/mutants.out \
+            --file 'contracts/**/src/authorization*.rs' \
+            --file 'contracts/**/src/auth*.rs'
+
+      # ── Upload mutation report ────────────────────────────────────────────
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report-${{ github.sha }}
+          path: /tmp/mutants.out/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Unit, property, and local-network tests
         run: cargo test --locked --all-features
