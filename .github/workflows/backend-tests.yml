@@ -4,17 +4,21 @@ name: Backend Extended Tests
 # - Standard unit and integration tests
 # - Database migration tests
 # - Regression test: verify demo data never loads in production scripts
+# - Rust integration tests against a deterministic local Stellar/Soroban network
 
 on:
   push:
     branches: [master]
     paths:
       - "backend/**"
+      - "contracts/**"
+      - "indexer/**"
       - ".github/workflows/backend-tests.yml"
   pull_request:
     branches: [master]
     paths:
       - "backend/**"
+      - "indexer/**"
       - ".github/workflows/backend-tests.yml"
 
 concurrency:
@@ -36,6 +40,7 @@ jobs:
         working-directory: .
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      indexer: ${{ steps.filter.outputs.indexer }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +51,8 @@ jobs:
           filters: |
             backend:
               - "backend/**"
+            indexer:
+              - "indexer/**"
 
   # ── 2. Migration Tests ─────────────────────────────────────────────────────
   migration-tests:
@@ -149,3 +156,136 @@ jobs:
         run: node scripts/verify-no-demo-data.js
         continue-on-error: false
 
+  # ── 4. Soroban Integration Tests ───────────────────────────────────────────
+  soroban-integration-tests:
+    name: Soroban Integration Tests
+    needs: detect
+    if: needs.detect.outputs.indexer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: paycrypt_soroban
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: paycrypt_soroban
+      DB_USER: test_user
+      DB_PASSWORD: test_pass
+      # Deterministic local Stellar/Soroban network endpoints.
+      SOROBAN_RPC_URL: http://localhost:8000/soroban/rpc
+      STELLAR_NETWORK_PASSPHRASE: "Standalone Network ; February 2017"
+      STELLAR_FRIENDBOT_URL: http://localhost:8000/friendbot
+      SOROBAN_CONTRACT_WASM: indexer/target/wasm32-unknown-unknown/release/paycrypt_contract.wasm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build
+
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            indexer/target
+          key: ${{ runner.os }}-cargo-soroban-${{ hashFiles('indexer/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-soroban-
+
+      - name: Install soroban-cli
+        run: cargo install --locked soroban-cli --version 21.0.0
+
+      - name: Build reviewed WASM artifacts
+        working-directory: indexer
+        run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Start deterministic local Stellar/Soroban network
+        run: |
+          docker run -d --name soroban-local \
+            -p 8000:8000 \
+            --health-cmd "curl -sf http://localhost:8000/soroban/rpc || exit 1" \
+            --health-interval 5s \
+            --health-timeout 5s \
+            --health-retries 30 \
+            stellar/quickstart:testing \
+            --local --enable-soroban-rpc
+
+      - name: Wait for local network readiness
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/soroban/rpc >/dev/null; then
+              echo "Soroban RPC is ready"
+              exit 0
+            fi
+            echo "Waiting for Soroban RPC ($i/60)..."
+            sleep 2
+          done
+          echo "Soroban RPC did not become ready in time" >&2
+          docker logs soroban-local || true
+          exit 1
+
+      - name: Deploy reviewed WASM artifacts
+        working-directory: indexer
+        run: |
+          soroban contract deploy \
+            --wasm "$SOROBAN_CONTRACT_WASM" \
+            --source-account default \
+            --network local \
+            --rpc-url "$SOROBAN_RPC_URL" \
+            --network-passphrase "$STELLAR_NETWORK_PASSPHRASE"
+
+      - name: Run Soroban integration tests
+        working-directory: indexer
+        run: cargo test --test integration -- --nocapture
+
+      - name: Dump local network logs on failure
+        if: failure()
+        run: docker logs soroban-local || true
+
+      - name: Stop local network
+        if: always()
+        run: docker rm -f soroban-local || true
