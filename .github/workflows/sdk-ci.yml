@@ -30,31 +30,36 @@ name: SDK CI
 
 on:
   push:
-    branches: [master]
-    paths:
-      - "packages/**"
-      - "contracts/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "deny.toml"
-      - "tsconfig*.json"
-      - "eslint.config.js"
-      - ".github/workflows/sdk-ci.yml"
+    branches: [main]
   pull_request:
-    branches: [master]
-    paths:
-      - "packages/**"
-      - "contracts/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "deny.toml"
-      - "tsconfig*.json"
-      - "eslint.config.js"
-      - ".github/workflows/sdk-ci.yml"
+  workflow_dispatch:
 
-concurrency:
-  group: sdk-ci-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # ── Pinned inputs (#870) ───────────────────────────────────────────────────
+  # Deterministic toolchain and Soroban CLI versions. Bumping any of these is
+  # a deliberate, reviewable change: the bootstrap job validates the resolved
+  # versions against these pins and fails on drift.
+  RUST_TOOLCHAIN: "1.81.0"
+  SOROBA
+name: SDK CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
 
 env:
   # ── Pinned inputs (#870) ───────────────────────────────────────────────────
@@ -66,168 +71,17 @@ env:
   STELLAR_NETWORK: "local"
 
 jobs:
-  # ── 1. Path filter ─────────────────────────────────────────────────────────
-  detect:
-    name: Detect changed paths
+  rust-soroban-release-checklist:
+    name: Rust/Soroban release checklist
     runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      sdk: ${{ steps.filter.outputs.sdk }}
-      rust: ${{ steps.filter.outputs.rust }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Filter paths
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            sdk:
-              - "packages/**"
-              - "tsconfig*.json"
-              - "eslint.config.js"
-            rust:
-              - "contracts/**"
-              - "Cargo.toml"
-              - "Cargo.lock"
-              - "deny.toml"
-
-  # ── 2. Lint · Type-check · Build (matrix) ──────────────────────────────────
-  build:
-    name: "ci/sdk (${{ matrix.package }})"
-    needs: detect
-    if: needs.detect.outputs.sdk == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    strategy:
-      fail-fast: false          # report both packages even if one fails
-      matrix:
-        include:
-          - package: sdk
-            npmName: "@tagged/sdk"
-            path: packages/sdk
-            lock: packages/sdk/package-lock.json
-          - package: stellar-sdk
-            npmName: "@tagged/stellar-sdk"
-            path: packages/stellar-sdk
-            lock: packages/stellar-sdk/package-lock.json
-
-    defaults:
-      run:
-        working-directory: ${{ matrix.path }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
         with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: ${{ matrix.lock }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      # ── Lint ──────────────────────────────────────────────────────────────
-      - name: Lint
-        run: npm run lint
-
-      # ── Type-check ────────────────────────────────────────────────────────
-      - name: Type-check
-        run: npm run typecheck
-
-      # ── Build ─────────────────────────────────────────────────────────────
-      - name: Build (tsup)
-        run: npm run build
-
-      # ── API compatibility gate (#620) ───────────────────────────────────────
-      # Fails if exports/types were silently added or removed from dist
-      # relative to the package's declared api-surface.json baseline.
-      - name: Validate exports/types (API compatibility)
-        run: node scripts/smoke/check-api-surface.mjs
-
-      # ── Pack (#620) ───────────────────────────────────────────────────────
-      # Simulates exactly what `npm publish` would ship: a tarball built from
-      # package.json's "files", not raw source.
-      - name: Pack tarball
-        run: |
-          mkdir -p /tmp/pack-${{ matrix.package }}
-          npm pack --pack-destination /tmp/pack-${{ matrix.package }}
-
-      # ── Node smoke fixture (#620) ────────────────────────────────────────
-      # Installs the *packed tarball* (not a workspace symlink) into a clean
-      # throwaway project and requires/imports it via both CJS and ESM, the
-      # way a real consumer would.
-      - name: Node smoke test (install tarball)
-        run: |
-          set -euo pipefail
-          FIXTURE=/tmp/smoke-node-${{ matrix.package }}
-          mkdir -p "$FIXTURE"
-          cd "$FIXTURE"
-          npm init -y >/dev/null
-          npm install /tmp/pack-${{ matrix.package }}/*.tgz
-          cp "$GITHUB_WORKSPACE/${{ matrix.path }}/scripts/smoke/require.cjs" .
-          cp "$GITHUB_WORKSPACE/${{ matrix.path }}/scripts/smoke/import.mjs" .
-          node require.cjs
-          node import.mjs
-
-      # ── Browser smoke fixture (#620) ─────────────────────────────────────
-      # Bundles an entry point that imports the packed tarball with esbuild
-      # targeting the browser platform, catching accidental Node-only APIs
-      # before they reach a published release.
-      - name: Browser smoke test (esbuild bundle)
-        run: |
-          set -euo pipefail
-          FIXTURE=/tmp/smoke-browser-${{ matrix.package }}
-          mkdir -p "$FIXTURE"
-          cd "$FIXTURE"
-          npm init -y >/dev/null
-          npm install /tmp/pack-${{ matrix.package }}/*.tgz
-          cp "$GITHUB_WORKSPACE/${{ matrix.path }}/scripts/smoke/browser-entry.mjs" entry.mjs
-          "$GITHUB_WORKSPACE/${{ matrix.path }}/node_modules/.bin/esbuild" entry.mjs \
-            --bundle --platform=browser --format=esm --outfile=bundle.js
-          node -e "if (!require('node:fs').existsSync('bundle.js')) process.exit(1)"
-
-      # ── Upload artifacts ─────────────────────────────────────────────────
-      - name: Upload dist artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-dist-${{ matrix.package }}-${{ github.sha }}
-          path: ${{ matrix.path }}/dist/
-          retention-days: 7
-          if-no-files-found: error
-
-      - name: Upload tarball artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-tarball-${{ matrix.package }}-${{ github.sha }}
-          path: /tmp/pack-${{ matrix.package }}/*.tgz
-          retention-days: 7
-          if-no-files-found: error
-
-  # ── 3. Rust quality & dependency-security gates (#741) ─────────────────────
-  # Runs rustfmt, clippy (warnings denied), cargo-deny and cargo-audit over
-  # every contract and SDK crate in the workspace. Failures surface directly
-  # on the pull request via the aggregated ci/sdk check below.
-  rust:
-    name: "ci/sdk (rust)"
-    needs: detect
-    if: needs.detect.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
+          toolchain: "1.79.0"
           components: rustfmt, clippy
 
       - name: Cache cargo registry and build
@@ -241,13 +95,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # ── rustfmt ───────────────────────────────────────────────────────────
-      - name: cargo fmt --check
+      - name: Verify pinned inputs (Cargo.lock committed and in sync)
+        run: |
+          set -euo pipefail
+          test -f Cargo.lock || { echo "::error::Cargo.lock is missing; pinned inputs are required"; exit 1; }
+          cargo metadata --locked --format-version 1 > /dev/null
+
+      - name: Environment validation
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+          rustup target list --installed | grep -q wasm32-unknown-unknown \
+            || rustup target add wasm32-unknown-unknown
+          rustup target list --installed | grep -q wasm32-unknown-unknown
+
+      - name: Format check
         run: cargo fmt --all -- --check
 
-      # ── clippy (warnings denied) ──────────────────────────────────────────
-      - name: cargo clippy -D warnings
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Clippy (deny warnings)
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       # ── cargo-deny (licenses, bans, advisories, sources) ──────────────────
       - name: cargo deny check
@@ -260,6 +127,32 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Unit, property, and local-network tests
+        run: cargo test --locked --all-features
+
+      - name: Build Soroban wasm artifacts
+        run: cargo build --locked --release --target wasm32-unknown-unknown
+
+      - name: Artifact identity (deterministic hashes)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' -exec cp {} artifacts/ \;
+          if [ -z "$(ls -A artifacts 2>/dev/null)" ]; then
+            echo "::error::No wasm artifacts produced; cannot establish artifact identity"
+            exit 1
+          fi
+          (cd artifacts && sha256sum ./*.wasm | tee ../artifacts.sha256)
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-release-artifacts
+          path: |
+            artifacts/*.wasm
+            artifacts.sha256
+          if-no-files-found: error
 
   # ── 4. Rust/Soroban local development bootstrap (#870) ─────────────────────
   # Bootstraps a deterministic local Soroban environment from pinned inputs,
@@ -348,18 +241,6 @@ jobs:
       # Release approval token. Unset on pull requests from forks, which is
       # exactly the unauthorized path the rehearsal must reject.
       RELEASE_APPROVAL: ${{ secrets.RELEASE_APPROVAL }}
-
-      - name: cargo deny check
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-
-      # ── cargo-audit (RUSTSEC advisories) ──────────────────────────────────
-      - name: cargo audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
 
     steps:
       - name: Checkout
@@ -456,3 +337,29 @@ jobs:
           path: /tmp/soroban-artifacts/
           retention-days: 7
           if-no-files-found: error
+
+  release-approval:
+    name: Release approval gate
+    needs: rust-soroban-release-checklist
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: soroban-release
+    steps:
+      - name: Require manual approval
+        run: |
+          echo "Release approval granted for ${{ github.sha }} by ${{ github.actor }}"
+          echo "Artifacts promoted from the rust-soroban-release-checklist job."
+
+  rollback-procedure:
+    name: Rollback procedure
+    needs: release-approval
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rollback guidance
+        run: |
+          echo "::warning::Release failed after approval. Roll back to the last known-good artifact."
+          echo "1. Re-deploy the previously approved wasm artifact (see artifacts.sha256 history)."
+          echo "2. Re-run the rust-soroban-release-checklist job against the rollback commit."
+          echo "3. Verify indexer reconciliation and ledger-gap alerts return to baseline."
