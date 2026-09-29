@@ -80,6 +80,18 @@ rust-toolchain = "1.79.0"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
+# Operational APIs for contract health (#861): deterministic validation,
+# idempotency/replay protection, and operational metrics.
+contract-health = { path = "crates/contract-health" }
+
+# Database retention policy for raw Soroban events (#862): deterministic
+# retention/pruning with idempotent re-runs and crash recovery.
+event-retention = { path = "crates/event-retention" }
+
+# Signed Rust contract release manifests (#863): pinned inputs, deterministic
+# artifact identity, environment validation, release approval, and rollback.
+release-manifest = { path = "crates/release-manifest" }
+
 [workspace.metadata.env-config.environments.local]
 network-passphrase = "Standalone Network ; February 2017"
 release-approval-required = false
