@@ -39,7 +39,8 @@ proptest = "1.4.0"
 
 # Async runtime and HTTP client for the Rust client's submission/status calls
 # (issue #748): retry policy wraps these calls and must not replay signed ops.
-tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.38.0", features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+tokio-util = "0.7"
 reqwest = { version = "0.12.5", features = ["json", "rustls-tls"], default-features = false }
 
 # Serialization for persisted operation/payment IDs and Soroban error payloads
@@ -54,6 +55,11 @@ clap = { version = "4.5.7", features = ["derive"] }
 # SHA-256 hashing to validate the contract WASM hash before submission
 # (issue #749): the deployment command refuses to submit on hash mismatch.
 sha2 = "0.10.8"
+
+# Secure signer abstraction (issue #753): secret material is loaded from the
+# environment or a secret manager, never from request payloads.
+secrecy = { version = "0.8", features = ["serde"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
 
 # Pinned toolchain for reproducible contract builds. The verification workflow
 # (see scripts/verify-wasm.sh) reads this value to record the exact toolchain

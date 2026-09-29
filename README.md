@@ -289,6 +289,8 @@ Immutable transaction history for all tag operations
 <!-- handsoff-issue-713 -->
 - #713: Implement canonical tag normalization in Rust
 
+<!-- handsoff-issue-752 -->
+- #752: Add database transaction boundaries to the Rust indexer
 <!-- handsoff-issue-744 -->
 - #744: Add cross-contract rollback tests
 <!-- handsoff-issue-757 -->
