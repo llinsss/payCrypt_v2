@@ -1,0 +1,31 @@
+[package]
+name = "tag-contract"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.84"
+description = "Soroban tag registry with canonical tag normalization and byte-length limits."
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[features]
+default = []
+# Exposes the deterministic, dependency-free fuzz harness to the `tag-fuzz`
+# cargo-fuzz package and to `--all-features` CI builds. The harness is kept
+# out of the default build so the shipped contract carries no test code.
+#
+# `fixtures` and `symbol_check` need a live host, so the feature also turns on
+# the SDK's `testutils`. Without it a non-test build of this feature would
+# fail to compile, which is exactly what the fuzz build caught.
+fuzz-harness = ["soroban-sdk/testutils"]
+
+[dependencies]
+soroban-sdk = "=23.5.3"
+
+[dev-dependencies]
+soroban-sdk = { version = "=23.5.3", features = ["testutils"] }
+# soroban-env-host 23.0.1's testutils still target the 2.x signing API; without
+# this pin the resolver selects ed25519-dalek 3.x and testutils fails to build.
+ed25519-dalek = "=2.2.0"
