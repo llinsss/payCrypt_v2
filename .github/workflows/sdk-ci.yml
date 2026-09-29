@@ -19,6 +19,11 @@
 #              every external contract call: authorization, boundary values,
 #              resource limits, external-call failures, replay and
 #              deterministic ledger/time fixtures.
+#   upgrade  – local-network upgrade integration tests (#829):
+#              spins up a deterministic soroban local network, runs the
+#              upgrade integration suite covering authorization, boundary
+#              values, resource limits, external-call failures, replay and
+#              deterministic ledger/time fixtures.
 #   mutation – mutation testing for Rust authorization (#836):
 #              cargo-mutants over the authorization crate(s) with a
 #              deterministic ledger/time fixture, gated on the rust path
@@ -212,25 +217,24 @@ jobs:
         with:
           command: check
 
+      # ── cargo-deny ────────────────────────────────────────────────────────
       # ── cargo-audit (RUSTSEC advisories) ──────────────────────────────────
       - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Mutation testing for Rust authorization (#836) ──────────────────────
-  # Runs cargo-mutants against the authorization crate(s) to verify the
-  # authorization test suite actually detects injected faults (boundary
-  # values, resource limits, external-call failures, replay/unauthorized
-  # paths). All tests use the deterministic ledger/time fixtures so mutant
-  # outcomes are reproducible across runs. Surviving mutants are uploaded
-  # as an artifact for triage; the job fails if any mutant survives.
-  mutation:
-    name: "ci/sdk (mutation)"
+  # ── 4. Local-network upgrade integration tests (#829) ──────────────────────
+  # Boots a deterministic soroban local network (fixed ledger sequence and
+  # timestamp fixtures) and runs the upgrade integration suite. The suite
+  # exercises authorization, boundary values, resource limits, external-call
+  # failures, replay protection and rollback behavior for the upgrade flow.
+  upgrade:
+    name: "ci/sdk (upgrade)"
     needs: detect
     if: needs.detect.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -238,6 +242,8 @@ jobs:
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Cache cargo registry and build
         uses: actions/cache@v4
@@ -246,10 +252,54 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-mutants-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-upgrade-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-mutants-
+            ${{ runner.os }}-cargo-upgrade-
             ${{ runner.os }}-cargo-
+
+      # ── Install soroban CLI (local network driver) ────────────────────────
+      - name: Install soroban-cli
+        run: |
+          set -euo pipefail
+          cargo install --locked soroban-cli --version 22.0.1
+
+      # ── Deterministic local network ───────────────────────────────────────
+      # Pins the ledger sequence and timestamp so upgrade tests are
+      # reproducible across runs (no wall-clock or network drift).
+      - name: Start local network (deterministic fixtures)
+        run: |
+          set -euo pipefail
+          soroban network start local \
+            --limits unlimited \
+            --protocol-version 22 \
+            --ledger-sequence 1000 \
+            --ledger-timestamp 1700000000
+          soroban network container logs local > /tmp/soroban-local.log 2>&1 || true
+
+      # ── Upgrade integration suite ─────────────────────────────────────────
+      # Covers success, boundary, unauthorized, replay and failure paths.
+      - name: Run upgrade integration tests
+        env:
+          SOROBAN_NETWORK: local
+          SOROBAN_RPC_URL: http://localhost:8000/soroban/rpc
+          SOROBAN_NETWORK_PASSPHRASE: "Standalone Network ; February 2017"
+          SOROBAN_LEDGER_SEQUENCE: "1000"
+          SOROBAN_LEDGER_TIMESTAMP: "1700000000"
+        run: |
+          set -euo pipefail
+          cargo test --workspace --all-features \
+            --test upgrade_integration \
+            -- --test-threads=1 --nocapture
+
+      # ── Upload local-network logs on failure ──────────────────────────────
+      - name: Upload local-network logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-local-logs-${{ github.sha }}
+          path: /tmp/soroban-local.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Install cargo-mutants
         uses: taiki-e/install-action@v2
