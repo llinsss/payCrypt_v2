@@ -1,0 +1,17 @@
+[package]
+name = "test-support"
+version = "0.1.0"
+edition = "2021"
+description = "Reusable malicious-token test doubles for Soroban contracts"
+license = "MIT"
+publish = false
+
+[lib]
+name = "test_support"
+path = "src/lib.rs"
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

@@ -154,7 +154,7 @@ describe("LandingPage", () => {
   it("should handle API errors gracefully", async () => {
     (api.apiClient.get as jest.Mock).mockRejectedValue(new Error("API Error"));
 
-    const { rerender } = render(<LandingPage />);
+    render(<LandingPage />);
 
     // Should still render without stats
     expect(screen.getByText(/Secure Transactions, Simplified/i)).toBeInTheDocument();
