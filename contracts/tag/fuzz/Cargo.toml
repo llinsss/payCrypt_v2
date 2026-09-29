@@ -1,0 +1,49 @@
+[package]
+name = "tag-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+rust-version = "1.84"
+description = "Coverage-guided fuzz targets for tag normalization and tag byte lengths."
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# `fuzz_target!` needs `Arbitrary`, which `libfuzzer-sys` re-exports. It is
+# listed directly so the version can be pinned: soroban-sdk 23.5.3 requires
+# `arbitrary ~1.3.0` while libfuzzer-sys accepts `^1`, and Cargo will not
+# unify those on its own. This package has its own lockfile, so the pin does
+# not constrain the contract crate.
+arbitrary = "=1.3.2"
+# Same pin as the contract crate's dev-dependencies: soroban-env-host 23.0.1's
+# testutils still target the ed25519-dalek 2.x signing API, and without this
+# the resolver picks 3.x and `testutils` fails to build. A direct dependency is
+# needed here because the contract crate's own dev-dependency does not apply to
+# this package.
+ed25519-dalek = "=2.2.0"
+# The harness is the audited, allocation-free core. `fuzz-harness` exposes it
+# without the test-only `#[cfg(test)]` gate, and turns on the SDK's
+# `testutils` so the fixtures and the Symbol invariant are available too.
+tag-contract = { path = "..", features = ["fuzz-harness"] }
+
+[[bin]]
+name = "tag_normalization"
+path = "fuzz_targets/tag_normalization.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tag_equivalence"
+path = "fuzz_targets/tag_equivalence.rs"
+test = false
+doc = false
+bench = false
+
+# `cargo fuzz` builds this package with its own nightly toolchain and its own
+# lockfile, so it is a workspace of its own. The root workspace excludes this
+# directory for the same reason.
+[workspace]
