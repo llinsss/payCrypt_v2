@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Tag ownership recovery and governance policy (#720). Recovery is a
+  governance-gated process, separate from ordinary user-controlled transfer,
+  and requires a mandatory delay plus supporting evidence before it can
+  execute.
 - Rust/Soroban SDK examples for end-to-end payments: typed APIs for building,
   signing, submitting, and confirming Soroban payment transactions, with
   deterministic (canonical) serialization of payment intents and results,
