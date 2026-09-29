@@ -18,6 +18,12 @@ soroban-token-sdk = "21.7.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
+
+[workspace.dependencies.proptest]
+version = "1.4"
+default-features = false
+features = ["std"]
+
 tokio = { version = "1.38", features = ["sync", "rt", "macros"] }
 
 [workspace.metadata.audit]
