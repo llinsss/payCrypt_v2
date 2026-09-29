@@ -30,6 +30,9 @@
 #              machine-readable matrix (Rust version, Soroban SDK, protocol
 #              version, network passphrase, contract WASM, client crate) and
 #              tests each supported network combination against it.
+#   fuzz     – payment amount arithmetic fuzz tests (#826):
+#              cargo-fuzz targets for the payment amount arithmetic module,
+#              run for a bounded time on every PR that touches contracts/**.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -520,4 +523,15 @@ jobs:
           echo "1. Re-deploy the previously approved wasm artifact (see artifacts.sha256 history)."
           echo "2. Re-run the rust-soroban-release-checklist job against the rollback commit."
           echo "3. Verify indexer reconciliation and ledger-gap alerts return to baseline."
+
+      - name: cargo deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+      # ── cargo-audit (RUSTSEC advisories) ──────────────────────────────────
+      - name: cargo audit
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 

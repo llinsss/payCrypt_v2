@@ -180,6 +180,10 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: golden tests (contract events)
+        run: cargo test --all-features --test golden_contract_events
+      - name: fuzz tests (payment amount arithmetic)
+        run: cargo test --all-features --test fuzz_payment_amount_arithmetic
       - name: failure-injection tests (external contract calls)
         run: cargo test --all-features --test external_call_failures
       - name: Install stellar-cli
