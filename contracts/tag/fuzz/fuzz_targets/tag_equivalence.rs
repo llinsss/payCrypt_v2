@@ -21,7 +21,15 @@ use libfuzzer_sys::fuzz_target;
 use tag_contract::harness;
 
 fuzz_target!(|seed: &[u8]| {
-    if let Err(property) = harness::check_tag_equivalence(seed) {
-        panic!("violated {property} for equivalence seed {seed:?}");
+    match harness::check_tag_equivalence(seed) {
+        Ok(()) => {}
+        // An empty input carries no seed, so the harness has no tag to build
+        // variants from. libFuzzer produces the empty input routinely (it is
+        // the minimal element of the corpus and libFuzzer tries it early), and
+        // there is no equivalence claim to check without a tag, so this is not
+        // a property violation. Returning without asserting keeps an expected
+        // input from being reported as a crash.
+        Err(harness::PROPERTY_NO_SEED) => {}
+        Err(property) => panic!("violated {property} for equivalence seed {seed:?}"),
     }
 });

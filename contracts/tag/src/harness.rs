@@ -32,6 +32,14 @@ pub const PROPERTY_STR_FIDELITY: &str = "str_fidelity";
 /// Tag identity ignores `@` prefix, ASCII case, and surrounding whitespace.
 pub const PROPERTY_EQUIVALENCE: &str = "equivalence";
 
+/// Sentinel meaning "this input yields no case, so there is nothing to check".
+///
+/// Distinct from every entry in [`PROPERTIES`] on purpose: it reports that a
+/// harness entry point was handed an unusable seed, not that the normalizer
+/// broke a rule. libFuzzer generates the empty input routinely, and treating
+/// it as a violation would report it as a crash on every run.
+pub const PROPERTY_NO_SEED: &str = "no_seed";
+
 /// Every property this harness checks, in report order.
 pub const PROPERTIES: [&str; 7] = [
     PROPERTY_TOTAL,
@@ -325,7 +333,7 @@ const CANONICAL_ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789_";
 /// must be reproduced exactly by its uppercase, `@`-prefixed, and
 /// whitespace-padded spellings.
 pub fn check_tag_equivalence(seed_bytes: &[u8]) -> Result<(), &'static str> {
-    let mut rng = Rng::from_bytes(seed_bytes).ok_or(PROPERTY_TOTAL)?;
+    let mut rng = Rng::from_bytes(seed_bytes).ok_or(PROPERTY_NO_SEED)?;
     let len = MIN_TAG_BYTES + rng.below(MAX_TAG_BYTES - MIN_TAG_BYTES + 1);
     let mut buffer = [0u8; MAX_RAW_SCAN_BYTES];
     for slot in buffer.iter_mut().take(len) {
@@ -525,6 +533,35 @@ mod tests {
         for len in lengths {
             assert!(len <= MAX_EQUIVALENCE_VARIANT);
             assert!(len <= MAX_RAW_SCAN_BYTES);
+        }
+    }
+
+    #[test]
+    fn empty_equivalence_seed_is_not_a_property_violation() {
+        // libFuzzer generates the empty input on essentially every run, so the
+        // `tag_equivalence` target must distinguish "no seed, nothing to check"
+        // from a real violation. It previously reported `total`, which made
+        // every run of that target abort on its first input.
+        assert_eq!(
+            check_tag_equivalence(&[]),
+            Err(PROPERTY_NO_SEED),
+            "empty input must report the no-seed sentinel"
+        );
+        assert!(
+            !PROPERTIES.contains(&PROPERTY_NO_SEED),
+            "no_seed is a harness sentinel, not a checked property"
+        );
+        // Any non-empty seed must produce a real result, never the sentinel.
+        let one_byte: &[u8] = &[0x61];
+        let nul_byte: &[u8] = &[0x00];
+        let two_bytes: &[u8] = &[0xff, 0x00];
+        let three_bytes: &[u8] = &[0xff, 0x00, 0x7f];
+        for seed in [one_byte, nul_byte, two_bytes, three_bytes] {
+            assert_ne!(
+                check_tag_equivalence(seed),
+                Err(PROPERTY_NO_SEED),
+                "non-empty seeds must build a case"
+            );
         }
     }
 }
