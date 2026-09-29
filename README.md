@@ -293,3 +293,12 @@ Immutable transaction history for all tag operations
 - #721: Use checked token transfer wrappers in Rust contracts
 <!-- handsoff-issue-733 -->
 - #733: Add decimal-safe amount types to Rust contract interfaces
+
+<!-- handsoff-issue-727 -->
+- #727: Add deterministic wallet deployment salts in Rust
+
+<!-- handsoff-issue-728 -->
+- #728: Validate contract dependencies at initialization
+
+<!-- handsoff-issue-729 -->
+- #729: Add Rust contract initialization guards
