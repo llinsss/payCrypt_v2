@@ -13,8 +13,11 @@
 #              tarball (#620) — this is the publish gate: a failure here
 #              means the package is not safe to publish.
 #   rust     – Rust quality & dependency-security gates (#741):
-#              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
-#              cargo-audit across every contract and SDK crate.
+#              cargo fmt --check · cargo clippy -D warnings · cargo test ·
+#              cargo-deny · cargo-audit across every contract and SDK crate.
+#   rust-sdk – Rust SDK event decoding compatibility tests (#850):
+#              cargo test over the SDK crate's event-decoding suite
+#              (success · boundary · unauthorized · replay · failure paths).
 #   rollback – rollback rehearsal for Rust contract releases (#865):
 #              deterministic validation of pinned inputs, artifact identity,
 #              environment validation, release approval and rollback steps
@@ -249,7 +252,24 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Rollback rehearsal for Rust contract releases (#865) ────────────────
+      # ── Test suite ───────────────────────────────────────────────────────
+      # Tag normalization (contracts/tag) and the shared harness are covered
+      # here; both are workspace members.
+      - name: cargo test
+        run: cargo test --workspace --all-features
+
+  # ── 4. Rust SDK event decoding compatibility tests (#850) ──────────────────
+  # Runs the SDK crate's event-decoding test suite, covering success,
+  # boundary, unauthorized, replay and failure paths. This is the
+  # compatibility gate for typed Soroban event decoding.
+  rust-sdk:
+    name: "ci/sdk (rust-sdk)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+  # ── 5. Rollback rehearsal for Rust contract releases (#865) ────────────────
   # Rehearses the full release lifecycle for Soroban contracts against a local
   # network before a release is approved. The rehearsal is deterministic:
   #
@@ -304,9 +324,13 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-rollback-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-sdk-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-rollback-
+            ${{ runner.os }}-cargo-sdk-
+
+      # ── Event decoding compatibility tests (#850) ─────────────────────────
+      - name: cargo test (event decoding)
+        run: cargo test -p tagged-sdk --all-features event_decoding
 
       # ── Pinned inputs ─────────────────────────────────────────────────────
       # Deterministic validation: the rehearsal refuses to run unless the
