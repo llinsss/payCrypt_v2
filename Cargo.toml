@@ -1,18 +1,82 @@
 [workspace]
 resolver = "2"
+# Explicit members only. `contracts/*` cannot be used because the glob would
+# match the non-Rust contract trees (solidity_contract, starknet_contract) and
+# would fail to load the workspace.
+#
+# `contracts/tag` is the only crate with a manifest: `contracts/payment` and
+# `contracts/soroban` are not part of this workspace (see contracts/soroban/
+# COMPATIBILITY.md for the nested Soroban workspace and its own lockfile).
 members = [
-    "contracts/*",
-    "crates/*",
-    "tests",
-    "deploy",
+    "contracts/tag",
+]
+# Cargo-fuzz targets are built by `cargo fuzz`, which manages its own
+# dependency graph and nightly toolchain.
+exclude = [
+    "contracts/soroban",
+    "contracts/tag/fuzz",
 ]
 
 [workspace.package]
 edition = "2021"
+rust-version = "1.84"
 license = "Apache-2.0"
-repository = "https://github.com/Handsoff/soroban-contracts"
+repository = "https://github.com/llinsss/payCrypt_v2"
 
 [workspace.dependencies]
+# Soroban SDK versions are pinned exactly so generated WASM and
+# authorization behavior cannot silently change between builds.
+# See docs/soroban-upgrade-policy.md before bumping these.
+soroban-sdk = "=23.5.3"
+soroban-token-sdk = "=21.7.6"
+
+# StrKey encoding/decoding for typed Stellar address and asset validation
+# (issue #747): validates G.../C... keys, asset codes, and network passphrases.
+stellar-strkey = "0.0.9"
+
+# Property-based tests for malformed and cross-network validation inputs.
+proptest = "1.4.0"
+
+# Async runtime and HTTP client for the Rust client's submission/status calls
+# (issue #748): retry policy wraps these calls and must not replay signed ops.
+tokio = { version = "1.38.0", features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+tokio-util = "0.7"
+reqwest = { version = "0.12.5", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialization for persisted operation/payment IDs and Soroban error payloads
+# (issue #748): idempotency records are stored as JSON keyed by operation ID.
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+
+# CLI argument parsing for the Rust-native deployment command (issue #749):
+# explicit network selection, dry-run flag, and constructor/address inputs.
+clap = { version = "4.5.7", features = ["derive"] }
+
+# SHA-256 hashing to validate the contract WASM hash before submission
+# (issue #749): the deployment command refuses to submit on hash mismatch.
+sha2 = "0.10.8"
+
+# Secure signer abstraction (issue #753): secret material is loaded from the
+# environment or a secret manager, never from request payloads.
+secrecy = { version = "0.8", features = ["serde"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
+
+# Pinned toolchain for reproducible contract builds. The verification workflow
+# (see scripts/verify-wasm.sh) reads this value to record the exact toolchain
+# used to produce each deployed WASM hash.
+[workspace.metadata.contract-verification]
+toolchain = "1.78.0"
+lockfile = "Cargo.lock"
+optimization = "release"
+
+[workspace.dependencies.soroban-cli]
+version = "21.7.6"
+
+# Pinned inputs for environment-specific configuration validation (#866).
+# These versions are the deterministic toolchain/dependency inputs that the
+# config validator checks against per environment (local/testnet/mainnet).
+[workspace.metadata.env-config]
+rust-toolchain = "1.79.0"
 soroban-sdk = "21.7.6"
 soroban-token-sdk = "21.7.6"
 
@@ -28,9 +92,81 @@ event-retention = { path = "crates/event-retention" }
 # artifact identity, environment validation, release approval, and rollback.
 release-manifest = { path = "crates/release-manifest" }
 
+[workspace.metadata.env-config.environments.local]
+network-passphrase = "Standalone Network ; February 2017"
+release-approval-required = false
+rollback-enabled = true
+
+[workspace.metadata.env-config.environments.testnet]
+network-passphrase = "Test SDF Network ; September 2015"
+release-approval-required = true
+rollback-enabled = true
+
+[workspace.metadata.env-config.environments.mainnet]
+network-passphrase = "Public Global Stellar Network ; September 2015"
+release-approval-required = true
+rollback-enabled = true
+
+# Pinned inputs for the contract deployment dry-run command (#867).
+# The dry-run simulates a deployment without broadcasting any transaction.
+# These values are the deterministic, pinned inputs the dry-run validates
+# against before producing a plan (artifact identity, environment, approval).
+[workspace.metadata.deploy-dry-run]
+# Default network the dry-run targets when none is supplied on the CLI.
+default-network = "local"
+# Whether the dry-run must refuse to run when release approval is missing.
+require-release-approval = true
+# Whether the dry-run must emit a rollback plan alongside the deployment plan.
+emit-rollback-plan = true
+
+[workspace.metadata.deploy-dry-run.environments.local]
+network-passphrase = "Standalone Network ; February 2017"
+rpc-endpoint = "http://127.0.0.1:8000/soroban/rpc"
+expected-chain-id = "standalone"
+release-approval-required = false
+rollback-enabled = true
+
+[workspace.metadata.deploy-dry-run.environments.testnet]
+network-passphrase = "Test SDF Network ; September 2015"
+rpc-endpoint = "https://soroban-testnet.stellar.org"
+expected-chain-id = "testnet"
+release-approval-required = true
+rollback-enabled = true
+
+[workspace.metadata.deploy-dry-run.environments.mainnet]
+network-passphrase = "Public Global Stellar Network ; September 2015"
+rpc-endpoint = "https://soroban-mainnet.stellar.org"
+expected-chain-id = "mainnet"
+release-approval-required = true
+rollback-enabled = true
+
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# WASM size and resource-budget gates (issue #743).
+# `cargo build --profile release` produces the deployable WASM artifacts that
+# the size gate measures; the resource gate measures CPU instructions, memory,
+# and ledger reads/writes for representative invocations via the Soroban host.
+[profile.release.build-override]
+opt-level = "z"
+codegen-units = 1
+
+[workspace.metadata.resource-budget]
+# Agreed regression thresholds enforced by CI. Values are ceilings: a build or
+# invocation that exceeds any of them fails the gate.
+wasm-size-bytes = 65536
+cpu-instructions = 100000000
+memory-bytes = 41943040
+ledger-reads = 40
+ledger-writes = 20
+
+[profile.test]
+# Deterministic, reproducible fuzz/property test runs for escrow operation
+# sequences. Keep debug assertions on so boundary and resource-limit checks
+# (CPU/memory/entry limits) surface as hard failures instead of silent wraps.
+debug-assertions = true
+overflow-checks = true
