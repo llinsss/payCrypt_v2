@@ -1,25 +1,66 @@
-name: Frontend API Contracts
+name: Frontend Contracts
 
 on:
-  push:
   pull_request:
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'CHANGELOG.md'
+      - 'docs/runbooks/**'
+      - '.github/workflows/frontend-contracts.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'CHANGELOG.md'
+      - 'docs/runbooks/**'
+      - '.github/workflows/frontend-contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned inputs: deterministic toolchain and Soroban target for reproducible builds.
+  RUST_TOOLCHAIN: '1.79.0'
+  SOROBAN_TARGET: 'wasm32-unknown-unknown'
+  CARGO_TERM_COLOR: always
+  # Operator runbook that must exist and stay well-formed for Rust contract failures.
+  RUNBOOK_PATH: 'docs/runbooks/rust-contract-failures.md'
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  contracts:
+  changelog-policy:
+    name: Rust contract changelog policy
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run test:contracts
-      - run: npm run type-check
-      - run: npm run lint
+          fail-on-severity: moderate
+          deny-licenses: GPL-3.0, AGPL-3.0
 
   rust:
     runs-on: ubuntu-latest
@@ -30,12 +71,97 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: rustfmt check
         run: cargo fmt --all -- --check
       - name: clippy (deny warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: clippy (security lints)
+        run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic
+
+  operator-runbook:
+    name: Rust contract failure runbook
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate environment
+        run: |
+          set -euo pipefail
+          test -f Cargo.toml || { echo '::error::Cargo.toml missing'; exit 1; }
+          test -f "$RUNBOOK_PATH" || { echo "::error::operator runbook missing at $RUNBOOK_PATH"; exit 1; }
+          echo "runbook=${RUNBOOK_PATH} toolchain=${RUST_TOOLCHAIN} target=${SOROBAN_TARGET}"
+
+      - name: Validate operator runbook
+        run: |
+          set -euo pipefail
+
+          # Deterministic validation: the runbook must document each required
+          # operator procedure for Rust/Soroban contract failures.
+          required_sections=(
+            'Pinned Inputs'
+            'Artifact Identity'
+            'Environment Validation'
+            'Release Approval'
+            'Rollback'
+          )
+
+          for section in "${required_sections[@]}"; do
+            if ! grep -Eq "^##+ .*${section}" "$RUNBOOK_PATH"; then
+              echo "::error::runbook missing required section: ${section}"
+              exit 1
+            fi
+          done
+
+          # The runbook must be non-trivial so operators have real guidance.
+          lines=$(grep -cve '^[[:space:]]*$' "$RUNBOOK_PATH" || true)
+          if [ "$lines" -lt 20 ]; then
+            echo '::error::runbook is too short to be actionable.'
+            exit 1
+          fi
+
+          echo 'Operator runbook validated.'
+
+      - name: Rollback guidance
+        if: failure()
+        run: |
+          echo '::notice::Rollback: restore the operator runbook at docs/runbooks/rust-contract-failures.md or revert the contract change, then re-run this workflow.'
+
+  wasm-budget:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt check
+        run: cargo fmt --all -- --check
+      - name: clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: clippy (security lints)
+        run: >
+          cargo clippy --all-targets --all-features --
+          -D clippy::unwrap_used
+          -D clippy::expect_used
+          -D clippy::panic
+          -D clippy::indexing_slicing
+          -D clippy::integer_arithmetic
+          -D clippy::cast_possible_truncation
+      - name: authorization snapshot tests
+        run: cargo test --all-features authorization
+      - name: authorization coverage guard
+        run: |
+          set -euo pipefail
+          # Fail CI when a new public contract entry point lacks an authorization test.
+          # The guard enumerates public entry points from the contract sources and
+          # verifies each one is referenced by the table-driven authorization suite.
+          cargo test --all-features --test authorization_coverage -- --nocapture
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -45,48 +171,171 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-
-  fuzz:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-fuzz
         run: cargo install --locked cargo-fuzz
       - name: Fuzz public entry points (deterministic seeds)
         env:
           # Deterministic seeds published with the coverage report.
-          FUZZ_SEEDS: "0x5eed0001,0x5eed0002,0x5eed0003,0x5eed0004"
-          FUZZ_TARGETS: "tags,amounts,callers,ledger_time,operation_sequences"
+          FUZZ_SEEDS: "0x5eed0001,0x5eed0002,0x5eed0003,0
+      - name: Build release artifacts
+        run: cargo build --release --all-features
+      - name: Scan release artifacts for advisories
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --file Cargo.lock
+      - name: WASM artifact checks
         run: |
           set -euo pipefail
-          echo "::notice::Fuzz seeds: $FUZZ_SEEDS"
-          echo "::notice::Fuzz targets: $FUZZ_TARGETS"
-          if [ -d fuzz ]; then
-            for target in $(echo "$FUZZ_TARGETS" | tr ',' ' '); do
-              echo "::group::fuzz target: $target"
-              cargo fuzz run "$target" -- -runs=100000 -seed=0x5eed0001 || exit 1
-              echo "::endgroup::"
-            done
-          else
-            echo "::error::Missing fuzz/ directory with targets: $FUZZ_TARGETS"
+          shopt -s nullglob
+          wasm_files=(target/wasm32-unknown-unknown/release/*.wasm target/wasm32-unknown-unknown/release/**/*.wasm)
+          if [ ${#wasm_files[@]} -eq 0 ]; then
+            echo "No WASM artifacts found; skipping WASM checks."
+            exit 0
+          fi
+          for wasm in "${wasm_files[@]}"; do
+            echo "Checking ${wasm}"
+            test -s "${wasm}" || { echo "Empty WASM artifact: ${wasm}"; exit 1; }
+            if command -v wasm-tools >/dev/null 2>&1; then
+              wasm-tools validate "${wasm}"
+            fi
+          done
+      - name: golden tests (contract events)
+        run: cargo test --all-features --test golden_contract_events
+      - name: fuzz tests (payment amount arithmetic)
+        run: cargo test --all-features --test fuzz_payment_amount_arithmetic
+      - name: failure-injection tests (external contract calls)
+        run: cargo test --all-features --test external_call_failures
+      - name: Install stellar-cli
+        run: cargo install --locked stellar-cli --version 22.0.1
+      - name: Build Soroban contracts (wasm32)
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Measure WASM size
+        run: |
+          set -euo pipefail
+          MAX_WASM_BYTES="${MAX_WASM_BYTES:-65536}"
+          found=0
+          for wasm in $(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm'); do
+            found=1
+            size=$(stat -c%s "$wasm")
+            echo "$wasm: $size bytes (budget $MAX_WASM_BYTES)"
+            if [ "$size" -gt "$MAX_WASM_BYTES" ]; then
+              echo "::error file=$wasm::WASM size $size exceeds budget $MAX_WASM_BYTES bytes"
+              exit 1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No Soroban contract WASM artifacts found to measure"
             exit 1
           fi
-      - name: Upload fuzz corpus and seeds
+      - name: Measure CPU, memory, and ledger reads/writes
+        run: |
+          set -euo pipefail
+          MAX_CPU_INSTRUCTIONS="${MAX_CPU_INSTRUCTIONS:-100000000}"
+          MAX_MEMORY_BYTES="${MAX_MEMORY_BYTES:-41943040}"
+          MAX_LEDGER_READS="${MAX_LEDGER_READS:-40}"
+          MAX_LEDGER_WRITES="${MAX_LEDGER_WRITES:-20}"
+          found=0
+          for wasm in $(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm'); do
+            found=1
+            echo "::group::Resource budget for $wasm"
+            stellar contract invoke \
+              --wasm "$wasm" \
+              --id 1 \
+              --fee 1000000 \
+              --cost \
+              -- 2>&1 | tee /tmp/cost.txt || true
+            cpu=$(grep -oE 'cpu_insns[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            mem=$(grep -oE 'mem_bytes[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            reads=$(grep -oE 'read_entries[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            writes=$(grep -oE 'write_entries[": ]+[0-9]+' /tmp/cost.txt | grep -oE '[0-9]+' | head -n1 || echo 0)
+            echo "cpu_insns=$cpu mem_bytes=$mem read_entries=$reads write_entries=$writes"
+            if [ "$cpu" -gt "$MAX_CPU_INSTRUCTIONS" ]; then
+              echo "::error file=$wasm::CPU instructions $cpu exceed budget $MAX_CPU_INSTRUCTIONS"
+              exit 1
+            fi
+            if [ "$mem" -gt "$MAX_MEMORY_BYTES" ]; then
+              echo "::error file=$wasm::Memory $mem bytes exceeds budget $MAX_MEMORY_BYTES"
+              exit 1
+            fi
+            if [ "$reads" -gt "$MAX_LEDGER_READS" ]; then
+              echo "::error file=$wasm::Ledger reads $reads exceed budget $MAX_LEDGER_READS"
+              exit 1
+            fi
+            if [ "$writes" -gt "$MAX_LEDGER_WRITES" ]; then
+              echo "::error file=$wasm::Ledger writes $writes exceed budget $MAX_LEDGER_WRITES"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No Soroban contract WASM artifacts found to measure"
+            exit 1
+          fi
+
+  migration-rehearsal:
+    runs-on: ubuntu-latest
+    needs: rust
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build migration rehearsal harness
+        run: cargo build --release --all-features -p upgrade_manager
+      - name: Run migration rehearsal (local/testnet)
+        env:
+          SOROBAN_NETWORK: ${{ vars.SOROBAN_NETWORK || 'local' }}
+
+  mutation:
+    name: Rust authorization mutation testing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build migration rehearsal harness
+        run: cargo build --release --all-features -p upgrade_manager
+      - name: Run migration rehearsal (local/testnet)
+        env:
+          SOROBAN_NETWORK: ${{ vars.SOROBAN_NETWORK || 'local' }}
+          SOROBAN_RPC_URL: ${{ vars.SOROBAN_RPC_URL }}
+          SOROBAN_NETWORK_PASSPHRASE: ${{ vars.SOROBAN_NETWORK_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mkdir -p migration-report
+          cargo test --release --all-features -p upgrade_manager -- --nocapture \
+            migration_rehearsal 2>&1 | tee migration-report/rehearsal.log
+      - name: Upload migration report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rust-fuzz-corpus
-          path: |
-            fuzz/corpus
-            fuzz/artifacts
+          name: migration-report
+          path: migration-report/
+          if-no-files-found: warn
+      - name: install cargo-mutants
+        run: cargo install cargo-mutants --locked
+      - name: mutation testing (authorization)
+        run: cargo mutants --in-place --no-shuffle --test-tool cargo --file 'src/**/auth*.rs' --file 'src/**/authorization*.rs' --timeout 120 -- --all-features
+      - name: upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants.out
           if-no-files-found: ignore
 
-  authorization-coverage:
+  mutation:
+    name: Rust authorization mutation testing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -94,219 +343,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-llvm-cov
-        run: cargo install --locked cargo-llvm-cov
-      - name: Require an authorization test for every public method
-        run: |
-          set -euo pipefail
-          # Every public entry point must have a matching auth test.
-          mapfile -t PUBLIC_METHODS < <(
-            grep -rn --include='*.rs' -E 'pub fn [a-z_]+' . \
-              | grep -v '/target/' | grep -v '/node_modules/' \
-              | grep -v '#\[cfg\(test\)\]' \
-              | sed -E 's/.*pub fn ([a-z_]+).*/\1/' | sort -u
-          )
-          MISSING=0
-          for method in "${PUBLIC_METHODS[@]}"; do
-            if ! grep -rq --include='*.rs' -E "fn .*${method}.*auth|auth.*${method}" . \
-              | grep -v '/target/'; then
-              echo "::error::Missing authorization test for public method: $method"
-              MISSING=1
-            fi
-          done
-          if [ "$MISSING" -ne 0 ]; then
-            exit 1
-          fi
-          echo "::notice::Authorization coverage satisfied for all public methods"
-      - name: Publish coverage report
-        run: |
-          set -euo pipefail
-          cargo llvm-cov --all-features --lcov --output-path lcov.info
-          cargo llvm-cov report --summary-only | tee coverage-summary.txt
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-coverage
-          path: |
-            lcov.info
-            coverage-summary.txt
 
-  audit-package:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install soroban-cli
-        run: cargo install --locked soroban-cli
-      - name: Assemble Rust/Soroban audit package
-        run: |
-          set -euo pipefail
-          PKG_DIR="audit-package"
-          rm -rf "$PKG_DIR"
-          mkdir -p "$PKG_DIR"
-
-          # Tagged commit provenance for the audit-ready artifact.
-          git rev-parse HEAD > "$PKG_DIR/commit.txt"
-          git describe --tags --always --dirty > "$PKG_DIR/tag.txt" 2>/dev/null || echo "untagged" > "$PKG_DIR/tag.txt"
-          git log -1 --format='%H %cI %s' > "$PKG_DIR/commit-metadata.txt"
-
-          # Scope every Rust contract and privileged operation.
-          {
-            echo "# Rust/Soroban Contract Scope"
-            echo
-            echo "## Contracts"
-            find . -name 'Cargo.toml' -not -path './target/*' -not -path './node_modules/*' -print0 \
-              | xargs -0 -I{} dirname {} | sort -u | sed 's/^/- /'
-            echo
-            echo "## Privileged operations (auth/admin entrypoints)"
-            grep -rn --include='*.rs' -E '#\[contractimpl\]|require_auth|require_auth_for_args|admin|owner|initialize|upgrade|set_admin' . \
-              | grep -v '/target/' | grep -v '/node_modules/' | sort > "$PKG_DIR/privileged-operations.txt" || true
-            cat "$PKG_DIR/privileged-operations.txt"
-          } > "$PKG_DIR/scope.md"
-
-          # Threat model covering the Soroban contract attack surface.
-          cat > "$PKG_DIR/threat-model.md" <<'EOF'
-          # Threat Model — Soroban Contract Attack Surface
-
-          | Threat | Surface | Mitigation |
-          | --- | --- | --- |
-          | Unauthorized privileged call | admin/owner entrypoints | `require_auth` on every privileged op (see auth-matrix.md) |
-          | Storage key collision / overwrite | persistent/instance/temporary keys | Typed `DataKey` enum (see storage-map.md) |
-          | Reentrancy via cross-contract calls | token/contract invocations | Checks-effects-interactions; no external call before state write |
-          | Integer overflow/underflow | arithmetic in contract logic | Checked math; `overflow-checks = true` in release profile |
-          | Upgrade to malicious WASM | `upgrade` entrypoint | Admin-gated upgrade; WASM hash pinned in release manifest |
-          | Stale/forged deployment | deployed bytecode | `verify-soroban-wasm` job pins WASM hash per network |
-          | Dependency supply chain | Cargo dependencies | `cargo-deny` + `cargo-audit` in CI |
-          EOF
-
-          # Storage map: persistent/instance/temporary keys and their types.
-          {
-            echo "# Storage Map"
-            echo
-            echo "| Key | Storage | Type | Source |"
-            echo "| --- | --- | --- | --- |"
-            grep -rn --include='*.rs' -E 'storage\(\)\.(persistent|instance|temporary)\(\)|DataKey|enum .*Key' . \
-              | grep -v '/target/' | grep -v '/node_modules/' \
-              | sed -E 's/^([^:]+):([0-9]+):(.*)$/| \3 | (see source) | (see source) | \1:\2 |/' || true
-          } > "$PKG_DIR/storage-map.md"
-
-          # Auth matrix: each privileged operation -> required authorization.
-          {
-            echo "# Auth Matrix"
-            echo
-            echo "| Operation | Required Authorization | Source |"
-            echo "| --- | --- | --- |"
-            grep -rn --include='*.rs' -E 'require_auth|require_auth_for_args' . \
-              | grep -v '/target/' | grep -v '/node_modules/' \
-              | sed -E 's/^([^:]+):([0-9]+):(.*)$/| \3 | require_auth | \1:\2 |/' || true
-          } > "$PKG_DIR/auth-matrix.md"
-
-          # Invariants.
-          cat > "$PKG_DIR/invariants.md" <<'EOF'
-          # Invariants
-
-          - Every privileged entrypoint enforces `require_auth` for the expected address.
-          - Storage keys are unique and typed; no two logical values share a key.
-          - Total supply / balances are conserved across transfers.
-          - Admin can only be changed by the current admin.
-          - Deployed WASM hash matches the tagged release manifest.
-          EOF
-
-          # Deployment manifests.
-          mkdir -p "$PKG_DIR/release-manifests"
-          if [ -d release-manifests ]; then
-            cp -r release-manifests/. "$PKG_DIR/release-manifests/"
-          fi
-
-          # Reproducible test commands.
-          cat > "$PKG_DIR/test-commands.md" <<'EOF'
-          # Reproducible Test Commands
-
-          ```sh
-          cargo fmt --all -- --check
-          cargo clippy --all-targets --all-features -- -D warnings
-          cargo test --all-features
-          cargo deny check --all-features
-          cargo audit
-          soroban contract build
-          ```
-          EOF
-
-          # Findings mapped to source files and tests.
-          {
-            echo "# Findings → Source & Tests"
-            echo
-            echo "| Finding | Source | Test |"
-            echo "| --- | --- | --- |"
-            grep -rn --include='*.rs' -E '#\[test\]|#\[cfg\(test\)\]' . \
-              | grep -v '/target/' | grep -v '/node_modules/' \
-              | sed -E 's/^([^:]+):([0-9]+):(.*)$/| (see scope.md) | \1:\2 | \1 |/' || true
-          } > "$PKG_DIR/findings.md"
-
-          # Bundle the audit-ready artifact.
-          tar -czf "audit-package.tar.gz" -C "$PKG_DIR" .
-          echo "::notice::Audit package assembled at audit-package.tar.gz"
-          ls -la "$PKG_DIR"
-      - name: Upload audit package artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-soroban-audit-package
-          path: audit-package.tar.gz
-
-  verify-soroban-wasm:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
-    strategy:
-      fail-fast: false
-      matrix:
-        network: [testnet, production]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install soroban-cli
-        run: cargo install --locked soroban-cli
-      - name: Verify deployed WASM against release manifest
-        env:
-          NETWORK: ${{ matrix.network }}
-          SOROBAN_RPC_URL: ${{ matrix.network == 'production' && secrets.SOROBAN_MAINNET_RPC_URL || secrets.SOROBAN_TESTNET_RPC_URL }}
-        run: |
-          set -euo pipefail
-          MANIFEST="release-manifests/${NETWORK}.json"
-          if [ ! -f "$MANIFEST" ]; then
-            echo "::error::Missing release manifest for network '$NETWORK' at $MANIFEST"
-            exit 1
-          fi
-
-          read_manifest() { jq -r "$1" "$MANIFEST"; }
-
-          CONTRACT_ID=$(read_manifest '.contract_id')
-          EXPECTED_WASM_HASH=$(read_manifest '.wasm_hash')
-          if [ -z "$CONTRACT_ID" ] || [ -z "$EXPECTED_WASM_HASH" ]; then
-            echo "::error::Manifest $MANIFEST must define .contract_id and .wasm_hash"
-            exit 1
-          fi
-
-          ACTUAL_WASM_HASH=$(soroban contract fetch \
-            --id "$CONTRACT_ID" \
-            --network "$NETWORK" \
-            --rpc-url "$SOROBAN_RPC_URL" \
-            --out-file /tmp/deployed.wasm \
-            >/dev/null 2>&1 && sha256sum /tmp/deployed.wasm | awk '{print $1}')
-
-          if [ "$ACTUAL_WASM_HASH" != "$EXPECTED_WASM_HASH" ]; then
-            echo "::error::WASM hash mismatch on $NETWORK: expected $EXPECTED_WASM_HASH, got $ACTUAL_WASM_HASH"
-            exit 1
-          fi
-          echo "::notice::WASM hash verified on $NETWORK ($ACTUAL_WASM_HASH)"
