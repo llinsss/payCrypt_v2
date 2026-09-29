@@ -1,5 +1,9 @@
+# Tracks `stable` rather than a pinned release because the workspace requires
+# Rust 1.84 or newer (`rust-version` in Cargo.toml) and CI resolves the toolchain
+# with `dtolnay/rust-toolchain@stable`. Pinning an older channel here made local
+# builds fail while CI passed, so the two now agree.
 [toolchain]
-channel = "1.79.0"
+channel = "stable"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]
 profile = "minimal"
