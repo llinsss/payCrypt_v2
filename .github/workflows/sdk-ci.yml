@@ -15,6 +15,10 @@
 #   rust     – Rust quality & dependency-security gates (#741):
 #              cargo fmt --check · cargo clippy -D warnings · cargo test ·
 #              cargo-deny · cargo-audit across every contract and SDK crate.
+#              Also runs the failure-injection test suite (#831) covering
+#              every external contract call: authorization, boundary values,
+#              resource limits, external-call failures, replay and
+#              deterministic ledger/time fixtures.
 #   rust-sdk – Rust SDK event decoding compatibility tests (#850):
 #              cargo test over the SDK crate's event-decoding suite
 #              (success · boundary · unauthorized · replay · failure paths).
@@ -115,6 +119,13 @@ jobs:
 
       - name: Clippy (deny warnings)
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      # ── failure-injection tests (#831) ────────────────────────────────────
+      # Runs the deterministic failure-injection suite that exercises every
+      # external contract call: authorization, boundary values, resource
+      # limits, external-call failures, replay and ledger/time fixtures.
+      - name: cargo test (failure-injection)
+        run: cargo test --workspace --all-features -- failure_injection
 
       # ── cargo-deny (licenses, bans, advisories, sources) ──────────────────
       - name: cargo deny check
