@@ -291,3 +291,13 @@ Immutable transaction history for all tag operations
 
 <!-- handsoff-issue-857 -->
 - #857: Add idempotent event ingestion keys
+<!-- handsoff-issue-864 -->
+- #864: Add resource-budget trend reporting
+<!-- handsoff-issue-752 -->
+- #752: Add database transaction boundaries to the Rust indexer
+<!-- handsoff-issue-744 -->
+- #744: Add cross-contract rollback tests
+<!-- handsoff-issue-757 -->
+- #757: Add contract incident monitoring and alerting for Rust deployments
+<!-- handsoff-issue-736 -->
+- #736: Add expiry and clock semantics to Rust payment intents
