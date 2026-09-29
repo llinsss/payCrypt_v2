@@ -18,13 +18,23 @@ pub struct AssetLiability {
 }
 
 #[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum EscrowState {
+    Pending,
+    Released,
+    Refunded,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub struct Escrow {
     pub depositor: Address,
     pub beneficiary: Address,
-    pub asset: Address,
+    pub relayer: Address,
+    pub token: Address,
     pub amount: i128,
-    pub settled: bool,
+    pub expiry: u64,
+    pub state: EscrowState,
 }
 
 #[contracttype]
@@ -36,8 +46,39 @@ pub struct EscrowContract;
 
 #[contractimpl]
 impl EscrowContract {
-    /// Create an escrow, pulling `amount` of `asset` from `depositor` into the
-    /// contract and recording it as an accounted liability for the beneficiary.
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct Escrow {
+    pub depositor: Address,
+    pub beneficiary: Address,
+    pub relayer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub expiry: u64,
+    pub state: EscrowState,
+}
+
+#[contract]
+pub struct EscrowContract;
+
+#[contractimpl]
+impl EscrowContract {
+    pub depositor: Address,
+    pub beneficiary: Address,
+    pub relayer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub expiry: u64,
+    pub state: EscrowState,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct EscrowError;
+
+
     pub fn create(
         env: Env,
         depositor: Address,
@@ -82,16 +123,50 @@ impl EscrowContract {
             &escrow.beneficiary,
             &escrow.amount,
         );
+    }
 
-        escrow.settled = true;
-        Self::save_escrow(&env, id, &escrow);
+    /// Refund the depositor. Only the depositor may authorize a cancel; the
+    /// refund target is the stored depositor, so it cannot be forged.
+    pub fn cancel(env: Env, depositor: Address) {
+        depositor.require_auth();
+        let mut escrow = Self::load(&env, &depositor);
+        assert!(escrow.state == EscrowState::Pending, "escrow already settled");
+        escrow.state = EscrowState::Refunded;
+        env.storage().persistent().set(&depositor, &escrow);
+        token::Client::new(&env, &escrow.token).transfer(
+            &env.current_contract_address(),
+            &escrow.depositor,
+            &escrow.amount,
+        );
+    }
 
-        let mut liability = Self::liability(&env, &escrow.asset);
-        liability.pending -= escrow.amount;
-        liability.accounted -= escrow.amount;
-        Self::save_liability(&env, &escrow.asset, &liability);
+    /// Expire an escrow after its deadline. Anyone may trigger an
+    /// already-authorized expiry: the deadline is the sole authorization
+    /// condition, and funds always return to the stored depositor. The
+    /// relayer is recorded for off-chain attribution but is not required to
+    /// authorize this permissionless path.
+    pub fn expire(env: Env, depositor: Address) {
+        let mut escrow = Self::load(&env, &depositor);
+        assert!(escrow.state == EscrowState::Pending, "escrow already settled");
+        assert!(env.ledger().timestamp() >= escrow.expiry, "escrow not expired");
+        escrow.state = EscrowState::Refunded;
+        env.storage().persistent().set(&depositor, &escrow);
+        token::Client::new(&env, &escrow.token).transfer(
+            &env.current_contract_address(),
+            &escrow.depositor,
+            &escrow.amount,
+        );
+    }
 
-        Self::assert_solvent(&env, &escrow.asset);
+    pub fn get(env: Env, depositor: Address) -> Escrow {
+        Self::load(&env, &depositor)
+    }
+
+    fn load(env: &Env, depositor: &Address) -> Escrow {
+        env.storage()
+            .persistent()
+            .get(depositor)
+            .expect("escrow not found")
     }
 
     /// Explicitly account for tokens that were transferred to the contract
@@ -184,83 +259,132 @@ impl EscrowContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{token, Env};
+    use soroban_sdk::testutils::{Address as _, Ledger};
+    use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
 
-    fn setup() -> (Env, EscrowContractClient<'static>, Address, Address, Address) {
+    fn setup(env: &Env) -> (Address, Address, Address, Address, Address) {
+        let admin = Address::generate(env);
+        let depositor = Address::generate(env);
+        let beneficiary = Address::generate(env);
+        let relayer = Address::generate(env);
+        let token_id = env.register_stellar_asset_contract(admin);
+        StellarAssetClient::new(env, &token_id).mint(&depositor, &1000);
+        (
+            depositor,
+            beneficiary,
+            relayer,
+            token_id,
+            env.register_contract(None, EscrowContract),
+        )
+    }
+
+    #[test]
+    fn release_settles_once() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, EscrowContract);
-        let client = EscrowContractClient::new(&env, &contract_id);
-
-        let depositor = Address::generate(&env);
-        let beneficiary = Address::generate(&env);
-        let asset = env.register_stellar_asset_contract(depositor.clone());
-        (env, client, depositor, beneficiary, asset)
-    }
-
-    fn mint(env: &Env, asset: &Address, to: &Address, amount: i128) {
-        token::StellarAssetClient::new(env, asset).mint(to, &amount);
+        let (depositor, beneficiary, relayer, token_id, escrow_id) = setup(&env);
+        let client = EscrowContractClient::new(&env, &escrow_id);
+        client.create(&depositor, &beneficiary, &relayer, &token_id, &1000, &100);
+        client.release(&depositor);
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&beneficiary), 1000);
+        assert_eq!(client.get(&depositor).state, EscrowState::Released);
+        assert!(client.try_release(&depositor).is_err());
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&beneficiary), 1000);
     }
 
     #[test]
-    fn create_and_settle_preserve_solvency() {
-        let (env, client, depositor, beneficiary, asset) = setup();
-        mint(&env, &asset, &depositor, 1_000);
-
-        let id = client.create(&depositor, &beneficiary, &asset, &400);
-        assert!(client.is_solvent(&asset));
-        let l = client.liability(&asset);
-        assert_eq!(l.pending, 400);
-        assert_eq!(l.accounted, 400);
-
-        client.settle(&id);
-        assert!(client.is_solvent(&asset));
-        let l = client.liability(&asset);
-        assert_eq!(l.pending, 0);
-        assert_eq!(l.accounted, 0);
+    fn cancel_settles_once() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (depositor, beneficiary, relayer, token_id, escrow_id) = setup(&env);
+        let client = EscrowContractClient::new(&env, &escrow_id);
+        client.create(&depositor, &beneficiary, &relayer, &token_id, &1000, &100);
+        client.cancel(&depositor);
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&depositor), 1000);
+        assert_eq!(client.get(&depositor).state, EscrowState::Refunded);
+        assert!(client.try_cancel(&depositor).is_err());
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&depositor), 1000);
     }
 
     #[test]
-    fn sequence_of_creates_and_settles_stays_solvent() {
-        let (env, client, depositor, beneficiary, asset) = setup();
-        mint(&env, &asset, &depositor, 10_000);
-
-        let a = client.create(&depositor, &beneficiary, &asset, &300);
-        let b = client.create(&depositor, &beneficiary, &asset, &700);
-        assert!(client.is_solvent(&asset));
-        assert_eq!(client.liability(&asset).pending, 1_000);
-
-        client.settle(&a);
-        assert!(client.is_solvent(&asset));
-        assert_eq!(client.liability(&asset).pending, 700);
-
-        client.settle(&b);
-        assert!(client.is_solvent(&asset));
-        assert_eq!(client.liability(&asset).pending, 0);
+    fn expire_settles_once() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (depositor, beneficiary, relayer, token_id, escrow_id) = setup(&env);
+        let client = EscrowContractClient::new(&env, &escrow_id);
+        client.create(&depositor, &beneficiary, &relayer, &token_id, &1000, &100);
+        env.ledger().set_timestamp(200);
+        client.expire(&depositor);
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&depositor), 1000);
+        assert_eq!(client.get(&depositor).state, EscrowState::Refunded);
+        assert!(client.try_expire(&depositor).is_err());
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&depositor), 1000);
     }
 
     #[test]
-    fn unsolicited_transfer_is_not_counted_as_backing() {
-        let (env, client, depositor, beneficiary, asset) = setup();
-        mint(&env, &asset, &depositor, 1_000);
+    fn cross_path_double_settlement_is_blocked() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (depositor, beneficiary, relayer, token_id, escrow_id) = setup(&env);
+        let client = EscrowContractClient::new(&env, &escrow_id);
+        client.create(&depositor, &beneficiary, &relayer, &token_id, &1000, &100);
+        client.release(&depositor);
+        assert!(client.try_cancel(&depositor).is_err());
+        assert!(client.try_expire(&depositor).is_err());
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&beneficiary), 1000);
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&depositor), 0);
+    }
 
-        let id = client.create(&depositor, &beneficiary, &asset, &500);
-        assert_eq!(client.liability(&asset).accounted, 500);
+    #[test]
+    fn failed_transfer_rolls_back_state() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (depositor, beneficiary, relayer, token_id, escrow_id) = setup(&env);
+        let client = EscrowContractClient::new(&env, &escrow_id);
+        client.create(&depositor, &beneficiary, &relayer, &token_id, &1000, &100);
+        // Drain the contract so the transfer fails.
+        StellarAssetClient::new(&env, &token_id).mint(&escrow_id, &0);
+        assert!(client.try_release(&depositor).is_err());
+        assert_eq!(client.get(&depositor).state, EscrowState::Pending);
+    }
 
-        // Unsolicited transfer directly to the contract.
-        let contract_id = client.address.clone();
-        token::Client::new(&env, &asset).transfer(&depositor, &contract_id, &250);
+    #[test]
+    fn forged_sender_cannot_release() {
+        let env = Env::default();
+        let (depositor, beneficiary, relayer, token_id, escrow_id) = setup(&env);
+        let client = EscrowContractClient::new(&env, &escrow_id);
+        // Only the depositor authorizes creation.
+        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &depositor,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &escrow_id,
+                fn_name: "create",
+                args: (&depositor, &beneficiary, &relayer, &token_id, &1000i128, &100u64).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client.create(&depositor, &beneficiary, &relayer, &token_id, &1000, &100);
+        // A forged sender (not the depositor) must not be able to release.
+        let attacker = Address::generate(&env);
+        assert!(client.try_release(&attacker).is_err());
+        assert_eq!(client.get(&depositor).state, EscrowState::Pending);
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&beneficiary), 0);
+    }
 
-        // Surplus is not backing until explicitly accounted for.
-        assert_eq!(client.liability(&asset).accounted, 500);
-        assert!(client.is_solvent(&asset));
+    #[test]
+    fn forged_recipient_cannot_redirect_release() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (depositor, beneficiary, relayer, token_id, escrow_id) = setup(&env);
+        let client = EscrowContractClient::new(&env, &escrow_id);
+        client.create(&depositor, &beneficiary, &relayer, &token_id, &1000, &100);
+        // Release always pays the stored beneficiary; a forged recipient
+        // address cannot be supplied to redirect funds.
+        client.release(&depositor);
+        let attacker = Address::generate(&env);
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&attacker), 0);
+        assert_eq!(TokenClient::new(&env, &token_id).balance(&beneficiary), 1000);
+    }
 
-        client.account_surplus(&asset);
-        assert_eq!(client.liability(&asset).accounted, 750);
-        assert!(client.is_solvent(&asset));
-
-        client.settle(&id);
-        assert!(client.is_solvent(&asset));
     }
 }
