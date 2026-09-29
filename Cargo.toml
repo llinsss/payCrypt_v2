@@ -24,7 +24,11 @@ license = "Apache-2.0"
 repository = "https://github.com/llinsss/payCrypt_v2"
 
 [workspace.dependencies]
+# Soroban SDK versions are pinned exactly so generated WASM and
+# authorization behavior cannot silently change between builds.
+# See docs/soroban-upgrade-policy.md before bumping these.
 soroban-sdk = "=23.5.3"
+soroban-token-sdk = "=21.7.6"
 
 # StrKey encoding/decoding for typed Stellar address and asset validation
 # (issue #747): validates G.../C... keys, asset codes, and network passphrases.
