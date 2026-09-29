@@ -31,6 +31,9 @@ classification (validation, unauthorized, replay/duplicate, transport,
 contract, timeout). Includes unit/property/local-network tests covering
 success, boundary, unauthorized, replay, and failure paths, plus migration,
 indexing, monitoring, and rollback notes (#851).
+- Rust/Soroban SDK multi-signer transaction support: typed signer collection,
+  deterministic signature aggregation and validation, canonical serialization,
+  cancellation, and actionable error classification (#852).
 - Rust/Soroban release checklist covering pinned inputs, artifact identity,
   environment validation, release approval, and rollback (#859).
 - Rust/Soroban contract documentation generation with pinned toolchain and

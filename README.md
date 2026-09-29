@@ -289,6 +289,8 @@ Immutable transaction history for all tag operations
 <!-- handsoff-issue-713 -->
 - #713: Implement canonical tag normalization in Rust
 
+<!-- handsoff-issue-857 -->
+- #857: Add idempotent event ingestion keys
 <!-- handsoff-issue-864 -->
 - #864: Add resource-budget trend reporting
 <!-- handsoff-issue-752 -->
