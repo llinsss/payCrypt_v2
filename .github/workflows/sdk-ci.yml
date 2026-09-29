@@ -13,13 +13,15 @@
 #              tarball (#620) — this is the publish gate: a failure here
 #              means the package is not safe to publish.
 #   rust     – Rust quality & dependency-security gates (#741):
-#              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
-#              cargo-audit across every contract and SDK crate.
-#   soroban  – Rust/Soroban local development bootstrap (#870):
-#              pinned toolchain + soroban-cli inputs, deterministic
-#              environment validation, artifact identity (hashes), release
-#              approval gating and rollback rehearsal against a local
-#              network.
+#              cargo fmt --check · cargo clippy -D warnings · cargo test ·
+#              cargo-deny · cargo-audit across every contract and SDK crate.
+#   rust-sdk – Rust SDK event decoding compatibility tests (#850):
+#              cargo test over the SDK crate's event-decoding suite
+#              (success · boundary · unauthorized · replay · failure paths).
+#   rollback – rollback rehearsal for Rust contract releases (#865):
+#              deterministic validation of pinned inputs, artifact identity,
+#              environment validation, release approval and rollback steps
+#              against a local Soroban network before a release is approved.
 #
 # Artifacts: sdk-dist-<package>-<sha> and sdk-tarball-<package>-<sha>,
 # retained 7 days
@@ -247,13 +249,13 @@ jobs:
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # ── cargo-deny ────────────────────────────────────────────────────────
+      # ── cargo-deny (licenses, bans, advisories, sources) ──────────────────
       - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
 
-      # ── cargo-audit ───────────────────────────────────────────────────────
+      # ── cargo-audit (RUSTSEC advisories) ──────────────────────────────────
       - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
@@ -278,6 +280,86 @@ jobs:
     # protected environment. Unauthorized runs fail closed here.
     environment:
       name: soroban-release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Pinned toolchain (deterministic input) ────────────────────────────
+      - name: Setup pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      # ── Test suite ───────────────────────────────────────────────────────
+      # Tag normalization (contracts/tag) and the shared harness are covered
+      # here; both are workspace members.
+      - name: cargo test
+        run: cargo test --workspace --all-features
+
+  # ── 4. Rust SDK event decoding compatibility tests (#850) ──────────────────
+  # Runs the SDK crate's event-decoding test suite, covering success,
+  # boundary, unauthorized, replay and failure paths. This is the
+  # compatibility gate for typed Soroban event decoding.
+  rust-sdk:
+    name: "ci/sdk (rust-sdk)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+  # ── 5. Rollback rehearsal for Rust contract releases (#865) ────────────────
+  # Rehearses the full release lifecycle for Soroban contracts against a local
+  # network before a release is approved. The rehearsal is deterministic:
+  #
+  #   pinned inputs      – Cargo.lock + rust-toolchain.toml pin the toolchain
+  #                        and dependency graph; the rehearsal refuses to run
+  #                        if either is missing or dirty.
+  #   artifact identity  – the built wasm is hashed (sha256) and the hash is
+  #                        recorded as the release identity; a mismatch between
+  #                        the approved hash and the rebuilt hash fails the job.
+  #   environment check  – the local Soroban network is started and its
+  #                        network passphrase / RPC endpoint are validated
+  #                        before any contract is deployed.
+  #   release approval   – the rehearsal requires an explicit approval token
+  #                        (RELEASE_APPROVAL) so an unauthorized run cannot
+  #                        promote an artifact.
+  #   rollback           – the previously released wasm is re-deployed and the
+  #                        on-chain contract id is asserted to match the
+  #                        pre-release identity, proving rollback is possible.
+  #
+  # The job is gated on the rust path filter and runs after the rust quality
+  # gates so a broken build never reaches the rehearsal.
+  rollback:
+    name: "ci/sdk (rollback rehearsal)"
+    needs: [detect, rust]
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      # Pinned inputs: the rehearsal is only valid against a locked graph.
+      CARGO_NET_OFFLINE: "true"
+      SOROBAN_NETWORK: "local"
+      SOROBAN_RPC_URL: "http://127.0.0.1:8000/soroban/rpc"
+      SOROBAN_NETWORK_PASSPHRASE: "Standalone Network ; February 2017"
+      # Release approval token. Unset on pull requests from forks, which is
+      # exactly the unauthorized path the rehearsal must reject.
+      RELEASE_APPROVAL: ${{ secrets.RELEASE_APPROVAL }}
+
+      - name: cargo deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+      # ── cargo-audit (RUSTSEC advisories) ──────────────────────────────────
+      - name: cargo audit
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
 
     steps:
       - name: Checkout
