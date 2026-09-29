@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- Rust/Soroban SDK transaction preparation API with typed request/response
+  types, deterministic validation and serialization, cancellation of in-flight
+  preparation, and actionable error classification (#839).
+- Rust/Soroban SDK network configuration types with typed network id, RPC and
+  Horizon endpoints, network passphrase, timeouts, retry/cancellation settings,
+  deterministic validation and serialization, and actionable error
+  classification (#841).
+- Rust/Soroban SDK cancellation support with typed request/acknowledge/status
+  APIs, deterministic validation and serialization, compatibility handling, and
+  actionable error classification for unauthorized, replay, not-found and
+  already-cancelled failures (#843).
 - Tag ownership recovery and governance policy (#720). Recovery is a
 governance-gated process, separate from ordinary user-controlled transfer,
 and requires a mandatory delay plus supporting evidence before it can
