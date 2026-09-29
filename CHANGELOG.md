@@ -25,6 +25,20 @@ execute.
   (invalid cursor, unauthorized, replay, transient/network, exhausted) (#840).
 - Unit, property, and local-network tests covering success, boundary,
   unauthorized, replay, and failure paths for the pagination iterators (#840).
+- Rust SDK idempotency-key types for the Soroban migration, with a typed
+  `IdempotencyKey` newtype, deterministic generation and validation,
+  serialization/deserialization support, cancellation of in-flight
+  idempotent operations, and actionable error classification (invalid key,
+  missing key, replay, unauthorized) (#847).
+- Rust SDK request correlation IDs for the Soroban migration, with a typed
+  `CorrelationId` newtype, deterministic generation and validation,
+  serialization/deserialization support, cancellation of in-flight correlated
+  requests, and actionable error classification (invalid ID, missing ID,
+  replay, unauthorized) (#845).
+- Rust SDK retry middleware for the Soroban migration, with typed retry
+  configuration, deterministic validation, cancellation support, and
+  actionable error classification (retryable, unauthorized, replay, terminal)
+  (#844).
 - Rust/Soroban SDK examples for end-to-end payments: typed APIs for building,
 signing, submitting, and confirming Soroban payment transactions, with
 deterministic (canonical) serialization of payment intents and results,
