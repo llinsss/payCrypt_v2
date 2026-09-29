@@ -21,7 +21,12 @@ describe("frontend API response contracts", () => {
   });
 
   it("accepts cookie-session auth responses without a browser-readable token", () => {
-    const { token: _legacyToken, ...cookieSessionResponse } = authSuccess;
+    // A cookie-session response carries only `message` and `user`; the legacy
+    // `token` field is absent entirely rather than blank. Built from the
+    // fixture's own fields so the assertion keeps tracking the real contract.
+    const { message, user } = authSuccess;
+    const cookieSessionResponse = { message, user };
+    expect(cookieSessionResponse).not.toHaveProperty("token");
     expect(parseAuthResponse(cookieSessionResponse)).toEqual(cookieSessionResponse);
   });
 
