@@ -60,3 +60,11 @@ coverage
 # Rust build artifacts
 target/
 **/target/
+
+# Soroban SDK ledger snapshots, written only when a test fails
+test_snapshots/
+**/test_snapshots/
+
+# cargo-fuzz crash reproductions; the seed corpus in fuzz/corpus is committed
+fuzz/artifacts/
+**/fuzz/artifacts/

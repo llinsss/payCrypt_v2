@@ -5,7 +5,7 @@
 # Jobs:
 #   detect   – path filter (always runs, ~5 s)
 #   quality  – lint · dependency audit · jest test suite
-#   rust     – rustfmt · clippy · cargo-deny · cargo-audit (contracts & SDK crates)
+#   rust     – rustfmt · clippy · cargo test · cargo-deny · cargo-audit (contracts & SDK crates)
 #   wasm-verify – build contracts, record toolchain/lockfile/optimization/WASM hash,
 #                 verify deployed hash and detect drift vs backend config
 #
@@ -212,12 +212,17 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # ── Test suite ───────────────────────────────────────────────────────
+      - name: cargo test
+        run: cargo test --all-features
+
       # ── Dependency license / ban / advisory checks ────────────────────────
+      # `all-features` and the advisory exceptions live in deny.toml rather than
+      # as CLI arguments, so local and CI runs resolve the same graph.
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
-          arguments: --all-features
           manifest-path: ./Cargo.toml
 
       # ── Dependency vulnerability scan ─────────────────────────────────────

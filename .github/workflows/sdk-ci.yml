@@ -13,8 +13,8 @@
 #              tarball (#620) — this is the publish gate: a failure here
 #              means the package is not safe to publish.
 #   rust     – Rust quality & dependency-security gates (#741):
-#              cargo fmt --check · cargo clippy -D warnings · cargo-deny ·
-#              cargo-audit across every contract and SDK crate.
+#              cargo fmt --check · cargo clippy -D warnings · cargo test ·
+#              cargo-deny · cargo-audit across every contract and SDK crate.
 #   rust-sdk – Rust SDK event decoding compatibility tests (#850):
 #              cargo test over the SDK crate's event-decoding suite
 #              (success · boundary · unauthorized · replay · failure paths).
@@ -235,6 +235,12 @@ jobs:
       # ── clippy (warnings denied) ──────────────────────────────────────────
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      # ── Test suite ───────────────────────────────────────────────────────
+      # Tag normalization (contracts/tag) and the shared harness are covered
+      # here; both are workspace members.
+      - name: cargo test
+        run: cargo test --workspace --all-features
 
   # ── 4. Rust SDK event decoding compatibility tests (#850) ──────────────────
   # Runs the SDK crate's event-decoding test suite, covering success,

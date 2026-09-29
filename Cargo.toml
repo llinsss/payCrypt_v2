@@ -1,20 +1,30 @@
 [workspace]
 resolver = "2"
+# Explicit members only. `contracts/*` cannot be used because the glob would
+# match the non-Rust contract trees (solidity_contract, starknet_contract) and
+# would fail to load the workspace.
+#
+# `contracts/tag` is the only crate with a manifest: `contracts/payment` and
+# `contracts/soroban` are not part of this workspace (see contracts/soroban/
+# COMPATIBILITY.md for the nested Soroban workspace and its own lockfile).
 members = [
-    "contracts/*",
-    "crates/*",
-    "tests",
-    "deploy",
+    "contracts/tag",
+]
+# Cargo-fuzz targets are built by `cargo fuzz`, which manages its own
+# dependency graph and nightly toolchain.
+exclude = [
+    "contracts/soroban",
+    "contracts/tag/fuzz",
 ]
 
 [workspace.package]
 edition = "2021"
+rust-version = "1.84"
 license = "Apache-2.0"
-repository = "https://github.com/Handsoff/soroban-contracts"
+repository = "https://github.com/llinsss/payCrypt_v2"
 
 [workspace.dependencies]
-soroban-sdk = "21.7.6"
-soroban-token-sdk = "21.7.6"
+soroban-sdk = "=23.5.3"
 
 # StrKey encoding/decoding for typed Stellar address and asset validation
 # (issue #747): validates G.../C... keys, asset codes, and network passphrases.
