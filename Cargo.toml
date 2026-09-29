@@ -63,6 +63,9 @@ toolchain = "1.78.0"
 lockfile = "Cargo.lock"
 optimization = "release"
 
+[workspace.dependencies.soroban-cli]
+version = "21.7.6"
+
 [profile.release]
 opt-level = "z"
 lto = true
