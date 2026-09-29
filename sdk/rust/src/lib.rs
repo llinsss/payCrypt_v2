@@ -416,3 +416,6 @@ mod tests {
         assert!(RetryPolicy::is_operation_retryable(OperationKind::Status));
     }
 }
+
+    }
+}
