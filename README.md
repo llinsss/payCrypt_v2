@@ -294,6 +294,12 @@ Immutable transaction history for all tag operations
 <!-- handsoff-issue-733 -->
 - #733: Add decimal-safe amount types to Rust contract interfaces
 
+<!-- handsoff-issue-723 -->
+- #723: Add an emergency pause to value-moving Rust contracts
+
+<!-- handsoff-issue-725 -->
+- #725: Add bounded pagination for Rust contract histories
+
 <!-- handsoff-issue-727 -->
 - #727: Add deterministic wallet deployment salts in Rust
 

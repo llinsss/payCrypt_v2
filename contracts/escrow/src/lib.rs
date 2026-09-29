@@ -1,4 +1,21 @@
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env};
+#![no_std]
+
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Map};
+
+/// Per-asset liability model.
+///
+/// `pending` is the sum of all outstanding liabilities the escrow owes to
+/// beneficiaries for a given asset. `accounted` is the amount of that asset the
+/// escrow has explicitly recognized as backing (deposits made through the
+/// contract). The difference between the contract's *actual* token balance and
+/// `accounted` is surplus: unsolicited transfers that are NOT counted as
+/// backing until they are explicitly accounted for.
+#[contracttype]
+#[derive(Clone, Default)]
+pub struct AssetLiability {
+    pub pending: i128,
+    pub accounted: i128,
+}
 
 #[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -20,47 +37,88 @@ pub struct Escrow {
     pub state: EscrowState,
 }
 
+#[contracttype]
+#[derive(Clone)]
+pub struct EscrowError;
+
 #[contract]
 pub struct EscrowContract;
 
 #[contractimpl]
 impl EscrowContract {
-    /// Create an escrow. Only the depositor may authorize creation, and the
-    /// depositor's address authorization is required so the stored depositor
-    /// cannot be forged by an arbitrary caller.
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct Escrow {
+    pub depositor: Address,
+    pub beneficiary: Address,
+    pub relayer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub expiry: u64,
+    pub state: EscrowState,
+}
+
+#[contract]
+pub struct EscrowContract;
+
+#[contractimpl]
+impl EscrowContract {
+    pub depositor: Address,
+    pub beneficiary: Address,
+    pub relayer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub expiry: u64,
+    pub state: EscrowState,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct EscrowError;
+
+
     pub fn create(
         env: Env,
         depositor: Address,
         beneficiary: Address,
-        relayer: Address,
-        token: Address,
+        asset: Address,
         amount: i128,
-        expiry: u64,
-    ) {
-        depositor.require_auth();
+    ) -> u64 {
         assert!(amount > 0, "amount must be positive");
+        depositor.require_auth();
+
+        let token_client = token::Client::new(&env, &asset);
+        token_client.transfer(&depositor, &env.current_contract_address(), &amount);
+
+        let id = Self::next_id(&env);
         let escrow = Escrow {
             depositor: depositor.clone(),
-            beneficiary,
-            relayer,
-            token,
+            beneficiary: beneficiary.clone(),
+            asset: asset.clone(),
             amount,
-            expiry,
-            state: EscrowState::Pending,
+            settled: false,
         };
-        env.storage().persistent().set(&depositor, &escrow);
+        Self::save_escrow(&env, id, &escrow);
+
+        // Record the liability and the backing we just accounted for.
+        let mut liability = Self::liability(&env, &asset);
+        liability.pending += amount;
+        liability.accounted += amount;
+        Self::save_liability(&env, &asset, &liability);
+
+        Self::assert_solvent(&env, &asset);
+        id
     }
 
-    /// Release funds to the beneficiary. Only the depositor may authorize a
-    /// release; the beneficiary is taken from stored state, never from caller
-    /// parameters, so a forged recipient cannot redirect the payout.
-    pub fn release(env: Env, depositor: Address) {
-        depositor.require_auth();
-        let mut escrow = Self::load(&env, &depositor);
-        assert!(escrow.state == EscrowState::Pending, "escrow already settled");
-        escrow.state = EscrowState::Released;
-        env.storage().persistent().set(&depositor, &escrow);
-        token::Client::new(&env, &escrow.token).transfer(
+    /// Settle an escrow, paying the beneficiary and clearing the liability.
+    pub fn settle(env: Env, id: u64) {
+        let mut escrow = Self::load_escrow(&env, id);
+        assert!(!escrow.settled, "escrow already settled");
+
+        let token_client = token::Client::new(&env, &escrow.asset);
+        token_client.transfer(
             &env.current_contract_address(),
             &escrow.beneficiary,
             &escrow.amount,
@@ -109,6 +167,92 @@ impl EscrowContract {
             .persistent()
             .get(depositor)
             .expect("escrow not found")
+    }
+
+    /// Explicitly account for tokens that were transferred to the contract
+    /// without going through `create` (unsolicited transfers). Only after this
+    /// call are those tokens counted as backing for liabilities.
+    pub fn account_surplus(env: Env, asset: Address) {
+        let liability = Self::liability(&env, &asset);
+        let actual = token::Client::new(&env, &asset)
+            .balance(&env.current_contract_address());
+        let surplus = actual - liability.accounted;
+        assert!(surplus >= 0, "accounted exceeds actual balance");
+
+        let mut updated = liability;
+        updated.accounted += surplus;
+        Self::save_liability(&env, &asset, &updated);
+
+        Self::assert_solvent(&env, &asset);
+    }
+
+    /// Read the liability model for an asset.
+    pub fn liability(env: Env, asset: Address) -> AssetLiability {
+        Self::liability(&env, &asset)
+    }
+
+    /// Solvency invariant: pending liabilities must never exceed the tokens
+    /// explicitly accounted for as backing.
+    pub fn is_solvent(env: Env, asset: Address) -> bool {
+        let liability = Self::liability(&env, &asset);
+        liability.pending <= liability.accounted
+    }
+
+    fn assert_solvent(env: &Env, asset: &Address) {
+        let liability = Self::liability(env, asset);
+        assert!(
+            liability.pending <= liability.accounted,
+            "escrow is insolvent"
+        );
+    }
+
+    fn liability(env: &Env, asset: &Address) -> AssetLiability {
+        let key = Self::liability_key(env);
+        let map: Map<Address, AssetLiability> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Map::new(env));
+        map.get(asset.clone()).unwrap_or_default()
+    }
+
+    fn save_liability(env: &Env, asset: &Address, liability: &AssetLiability) {
+        let key = Self::liability_key(env);
+        let mut map: Map<Address, AssetLiability> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Map::new(env));
+        map.set(asset.clone(), liability.clone());
+        env.storage().persistent().set(&key, &map);
+    }
+
+    fn liability_key(env: &Env) -> soroban_sdk::Symbol {
+        soroban_sdk::Symbol::new(env, "liability")
+    }
+
+    fn next_id(env: &Env) -> u64 {
+        let key = soroban_sdk::Symbol::new(env, "next_id");
+        let id: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &(id + 1));
+        id
+    }
+
+    fn load_escrow(env: &Env, id: u64) -> Escrow {
+        let key = Self::escrow_key(env, id);
+        env.storage()
+            .persistent()
+            .get(&key)
+            .expect("escrow not found")
+    }
+
+    fn save_escrow(env: &Env, id: u64, escrow: &Escrow) {
+        let key = Self::escrow_key(env, id);
+        env.storage().persistent().set(&key, escrow);
+    }
+
+    fn escrow_key(env: &Env, id: u64) -> (soroban_sdk::Symbol, u64) {
+        (soroban_sdk::Symbol::new(env, "escrow"), id)
     }
 }
 
@@ -240,5 +384,7 @@ mod test {
         let attacker = Address::generate(&env);
         assert_eq!(TokenClient::new(&env, &token_id).balance(&attacker), 0);
         assert_eq!(TokenClient::new(&env, &token_id).balance(&beneficiary), 1000);
+    }
+
     }
 }
