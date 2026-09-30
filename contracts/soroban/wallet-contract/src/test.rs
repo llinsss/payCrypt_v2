@@ -85,3 +85,36 @@ fn pending_proposals_use_the_current_threshold() {
     wallet.approve(&signer_b, &proposal_id);
     wallet.execute(&signer_a, &proposal_id);
 }
+
+#[test]
+fn admin_rotation_works_and_validates_correctly() {
+    let env = Env::default();
+    let (wallet, admin, _, _, _) = setup(&env, 1);
+    let new_admin = Address::generate(&env);
+    let outsider = Address::generate(&env);
+
+    // Outsider cannot propose
+    assert!(wallet.try_propose_admin_rotation(&outsider, &new_admin).is_err());
+
+    // Cannot propose self
+    assert!(wallet.try_propose_admin_rotation(&admin, &admin).is_err());
+
+    // Admin proposes new admin
+    wallet.propose_admin_rotation(&admin, &new_admin);
+
+    // Outsider cannot execute
+    assert!(wallet.try_execute_admin_rotation(&outsider).is_err());
+    // Old admin cannot execute
+    assert!(wallet.try_execute_admin_rotation(&admin).is_err());
+
+    // New admin executes rotation
+    wallet.execute_admin_rotation(&new_admin);
+
+    // Old admin can no longer propose
+    let another_admin = Address::generate(&env);
+    assert!(wallet.try_propose_admin_rotation(&admin, &another_admin).is_err());
+
+    // New admin can propose
+    wallet.propose_admin_rotation(&new_admin, &another_admin);
+    wallet.execute_admin_rotation(&another_admin);
+}
