@@ -13,6 +13,23 @@ const mockConfigService = {
     }),
 };
 
+// CHANGE: Added typed fixtures for token contract validation tests
+interface TokenContractInfo {
+    address: string;
+    name: string;
+    symbol: string;
+    decimals: number;
+    totalSupply: string;
+}
+
+const VALID_TOKEN: TokenContractInfo = {
+    address: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+    name: 'TaggedPay Token',
+    symbol: 'TAG',
+    decimals: 7,
+    totalSupply: '1000000000000000',
+};
+
 // Mock the entire Stellar SDK
 jest.mock('@stellar/stellar-sdk', () => {
     return {
@@ -60,6 +77,14 @@ jest.mock('@stellar/stellar-sdk', () => {
         TimeoutInfinite: 0,
         NotFoundError: class extends Error { },
         NetworkError: class extends Error { },
+        Contract: jest.fn().mockImplementation(() => ({
+            call: jest.fn().mockReturnValue({}),
+        })),
+        Address: jest.fn().mockImplementation((addr: string) => ({
+            toScVal: jest.fn().mockReturnValue({}),
+            toString: () => addr,
+        })),
+        scValToNative: jest.fn(),
     };
 });
 
@@ -238,6 +263,130 @@ describe('StellarService', () => {
                     networkPassphrase: 'Test SDF Network ; September 2015',
                 })
             );
+        });
+    });
+
+    // CHANGE: Added token contract validation tests covering trust boundary,
+    // privileged roles, replay behavior, and failure-safe state transitions.
+    describe('validateTokenContract', () => {
+        const admin = 'GADMIN0000000000000000000000000000000000000000000000000';
+        const issuer = 'GISSUER000000000000000000000000000000000000000000000000';
+        const unauthorized = 'GATTACKER00000000000000000000000000000000000000000000000';
+
+        it('should accept a well-formed token contract with valid metadata', async () => {
+            (service as any).readTokenMetadata = jest.fn().mockResolvedValueOnce(VALID_TOKEN);
+            (service as any).readTokenAdmin = jest.fn().mockResolvedValueOnce(admin);
+
+            const result = await (service as any).validateTokenContract(VALID_TOKEN.address);
+
+            expect(result).toEqual({
+                valid: true,
+                address: VALID_TOKEN.address,
+                admin,
+                reason: null,
+            });
+        });
+
+        it('should reject a contract whose address is not a valid contract id (boundary)', async () => {
+            const result = await (service as any).validateTokenContract('NOT_A_CONTRACT');
+
+            expect(result.valid).toBe(false);
+            expect(result.reason).toMatch(/invalid contract address/i);
+        });
+
+        it('should reject a contract with zero decimals or empty symbol (boundary)', async () => {
+            (service as any).readTokenMetadata = jest.fn().mockResolvedValueOnce({
+                ...VALID_TOKEN,
+                symbol: '',
+            });
+
+            const result = await (service as any).validateTokenContract(VALID_TOKEN.address);
+
+            expect(result.valid).toBe(false);
+            expect(result.reason).toMatch(/metadata/i);
+        });
+
+        it('should reject when caller is not the privileged admin (unauthorized)', async () => {
+            (service as any).readTokenMetadata = jest.fn().mockResolvedValueOnce(VALID_TOKEN);
+            (service as any).readTokenAdmin = jest.fn().mockResolvedValueOnce(admin);
+
+            const result = await (service as any).validateTokenContract(
+                VALID_TOKEN.address,
+                unauthorized,
+            );
+
+            expect(result.valid).toBe(false);
+            expect(result.reason).toMatch(/unauthorized/i);
+        });
+
+        it('should allow the privileged admin to validate', async () => {
+            (service as any).readTokenMetadata = jest.fn().mockResolvedValueOnce(VALID_TOKEN);
+            (service as any).readTokenAdmin = jest.fn().mockResolvedValueOnce(admin);
+
+            const result = await (service as any).validateTokenContract(
+                VALID_TOKEN.address,
+                admin,
+            );
+
+            expect(result.valid).toBe(true);
+            expect(result.admin).toBe(admin);
+        });
+
+        it('should be idempotent: repeated validation of the same contract yields the same result (replay)', async () => {
+            (service as any).readTokenMetadata = jest.fn().mockResolvedValue(VALID_TOKEN);
+            (service as any).readTokenAdmin = jest.fn().mockResolvedValue(admin);
+
+            const first = await (service as any).validateTokenContract(VALID_TOKEN.address);
+            const second = await (service as any).validateTokenContract(VALID_TOKEN.address);
+
+            expect(second).toEqual(first);
+        });
+
+        it('should not mutate allowlist state when validation fails (failure-safe)', async () => {
+            const allowlistBefore = new Set<string>((service as any).allowlistedTokens ?? []);
+            (service as any).readTokenMetadata = jest
+                .fn()
+                .mockRejectedValueOnce(new Error('RPC unavailable'));
+
+            const result = await (service as any).validateTokenContract(VALID_TOKEN.address);
+
+            expect(result.valid).toBe(false);
+            const allowlistAfter = new Set<string>((service as any).allowlistedTokens ?? []);
+            expect(allowlistAfter).toEqual(allowlistBefore);
+        });
+
+        it('should return valid=false when metadata read fails (failure path)', async () => {
+            (service as any).readTokenMetadata = jest
+                .fn()
+                .mockRejectedValueOnce(new Error('timeout'));
+
+            const result = await (service as any).validateTokenContract(VALID_TOKEN.address);
+
+            expect(result.valid).toBe(false);
+            expect(result.reason).toMatch(/timeout|metadata/i);
+        });
+
+        it('should reject when admin is missing from contract storage (failure path)', async () => {
+            (service as any).readTokenMetadata = jest.fn().mockResolvedValueOnce(VALID_TOKEN);
+            (service as any).readTokenAdmin = jest.fn().mockResolvedValueOnce(null);
+
+            const result = await (service as any).validateTokenContract(VALID_TOKEN.address);
+
+            expect(result.valid).toBe(false);
+            expect(result.reason).toMatch(/admin/i);
+        });
+
+        it('should reject when issuer differs from admin (trust boundary)', async () => {
+            (service as any).readTokenMetadata = jest.fn().mockResolvedValueOnce({
+                ...VALID_TOKEN,
+                issuer,
+            });
+            (service as any).readTokenAdmin = jest.fn().mockResolvedValueOnce(admin);
+
+            const result = await (service as any).validateTokenContract(VALID_TOKEN.address);
+
+            expect(result.valid).toBe(false);
+            expect(result.reason).toMatch(/issuer|admin/i);
         });
     });
 });
