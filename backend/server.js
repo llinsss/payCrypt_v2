@@ -16,16 +16,16 @@ try {
   process.exit(1);
 }
 
-const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: HousekeepingService }, { default: SocketService }, { initApollo }, { tokenPriceRefresh, ngnRateRefresh }] = await Promise.all([
+const [{ default: app }, { default: db, ensureConnectionWithRetry }, { default: redis }, , , { default: HousekeepingService }, { default: SocketService }, { initApollo }, { tokenPriceRefresh, ngnRateRefresh }, { shutdownWorkers }] = await Promise.all([
   import("./app.js"),
   import("./config/database.js"),
   import("./config/redis.js"),
   import("./listeners.js"),
-  import("./workers.js"),
   import("./services/HousekeepingService.js"),
   import("./services/SocketService.js"),
   import("./graphql/apollo.js"),
   import("./config/initials.js"),
+  import("./workers.js"),
 ]);
 
 const PORT = process.env.PORT || 3000;
@@ -135,10 +135,9 @@ const isProduction = process.env.NODE_ENV === "production";
       stellarStreamService.stop();
       console.log("  [3/6] Stellar streams stopped");
 
-      // 4. Close BullMQ workers (stop processing new jobs, let in-flight finish)
-      // Workers are imported as side-effects in workers.js; they self-register
-      // and will be garbage-collected. For a clean close we pause them.
-      console.log("  [4/6] BullMQ workers draining");
+      // 4. Stop worker intake, drain active jobs, and close queues.
+      await shutdownWorkers(Math.max(1000, SHUTDOWN_DEADLINE_MS - 1000));
+      console.log("  [4/6] BullMQ workers drained and queues closed");
 
       // 5. Close Redis connections
       try {

@@ -15,12 +15,12 @@ import attachRedisErrorAlert from "../utils/bullmqAlerts.js";
 
 // ========== Queues ==========
 
-const schedulerQueue = redisConnection
+export const schedulerQueue = redisConnection
     ? new Queue("scheduled-payment-executor", { connection: redisConnection })
     : null;
 attachRedisErrorAlert(schedulerQueue, "scheduled-payment-executor-queue");
 
-const notifierQueue = redisConnection
+export const notifierQueue = redisConnection
     ? new Queue("scheduled-payment-notifier", { connection: redisConnection })
     : null;
 attachRedisErrorAlert(notifierQueue, "scheduled-payment-notifier-queue");
