@@ -21,6 +21,7 @@ pub enum WalletError {
     StaleProposal = 13,
     ProposalExecuted = 14,
     Unauthorized = 15,
+    InvalidRotation = 16,
 }
 
 #[contracttype]
@@ -37,6 +38,7 @@ enum DataKey {
     MaxWithdrawal,
     RestrictedDestinations,
     AllowedDestination(Address),
+    PendingAdmin,
 }
 
 #[contracttype]
@@ -96,6 +98,17 @@ pub struct WithdrawalExecuted {
     pub amount: i128,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminRotated {
+    #[topic]
+    pub event_type: Symbol,
+    #[topic]
+    pub schema_version: u32,
+    pub old_admin: Address,
+    pub new_admin: Address,
+}
+
 #[contract]
 pub struct WalletContract;
 
@@ -131,6 +144,33 @@ impl WalletContract {
         env.storage().instance().set(&DataKey::ExecutionNonce, &0_u64);
         env.storage().instance().set(&DataKey::MaxWithdrawal, &max_withdrawal);
         env.storage().instance().set(&DataKey::RestrictedDestinations, &restrict_destinations);
+    }
+
+    pub fn propose_admin_rotation(env: Env, caller: Address, new_admin: Address) {
+        require_admin(&env, &caller);
+        if caller == new_admin {
+            fail(&env, WalletError::InvalidRotation);
+        }
+        env.storage().instance().set(&DataKey::PendingAdmin, &new_admin);
+    }
+
+    pub fn execute_admin_rotation(env: Env, caller: Address) {
+        caller.require_auth();
+        let pending_admin: Address = env.storage().instance().get(&DataKey::PendingAdmin).unwrap_or_else(|| fail(&env, WalletError::InvalidRotation));
+        if caller != pending_admin {
+            fail(&env, WalletError::Unauthorized);
+        }
+        let old_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        env.storage().instance().set(&DataKey::Admin, &pending_admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        
+        AdminRotated {
+            event_type: Symbol::new(&env, "wallet_admin_rotated"),
+            schema_version: 1,
+            old_admin,
+            new_admin: pending_admin,
+        }
+        .publish(&env);
     }
 
     pub fn add_signer(env: Env, caller: Address, signer: Address) {
