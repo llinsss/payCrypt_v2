@@ -21,8 +21,9 @@ pub enum WalletError {
     StaleProposal = 13,
     ProposalExecuted = 14,
     Unauthorized = 15,
-    InvalidRotation = 16,
-    ProposalExpired = 17,
+    ReentrancyDetected = 16,
+    InvalidRotation = 17,
+    ProposalExpired = 18,
 }
 
 #[contracttype]
@@ -333,11 +334,19 @@ impl WalletContract {
         if proposal.approval_count < threshold {
             fail(&env, WalletError::InsufficientApprovals);
         }
+        let entered_flag = Symbol::new(&env, "entered");
+        if env.storage().transient().get::<_, bool>(&entered_flag).unwrap_or(false) {
+            fail(&env, WalletError::ReentrancyDetected);
+        }
+        env.storage().transient().set(&entered_flag, &true);
+
         token::Client::new(&env, &proposal.token).transfer(
             &env.current_contract_address(),
             &proposal.destination,
             &proposal.amount,
         );
+
+        env.storage().transient().remove(&entered_flag);
         proposal.executed = true;
         env.storage().instance().set(&DataKey::Proposal(proposal_id), &proposal);
         env.storage().instance().set(&DataKey::ExecutionNonce, &(execution_nonce + 1));

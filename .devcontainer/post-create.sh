@@ -39,7 +39,7 @@ fi
 
 # ── 4. Wait for PostgreSQL ───────────────────────────────────────────────────
 log "Waiting for PostgreSQL to be ready..."
-until pg_isready -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-taggedpay_user}" -d "${DB_NAME:-taggedpay}" 2>/dev/null; do
+until pg_isready -h "postgres" -p "${DB_PORT:-5432}" -U "${DB_USER:-taggedpay_user}" -d "${DB_NAME:-taggedpay}" 2>/dev/null; do
   echo -n "."
   sleep 2
 done
@@ -48,7 +48,7 @@ ok "PostgreSQL is ready"
 
 # ── 5. Wait for Redis ────────────────────────────────────────────────────────
 log "Waiting for Redis to be ready..."
-until redis-cli -h "${REDIS_HOST:-localhost}" -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q PONG; do
+until redis-cli -h "redis" -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q PONG; do
   echo -n "."
   sleep 2
 done

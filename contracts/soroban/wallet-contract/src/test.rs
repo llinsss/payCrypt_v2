@@ -128,11 +128,12 @@ fn expired_proposals_cannot_be_approved_or_executed() {
     let env = Env::default();
     let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
     let token = supported_token(&env, &wallet, &admin);
-    
+
     env.ledger().set_timestamp(500);
     let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &10, &1000);
-    
+
     env.ledger().set_timestamp(1001);
     assert!(wallet.try_approve(&signer_b, &proposal_id).is_err());
     assert!(wallet.try_execute(&signer_b, &proposal_id).is_err());
+}
 }

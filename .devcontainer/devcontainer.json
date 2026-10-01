@@ -4,12 +4,6 @@
   "service": "backend",
   "workspaceFolder": "/workspaces/payCrypt_v2",
 
-  "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "22"
-    },
-    "ghcr.io/devcontainers/features/git:1": {}
-  },
 
   "forwardPorts": [3000, 3001, 5173, 5432, 6379],
 
@@ -54,6 +48,8 @@
       }
     }
   },
+
+  "initializeCommand": "test -f backend/.env || cp backend/.env.example backend/.env",
 
   "remoteEnv": {
     "NODE_ENV": "development"
