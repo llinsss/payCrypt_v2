@@ -21,6 +21,9 @@ pub enum WalletError {
     StaleProposal = 13,
     ProposalExecuted = 14,
     Unauthorized = 15,
+    ReentrancyDetected = 16,
+    InvalidRotation = 17,
+    ProposalExpired = 18,
 }
 
 #[contracttype]
@@ -37,6 +40,7 @@ enum DataKey {
     MaxWithdrawal,
     RestrictedDestinations,
     AllowedDestination(Address),
+    PendingAdmin,
 }
 
 #[contracttype]
@@ -48,6 +52,7 @@ pub struct WithdrawalProposal {
     pub token: Address,
     pub destination: Address,
     pub amount: i128,
+    pub expiry: u64,
     pub approval_count: u32,
     pub executed: bool,
 }
@@ -66,6 +71,7 @@ pub struct WithdrawalProposed {
     pub token: Address,
     pub destination: Address,
     pub amount: i128,
+    pub expiry: u64,
 }
 
 #[contractevent]
@@ -94,6 +100,17 @@ pub struct WithdrawalExecuted {
     pub destination: Address,
     pub token: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminRotated {
+    #[topic]
+    pub event_type: Symbol,
+    #[topic]
+    pub schema_version: u32,
+    pub old_admin: Address,
+    pub new_admin: Address,
 }
 
 #[contract]
@@ -131,6 +148,33 @@ impl WalletContract {
         env.storage().instance().set(&DataKey::ExecutionNonce, &0_u64);
         env.storage().instance().set(&DataKey::MaxWithdrawal, &max_withdrawal);
         env.storage().instance().set(&DataKey::RestrictedDestinations, &restrict_destinations);
+    }
+
+    pub fn propose_admin_rotation(env: Env, caller: Address, new_admin: Address) {
+        require_admin(&env, &caller);
+        if caller == new_admin {
+            fail(&env, WalletError::InvalidRotation);
+        }
+        env.storage().instance().set(&DataKey::PendingAdmin, &new_admin);
+    }
+
+    pub fn execute_admin_rotation(env: Env, caller: Address) {
+        caller.require_auth();
+        let pending_admin: Address = env.storage().instance().get(&DataKey::PendingAdmin).unwrap_or_else(|| fail(&env, WalletError::InvalidRotation));
+        if caller != pending_admin {
+            fail(&env, WalletError::Unauthorized);
+        }
+        let old_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        env.storage().instance().set(&DataKey::Admin, &pending_admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        
+        AdminRotated {
+            event_type: Symbol::new(&env, "wallet_admin_rotated"),
+            schema_version: 1,
+            old_admin,
+            new_admin: pending_admin,
+        }
+        .publish(&env);
     }
 
     pub fn add_signer(env: Env, caller: Address, signer: Address) {
@@ -196,6 +240,7 @@ impl WalletContract {
         token_address: Address,
         destination: Address,
         amount: i128,
+        expiry: u64,
     ) -> u64 {
         require_signer(&env, &proposer);
         if !env.storage().instance().get(&DataKey::SupportedToken(token_address.clone())).unwrap_or(false) {
@@ -204,6 +249,9 @@ impl WalletContract {
         let max_withdrawal: i128 = env.storage().instance().get(&DataKey::MaxWithdrawal).unwrap();
         if amount <= 0 || amount > max_withdrawal {
             fail(&env, WalletError::InvalidWithdrawal);
+        }
+        if expiry <= env.ledger().timestamp() {
+            fail(&env, WalletError::ProposalExpired);
         }
         let restricted: bool = env.storage().instance().get(&DataKey::RestrictedDestinations).unwrap_or(false);
         if restricted && !env.storage().instance().get(&DataKey::AllowedDestination(destination.clone())).unwrap_or(false) {
@@ -217,6 +265,7 @@ impl WalletContract {
             token: token_address,
             destination,
             amount,
+            expiry,
             approval_count: 1,
             executed: false,
         };
@@ -232,6 +281,7 @@ impl WalletContract {
             token: proposal.token,
             destination: proposal.destination,
             amount: proposal.amount,
+            expiry: proposal.expiry,
         }
         .publish(&env);
         id
@@ -243,6 +293,9 @@ impl WalletContract {
         let execution_nonce: u64 = env.storage().instance().get(&DataKey::ExecutionNonce).unwrap_or(0);
         if proposal.nonce < execution_nonce {
             fail(&env, WalletError::StaleProposal);
+        }
+        if env.ledger().timestamp() >= proposal.expiry {
+            fail(&env, WalletError::ProposalExpired);
         }
         if proposal.executed {
             fail(&env, WalletError::ProposalExecuted);
@@ -271,6 +324,9 @@ impl WalletContract {
         if proposal.nonce != execution_nonce {
             fail(&env, WalletError::StaleProposal);
         }
+        if env.ledger().timestamp() >= proposal.expiry {
+            fail(&env, WalletError::ProposalExpired);
+        }
         if proposal.executed {
             fail(&env, WalletError::ProposalExecuted);
         }
@@ -278,11 +334,19 @@ impl WalletContract {
         if proposal.approval_count < threshold {
             fail(&env, WalletError::InsufficientApprovals);
         }
+        let entered_flag = Symbol::new(&env, "entered");
+        if env.storage().transient().get::<_, bool>(&entered_flag).unwrap_or(false) {
+            fail(&env, WalletError::ReentrancyDetected);
+        }
+        env.storage().transient().set(&entered_flag, &true);
+
         token::Client::new(&env, &proposal.token).transfer(
             &env.current_contract_address(),
             &proposal.destination,
             &proposal.amount,
         );
+
+        env.storage().transient().remove(&entered_flag);
         proposal.executed = true;
         env.storage().instance().set(&DataKey::Proposal(proposal_id), &proposal);
         env.storage().instance().set(&DataKey::ExecutionNonce, &(execution_nonce + 1));

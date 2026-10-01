@@ -22,6 +22,7 @@ pub enum WalletError {
     NotInitialized = 2,
     Unauthorized = 3,
     ZeroAmount = 4,
+    ReentrancyDetected = 5,
 }
 
 /// Delay (in ledgers) that must elapse between proposing a new router and
@@ -185,8 +186,16 @@ impl WalletContract {
             return Err(WalletError::ZeroAmount);
         }
 
+        let entered_flag = Symbol::new(&env, "entered");
+        if env.storage().transient().get::<_, bool>(&entered_flag).unwrap_or(false) {
+            return Err(WalletError::ReentrancyDetected);
+        }
+        env.storage().transient().set(&entered_flag, &true);
+
         let token_client = token::Client::new(&env, &token);
         token_client.transfer(&env.current_contract_address(), &recipient, &amount);
+
+        env.storage().transient().remove(&entered_flag);
 
         env.events().publish(
             (Symbol::new(&env, "withdraw"),),

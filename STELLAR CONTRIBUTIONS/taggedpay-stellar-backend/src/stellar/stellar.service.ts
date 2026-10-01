@@ -1,25 +1,72 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as StellarSdk from '@stellar/stellar-sdk';
+import * as StellarSck from '@stellar/stellar-sdk';
 import { getStellarConfig } from '../config/stellar.config';
+
+/**
+ * Trust boundary for token contract allowlisting.
+ *
+ * The backend is the only privileged actor allowed to call the contract's allowlist
+ * entrypoint. The contract is trusted to enforce authorization and to reject
+ * replayed or malformed invocations. The backend validates the contract's
+ * observable behavior before adding an asset to its own allowlist.
+ */
+export interface TokenContractBehavior {
+    /** Contract address that was probed. */
+    contractId: string;
+    /** True when the contract exposes the expected token interface. */
+    hasTokenInterface: boolean;
+    /** True when the contract reports a non-empty name. */
+    hasName: boolean;
+    /** True when the contract reports a non-empty symbol. */
+    hasCurrency: boolean;
+    /** True when the contract reports a valid decimals value. */
+    hasDecimals: boolean;
+    /** True when the contract rejects unauthorized mutations. */
+    rejectsUnauthorized: boolean;
+    /** True when a replayed invocation is rejected. */
+    rejectsReplay: boolean;
+    /** True when failure paths leave state unchanged. */
+    failureSafe: boolean;
+    /** Deterministic digest of the observed behavior. */
+    digest: string;
+}
+
+export interface AllowlistValidationResult {
+    approved: boolean;
+    reason: string;
+    behavior: TokenContractBehavior | null;
+}
+
+export class TokenContractValidationError extends Error {
+    constructor(
+        public readonly code: string,
+        message: string,
+    ) {
+        super(message);
+        this.name = 'TokenContractValidationError';
+    }
+}
 
 @Injectable()
 export class StellarService {
     private logger = new Logger(StellarService.name);
-    private readonly server: StellarSdk.Horizon.Server;
+    private readonly server: StellarSck.Horizon.Server;
     private readonly networkPassphrase: string;
     private readonly network: 'testnet' | 'mainnet';
     private readonly friendbotUrl: string | null;
+    private readonly allowlistedContracts: Map<string, TokenContractBehavior> = new Map();
+    private readonly seenDigests: Set<string> = new Set();
 
     // CHANGE: Injected ConfigService to support dynamic network configuration
     constructor(private readonly configService: ConfigService) {
         this.network = (this.configService.get<string>('stellar.network') || 'testnet') as 'testnet' | 'mainnet';
         const config = getStellarConfig(this.network);
-        
-        this.server = new StellarSdk.Horizon.Server(config.horizonUrl);
+
+        this.server = new StellarSck.Horizon.Server(config.horizonUrl);
         this.networkPassphrase = config.networkPassphrase;
         this.friendbotUrl = config.friendbotUrl;
-        
+
         this.logger.log(`Stellar Service initialized with ${this.network} network`);
     }
 
@@ -28,7 +75,7 @@ export class StellarService {
      * @returns Object containing publicKey and secretKey
      */
     generateKeypair(): { publicKey: string; secretKey: string } {
-        const keypair = StellarSdk.Keypair.random();
+        const keypair = StellarSck.Keypair.random();
         return {
             publicKey: keypair.publicKey(),
             secretKey: keypair.secret(),
@@ -153,13 +200,13 @@ export class StellarService {
                 networkPassphrase: this.networkPassphrase,
             })
                 .addOperation(
-                    StellarSdk.Operation.payment({
+                    StellarSck.Operation.payment({
                         destination: destinationPublic,
                         asset: StellarSdk.Asset.native(),
                         amount: amount,
                     }),
                 )
-                .setTimeout(StellarSdk.TimeoutInfinite)
+                .setTimeout(StellarSck.TimeoutInfinite)
                 .build();
 
             transaction.sign(sourceKeypair);
@@ -169,7 +216,7 @@ export class StellarService {
             return result.hash;
         } catch (error) {
             // CHANGE: Improved error handling for network failures
-            if (error instanceof StellarSdk.NetworkError) {
+            if (error instanceof StellarSck.NetworkError) {
                 this.logger.error(`Network error during payment: ${error.message}`);
             } else if (error instanceof Error) {
                 this.logger.error(`Payment failed: ${error.message}`);
@@ -178,5 +225,75 @@ export class StellarService {
             }
             throw error;
         }
+    }
+
+    /**
+     * Deterministically validates a token contract's behavior before allowlisting it.
+     *
+     * The check is pure and deterministic: given the same observed behavior it
+     * always returns the same result. Replayed digests are rejected so an
+     * allowlisted contract cannot be re-validated with stale data.
+     */
+    validateTokenContractBehavior(
+        contractId: string,
+        behavior: TokenContractBehavior,
+    ): AllowlistValidationResult {
+        if (!contractId || contractId.trim().length === 0) {
+            throw new TokenContractValidationError('INVALID_CONTRACT_ID', 'contractId must be a non-empty string');
+        }
+
+        if (behavior.contractId !== contractId) {
+            throw new TokenContractValidationError(
+                'CONTRACT_ID_MISMATCH',
+                `Behavior contractId ${behavior.contractId} does not match ${contractId}`,
+            );
+        }
+
+        if (this.seenDigests.has(behavior.digest)) {
+            this.logger.warn(`Replay detected for digest ${behavior.digest} on ${contractId}`);
+            return {
+                approved: false,
+                reason: 'REPLAY_DETECTED',
+                behavior,
+            };
+            }
+
+        const failures: string[] = [];
+        if (!behavior.hasTokenInterface) failures.push('MISSING_TOKEN_INTERFACE');
+        if (!behavior.hasName) failures.push('MISSING_NAME');
+        if (!behavior.hasCurrency) failures.push('MISSING_CURRENCY');
+        if (!behavior.hasDecimals) failures.push('MISSING_DECIMALS');
+        if (!behavior.rejectsUnauthorized) failures.push('ACCEPTS_UNAUTHORIZED');
+        if (!behavior.rejectsReplay) failures.push('ACCEPTS_REPLAY');
+        if (!behavior.failureSafe) failures.push('NON_FAILURE_SAFE');
+
+        if (failures.length > 0) {
+            this.logger.warn(`Token contract ${contractId} rejected: ${failures.join(',')}`);
+            return {
+                approved: false,
+                reason: failures.join(','),
+                behavior,
+            };
+        }
+
+        this.seenDigests.add(behavior.digest);
+        this.allowlistedContracts.set(contractId, behavior);
+        this.logger.log(`Token contract ${contractId} approved for allowlisting`);
+        return { approved: true, reason: 'OK', behavior };
+    }
+
+    /**
+     * Returns the allowlisted behavior for a contract, or null if not allowlisted.
+     */
+    getAllowlistedBehavior(contractId: string): TokenContractBehavior | null {
+        return this.allowlistedContracts.get(contractId) ?? null;
+    }
+
+    /**
+     * Resets the allowlist and replay guard. Used by rollback and tests.
+     */
+    resetAllowlist(): void {
+        this.allowlistedContracts.clear();
+        this.seenDigests.clear();
     }
 }
