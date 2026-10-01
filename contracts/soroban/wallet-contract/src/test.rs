@@ -27,7 +27,8 @@ fn threshold_withdrawal_requires_distinct_signers_and_advances_nonce() {
     let env = Env::default();
     let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
     let token = supported_token(&env, &wallet, &admin);
-    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25, &2000);
     assert!(wallet.try_approve(&signer_a, &proposal_id).is_err());
     wallet.approve(&signer_b, &proposal_id);
     wallet.execute(&signer_b, &proposal_id);
@@ -55,8 +56,9 @@ fn stale_proposals_cannot_execute_out_of_nonce_order() {
     let env = Env::default();
     let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 1);
     let token = supported_token(&env, &wallet, &admin);
-    let first = wallet.propose_withdrawal(&signer_a, &token, &destination, &10);
-    let second = wallet.propose_withdrawal(&signer_b, &token, &destination, &10);
+    env.ledger().set_timestamp(100);
+    let first = wallet.propose_withdrawal(&signer_a, &token, &destination, &10, &2000);
+    let second = wallet.propose_withdrawal(&signer_b, &token, &destination, &10, &2000);
     assert!(wallet.try_execute(&signer_a, &second).is_err());
     wallet.execute(&signer_a, &first);
     wallet.execute(&signer_b, &second);
@@ -71,7 +73,8 @@ fn unauthorized_admin_call_and_invalid_policy_are_rejected() {
     assert!(wallet.try_add_signer(&outsider, &Address::generate(&env)).is_err());
     assert!(wallet.try_set_withdrawal_policy(&admin, &0, &false).is_err());
     wallet.set_withdrawal_policy(&admin, &10, &true);
-    assert!(wallet.try_propose_withdrawal(&Address::generate(&env), &Address::generate(&env), &destination, &1).is_err());
+    env.ledger().set_timestamp(100);
+    assert!(wallet.try_propose_withdrawal(&Address::generate(&env), &Address::generate(&env), &destination, &1, &2000).is_err());
 }
 
 #[test]
@@ -79,7 +82,8 @@ fn pending_proposals_use_the_current_threshold() {
     let env = Env::default();
     let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 1);
     let token = supported_token(&env, &wallet, &admin);
-    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &10);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &10, &2000);
     wallet.set_threshold(&admin, &2);
     assert!(wallet.try_execute(&signer_a, &proposal_id).is_err());
     wallet.approve(&signer_b, &proposal_id);
@@ -117,4 +121,19 @@ fn admin_rotation_works_and_validates_correctly() {
     // New admin can propose
     wallet.propose_admin_rotation(&new_admin, &another_admin);
     wallet.execute_admin_rotation(&another_admin);
+}
+
+#[test]
+fn expired_proposals_cannot_be_approved_or_executed() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
+    let token = supported_token(&env, &wallet, &admin);
+
+    env.ledger().set_timestamp(500);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &10, &1000);
+
+    env.ledger().set_timestamp(1001);
+    assert!(wallet.try_approve(&signer_b, &proposal_id).is_err());
+    assert!(wallet.try_execute(&signer_b, &proposal_id).is_err());
+}
 }
