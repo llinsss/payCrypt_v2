@@ -58,6 +58,9 @@ pub mod symbol_check;
 #[cfg(test)]
 mod contract_tests;
 
+#[cfg(test)]
+mod confusable_tests;
+
 pub use normalize::{TagName, TagNameError, MAX_RAW_SCAN_BYTES, MAX_TAG_BYTES, MIN_TAG_BYTES};
 
 #[contracterror]
