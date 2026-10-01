@@ -61,6 +61,9 @@ mod contract_tests;
 #[cfg(test)]
 mod confusable_tests;
 
+#[cfg(test)]
+mod security_invariants_tests;
+
 pub use normalize::{TagName, TagNameError, MAX_RAW_SCAN_BYTES, MAX_TAG_BYTES, MIN_TAG_BYTES};
 
 #[contracterror]
