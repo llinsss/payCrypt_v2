@@ -24,6 +24,7 @@ pub enum WalletError {
     ReentrancyDetected = 16,
     InvalidRotation = 17,
     ProposalExpired = 18,
+    ApprovalNotFound = 19,
 }
 
 #[contracttype]
@@ -111,6 +112,19 @@ pub struct AdminRotated {
     pub schema_version: u32,
     pub old_admin: Address,
     pub new_admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawalApprovalRevoked {
+    #[topic]
+    pub event_type: Symbol,
+    #[topic]
+    pub schema_version: u32,
+    #[topic]
+    pub proposal_id: u64,
+    pub signer: Address,
+    pub approval_count: u32,
 }
 
 #[contract]
@@ -300,7 +314,7 @@ impl WalletContract {
         if proposal.executed {
             fail(&env, WalletError::ProposalExecuted);
         }
-        let approval_key = DataKey::Approval(proposal_id, signer);
+        let approval_key = DataKey::Approval(proposal_id, signer.clone());
         if env.storage().instance().get(&approval_key).unwrap_or(false) {
             fail(&env, WalletError::DuplicateApproval);
         }
@@ -309,6 +323,41 @@ impl WalletContract {
         env.storage().instance().set(&DataKey::Proposal(proposal_id), &proposal);
         WithdrawalApproved {
             event_type: Symbol::new(&env, "wallet_withdrawal_approved"),
+            schema_version: 1,
+            proposal_id,
+            signer,
+            approval_count: proposal.approval_count,
+        }
+        .publish(&env);
+    }
+
+    /// Revoke a previously granted approval for a pending proposal.
+    ///
+    /// The signer must be an authorized signer and must have previously approved
+    /// the proposal. The proposal must not be executed or expired.
+    /// This allows signers to withdraw their delegated approval before execution.
+    pub fn revoke_approval(env: Env, signer: Address, proposal_id: u64) {
+        require_signer(&env, &signer);
+        let mut proposal = get_proposal(&env, proposal_id);
+        let execution_nonce: u64 = env.storage().instance().get(&DataKey::ExecutionNonce).unwrap_or(0);
+        if proposal.nonce < execution_nonce {
+            fail(&env, WalletError::StaleProposal);
+        }
+        if env.ledger().timestamp() >= proposal.expiry {
+            fail(&env, WalletError::ProposalExpired);
+        }
+        if proposal.executed {
+            fail(&env, WalletError::ProposalExecuted);
+        }
+        let approval_key = DataKey::Approval(proposal_id, signer.clone());
+        if !env.storage().instance().get(&approval_key).unwrap_or(false) {
+            fail(&env, WalletError::ApprovalNotFound);
+        }
+        env.storage().instance().remove(&approval_key);
+        proposal.approval_count -= 1;
+        env.storage().instance().set(&DataKey::Proposal(proposal_id), &proposal);
+        WithdrawalApprovalRevoked {
+            event_type: Symbol::new(&env, "wallet_appr_revoked"),
             schema_version: 1,
             proposal_id,
             signer,
@@ -334,11 +383,11 @@ impl WalletContract {
         if proposal.approval_count < threshold {
             fail(&env, WalletError::InsufficientApprovals);
         }
-        let entered_flag = Symbol::new(&env, "entered");
-        if env.storage().transient().get::<_, bool>(&entered_flag).unwrap_or(false) {
+        let entered_flag = Symbol::new(&env, "reentrancy_guard");
+        if env.storage().instance().get::<_, bool>(&entered_flag).unwrap_or(false) {
             fail(&env, WalletError::ReentrancyDetected);
         }
-        env.storage().transient().set(&entered_flag, &true);
+        env.storage().instance().set(&entered_flag, &true);
 
         token::Client::new(&env, &proposal.token).transfer(
             &env.current_contract_address(),
@@ -346,7 +395,7 @@ impl WalletContract {
             &proposal.amount,
         );
 
-        env.storage().transient().remove(&entered_flag);
+        env.storage().instance().remove(&entered_flag);
         proposal.executed = true;
         env.storage().instance().set(&DataKey::Proposal(proposal_id), &proposal);
         env.storage().instance().set(&DataKey::ExecutionNonce, &(execution_nonce + 1));
@@ -408,7 +457,7 @@ fn require_signer(env: &Env, signer: &Address) {
     }
 }
 
-fn fail<T>(env: &Env, error: WalletError) -> T {
+fn fail(env: &Env, error: WalletError) -> ! {
     panic_with_error!(env, error)
 }
 
