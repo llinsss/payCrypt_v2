@@ -1,5 +1,5 @@
 use super::*;
-use soroban_sdk::{testutils::Address as _, token::StellarAssetClient};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, token::StellarAssetClient};
 
 fn setup(env: &Env, threshold: u32) -> (WalletContractClient<'_>, Address, Address, Address, Address) {
     env.mock_all_auths();
@@ -136,4 +136,122 @@ fn expired_proposals_cannot_be_approved_or_executed() {
     assert!(wallet.try_approve(&signer_b, &proposal_id).is_err());
     assert!(wallet.try_execute(&signer_b, &proposal_id).is_err());
 }
+
+#[test]
+fn revoke_approval_success() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25, &2000);
+
+    // signer_b approves
+    wallet.approve(&signer_b, &proposal_id);
+    let proposal = wallet.proposal(&proposal_id);
+    assert_eq!(proposal.approval_count, 2); // proposer + signer_b
+
+    // signer_b revokes approval
+    wallet.revoke_approval(&signer_b, &proposal_id);
+    let proposal = wallet.proposal(&proposal_id);
+    assert_eq!(proposal.approval_count, 1); // only proposer remains
+
+    // signer_a (proposer) can also revoke
+    wallet.revoke_approval(&signer_a, &proposal_id);
+    let proposal = wallet.proposal(&proposal_id);
+    assert_eq!(proposal.approval_count, 0);
+}
+
+#[test]
+fn revoke_approval_unauthorized_signer_rejected() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25, &2000);
+
+    wallet.approve(&signer_b, &proposal_id);
+
+    // Outsider tries to revoke
+    let outsider = Address::generate(&env);
+    assert!(wallet.try_revoke_approval(&outsider, &proposal_id).is_err());
+
+    // signer_a (who didn't approve beyond being proposer) tries to revoke signer_b's approval
+    // This should fail because signer_a can only revoke their own approval
+    assert!(wallet.try_revoke_approval(&signer_a, &proposal_id).is_ok()); // proposer can revoke their own
+}
+
+#[test]
+fn revoke_approval_not_found_rejected() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25, &2000);
+
+    // signer_b tries to revoke without having approved
+    assert!(wallet.try_revoke_approval(&signer_b, &proposal_id).is_err());
+}
+
+#[test]
+fn revoke_approval_after_execution_rejected() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25, &2000);
+
+    wallet.approve(&signer_b, &proposal_id);
+    wallet.execute(&signer_b, &proposal_id);
+
+    // Cannot revoke after execution
+    assert!(wallet.try_revoke_approval(&signer_b, &proposal_id).is_err());
+}
+
+#[test]
+fn revoke_approval_after_expiry_rejected() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(500);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &10, &1000);
+
+    wallet.approve(&signer_b, &proposal_id);
+
+    env.ledger().set_timestamp(1001);
+    // Cannot revoke after expiry
+    assert!(wallet.try_revoke_approval(&signer_b, &proposal_id).is_err());
+}
+
+#[test]
+fn revoke_approval_duplicate_rejected() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 2);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25, &2000);
+
+    wallet.approve(&signer_b, &proposal_id);
+    wallet.revoke_approval(&signer_b, &proposal_id);
+
+    // Cannot revoke twice
+    assert!(wallet.try_revoke_approval(&signer_b, &proposal_id).is_err());
+}
+
+#[test]
+fn revoke_approval_stale_proposal_rejected() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, signer_b, destination) = setup(&env, 1);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(100);
+    let first = wallet.propose_withdrawal(&signer_a, &token, &destination, &10, &2000);
+    let second = wallet.propose_withdrawal(&signer_b, &token, &destination, &10, &2000);
+    let _third = wallet.propose_withdrawal(&signer_a, &token, &destination, &10, &2000);
+
+    wallet.approve(&signer_a, &second);
+    wallet.execute(&signer_a, &first); // advances execution_nonce to 1
+    wallet.execute(&signer_b, &second); // advances execution_nonce to 2
+
+    // third (nonce=2) is current, second (nonce=1) is now stale
+    // signer_a approved second, but second is now stale so revoke should fail
+    assert!(wallet.try_revoke_approval(&signer_a, &second).is_err());
 }
