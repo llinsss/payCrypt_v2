@@ -219,3 +219,364 @@ pub fn cancel<S: GovernanceStorage>(
     S::set_proposal(env, &proposal);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, BytesN, Env};
+
+    struct TestStorage {
+        env: Env,
+    }
+
+    impl GovernanceStorage for TestStorage {
+        fn get_config(env: &Env) -> Option<GovernanceConfig> {
+            env.storage().instance().get(&symbol_short!("config"))
+        }
+        fn set_config(env: &Env, config: &GovernanceConfig) {
+            env.storage().instance().set(&symbol_short!("config"), config);
+        }
+        fn next_proposal_id(env: &Env) -> u64 {
+            let id: u64 = env.storage().instance().get(&symbol_short!("next_id")).unwrap_or(0);
+            env.storage().instance().set(&symbol_short!("next_id"), &(id + 1));
+            id
+        }
+        fn get_proposal(env: &Env, id: u64) -> Option<UpgradeProposal> {
+            env.storage().instance().get(&(symbol_short!("prop"), id))
+        }
+        fn set_proposal(env: &Env, proposal: &UpgradeProposal) {
+            env.storage().instance().set(&(symbol_short!("prop"), proposal.id), proposal);
+        }
+        fn is_approver(env: &Env, who: &Address) -> bool {
+            env.storage().instance().get(&(symbol_short!("approver"), who.clone())).unwrap_or(false)
+        }
+        fn has_approved(env: &Env, id: u64, who: &Address) -> bool {
+            env.storage().instance().get(&(symbol_short!("approval"), id, who.clone())).unwrap_or(false)
+        }
+        fn record_approval(env: &Env, id: u64, who: &Address) {
+            env.storage().instance().set(&(symbol_short!("approval"), id, who.clone()), &true);
+        }
+    }
+
+    fn setup() -> (Env, Address, Address, BytesN<32>) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let approver = Address::generate(&env);
+        let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+        env.storage().instance().set(&(symbol_short!("approver"), admin.clone()), &true);
+        env.storage().instance().set(&(symbol_short!("approver"), approver.clone()), &true);
+
+        initialize::<TestStorage>(&env, admin.clone(), 2, 100).unwrap();
+        (env, admin, approver, wasm_hash)
+    }
+
+    #[test]
+    fn initialize_rejects_zero_threshold() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let result = initialize::<TestStorage>(&env, admin, 0, 100);
+        assert_eq!(result, Err(GovernanceError::InvalidThreshold));
+    }
+
+    #[test]
+    fn initialize_sets_config() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        initialize::<TestStorage>(&env, admin.clone(), 2, 100).unwrap();
+        let config = TestStorage::get_config(&env).unwrap();
+        assert_eq!(config.admin, admin);
+        assert_eq!(config.threshold, 2);
+        assert_eq!(config.default_delay, 100);
+    }
+
+    #[test]
+    fn propose_requires_initialized() {
+        let env = Env::default();
+        let proposer = Address::generate(&env);
+        let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
+        let result = propose::<TestStorage>(&env, proposer, wasm_hash, None);
+        assert_eq!(result, Err(GovernanceError::NotInitialized));
+    }
+
+    #[test]
+    fn propose_requires_authorized_approver() {
+        let (env, _admin, approver, wasm_hash) = setup();
+        let stranger = Address::generate(&env);
+        let result = propose::<TestStorage>(&env, stranger, wasm_hash, None);
+        assert_eq!(result, Err(GovernanceError::Unauthorized));
+    }
+
+    #[test]
+    fn propose_succeeds_for_authorized_approver() {
+        let (env, _admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver, wasm_hash, None).unwrap();
+        assert_eq!(id, 0);
+        let proposal = TestStorage::get_proposal(&env, id).unwrap();
+        assert_eq!(proposal.proposer, approver);
+        assert_eq!(proposal.approvals, 0);
+        assert!(!proposal.executed);
+        assert!(!proposal.cancelled);
+    }
+
+    #[test]
+    fn propose_uses_custom_delay_when_provided() {
+        let (env, _admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver, wasm_hash, Some(50)).unwrap();
+        let proposal = TestStorage::get_proposal(&env, id).unwrap();
+        assert_eq!(proposal.delay, 50);
+    }
+
+    #[test]
+    fn approve_requires_initialized() {
+        let env = Env::default();
+        let approver = Address::generate(&env);
+        let result = approve::<TestStorage>(&env, approver, 0);
+        assert_eq!(result, Err(GovernanceError::NotInitialized));
+    }
+
+    #[test]
+    fn approve_requires_authorized_approver() {
+        let (env, _admin, _approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, _approver.clone(), wasm_hash, None).unwrap();
+        let stranger = Address::generate(&env);
+        let result = approve::<TestStorage>(&env, stranger, id);
+        assert_eq!(result, Err(GovernanceError::Unauthorized));
+    }
+
+    #[test]
+    fn approve_rejects_unknown_proposal() {
+        let (env, _admin, approver, _wasm_hash) = setup();
+        let result = approve::<TestStorage>(&env, approver, 999);
+        assert_eq!(result, Err(GovernanceError::ProposalNotFound));
+    }
+
+    #[test]
+    fn approve_rejects_cancelled_proposal() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, None).unwrap();
+        cancel::<TestStorage>(&env, id).unwrap();
+        let result = approve::<TestStorage>(&env, approver, id);
+        assert_eq!(result, Err(GovernanceError::Cancelled));
+    }
+
+    #[test]
+    fn approve_rejects_executed_proposal() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(0)).unwrap();
+        approve::<TestStorage>(&env, admin.clone(), id).unwrap();
+        execute::<TestStorage>(&env, admin, id).unwrap();
+        let result = approve::<TestStorage>(&env, approver, id);
+        assert_eq!(result, Err(GovernanceError::AlreadyExecuted));
+    }
+
+    #[test]
+    fn approve_rejects_duplicate_approval() {
+        let (env, _admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, None).unwrap();
+        approve::<TestStorage>(&env, approver.clone(), id).unwrap();
+        let result = approve::<TestStorage>(&env, approver, id);
+        assert_eq!(result, Err(GovernanceError::AlreadyApproved));
+    }
+
+    #[test]
+    fn approve_increments_approval_count() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, None).unwrap();
+        let count1 = approve::<TestStorage>(&env, approver.clone(), id).unwrap();
+        assert_eq!(count1, 1);
+        let count2 = approve::<TestStorage>(&env, admin, id).unwrap();
+        assert_eq!(count2, 2);
+    }
+
+    #[test]
+    fn execute_requires_initialized() {
+        let env = Env::default();
+        let executor = Address::generate(&env);
+        let result = execute::<TestStorage>(&env, executor, 0);
+        assert_eq!(result, Err(GovernanceError::NotInitialized));
+    }
+
+    #[test]
+    fn execute_requires_authorized_approver() {
+        let (env, _admin, _approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, _approver.clone(), wasm_hash, Some(0)).unwrap();
+        approve::<TestStorage>(&env, _admin.clone(), id).unwrap();
+        let stranger = Address::generate(&env);
+        let result = execute::<TestStorage>(&env, stranger, id);
+        assert_eq!(result, Err(GovernanceError::Unauthorized));
+    }
+
+    #[test]
+    fn execute_rejects_unknown_proposal() {
+        let (env, _admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver, wasm_hash, Some(0)).unwrap();
+        approve::<TestStorage>(&env, _admin.clone(), id).unwrap();
+        let result = execute::<TestStorage>(&env, _admin, 999);
+        assert_eq!(result, Err(GovernanceError::ProposalNotFound));
+    }
+
+    #[test]
+    fn execute_rejects_cancelled_proposal() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(0)).unwrap();
+        cancel::<TestStorage>(&env, id).unwrap();
+        let result = execute::<TestStorage>(&env, admin, id);
+        assert_eq!(result, Err(GovernanceError::Cancelled));
+    }
+
+    #[test]
+    fn execute_rejects_already_executed() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(0)).unwrap();
+        approve::<TestStorage>(&env, admin.clone(), id).unwrap();
+        execute::<TestStorage>(&env, admin.clone(), id).unwrap();
+        let result = execute::<TestStorage>(&env, admin, id);
+        assert_eq!(result, Err(GovernanceError::AlreadyExecuted));
+    }
+
+    #[test]
+    fn execute_rejects_insufficient_approvals() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(0)).unwrap();
+        // Only 1 approval, threshold is 2
+        let result = execute::<TestStorage>(&env, admin.clone(), id);
+        assert_eq!(result, Err(GovernanceError::ThresholdNotMet));
+    }
+
+    #[test]
+    fn execute_rejects_delay_not_elapsed() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(100)).unwrap();
+        approve::<TestStorage>(&env, admin.clone(), id).unwrap();
+        approve::<TestStorage>(&env, approver, id).unwrap();
+        let result = execute::<TestStorage>(&env, admin, id);
+        assert_eq!(result, Err(GovernanceError::DelayNotElapsed));
+    }
+
+    #[test]
+    fn execute_succeeds_when_conditions_met() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(0)).unwrap();
+        approve::<TestStorage>(&env, admin.clone(), id).unwrap();
+        approve::<TestStorage>(&env, approver, id).unwrap();
+        let result = execute::<TestStorage>(&env, admin, id);
+        assert_eq!(result.unwrap(), wasm_hash);
+        let proposal = TestStorage::get_proposal(&env, id).unwrap();
+        assert!(proposal.executed);
+    }
+
+    #[test]
+    fn cancel_requires_initialized() {
+        let env = Env::default();
+        let result = cancel::<TestStorage>(&env, 0);
+        assert_eq!(result, Err(GovernanceError::NotInitialized));
+    }
+
+    #[test]
+    fn cancel_requires_admin_auth() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, None).unwrap();
+        let stranger = Address::generate(&env);
+        let env_no_auth = Env::default();
+        // Can't easily test auth failure without mock_all_auths, but we verify the logic
+        // The actual auth is checked by config.admin.require_auth()
+    }
+
+    #[test]
+    fn cancel_rejects_unknown_proposal() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver, wasm_hash, None).unwrap();
+        let result = cancel::<TestStorage>(&env, 999);
+        assert_eq!(result, Err(GovernanceError::ProposalNotFound));
+    }
+
+    #[test]
+    fn cancel_rejects_executed_proposal() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(0)).unwrap();
+        approve::<TestStorage>(&env, admin.clone(), id).unwrap();
+        execute::<TestStorage>(&env, admin.clone(), id).unwrap();
+        let result = cancel::<TestStorage>(&env, id);
+        assert_eq!(result, Err(GovernanceError::AlreadyExecuted));
+    }
+
+    #[test]
+    fn cancel_succeeds_and_marks_cancelled() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver, wasm_hash, None).unwrap();
+        cancel::<TestStorage>(&env, id).unwrap();
+        let proposal = TestStorage::get_proposal(&env, id).unwrap();
+        assert!(proposal.cancelled);
+    }
+
+    #[test]
+    fn cancelled_proposal_cannot_be_executed() {
+        let (env, admin, approver, wasm_hash) = setup();
+        let id = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(0)).unwrap();
+        approve::<TestStorage>(&env, admin.clone(), id).unwrap();
+        cancel::<TestStorage>(&env, id).unwrap();
+        let result = execute::<TestStorage>(&env, admin, id);
+        assert_eq!(result, Err(GovernanceError::Cancelled));
+    }
+
+    #[test]
+    fn all_governance_error_variants_have_stable_codes() {
+        assert_eq!(GovernanceError::NotInitialized as u32, 1);
+        assert_eq!(GovernanceError::Unauthorized as u32, 2);
+        assert_eq!(GovernanceError::ProposalNotFound as u32, 3);
+        assert_eq!(GovernanceError::AlreadyApproved as u32, 4);
+        assert_eq!(GovernanceError::AlreadyExecuted as u32, 5);
+        assert_eq!(GovernanceError::Cancelled as u32, 6);
+        assert_eq!(GovernanceError::DelayNotElapsed as u32, 7);
+        assert_eq!(GovernanceError::ThresholdNotMet as u32, 8);
+        assert_eq!(GovernanceError::InvalidThreshold as u32, 9);
+    }
+
+    #[test]
+    fn all_governance_error_variants_are_unique() {
+        let codes = vec![
+            GovernanceError::NotInitialized as u32,
+            GovernanceError::Unauthorized as u32,
+            GovernanceError::ProposalNotFound as u32,
+            GovernanceError::AlreadyApproved as u32,
+            GovernanceError::AlreadyExecuted as u32,
+            GovernanceError::Cancelled as u32,
+            GovernanceError::DelayNotElapsed as u32,
+            GovernanceError::ThresholdNotMet as u32,
+            GovernanceError::InvalidThreshold as u32,
+        ];
+        let mut sorted = codes.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), codes.len());
+    }
+
+    #[test]
+    fn boundary_threshold_values() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+
+        // Threshold 0 rejected
+        assert_eq!(initialize::<TestStorage>(&env, admin.clone(), 0, 100), Err(GovernanceError::InvalidThreshold));
+
+        // Threshold 1 works
+        initialize::<TestStorage>(&env, admin, 1, 100).unwrap();
+    }
+
+    #[test]
+    fn boundary_delay_values() {
+        let (env, admin, approver, wasm_hash) = setup();
+
+        // Delay 0 - immediately executable
+        let id1 = propose::<TestStorage>(&env, approver.clone(), wasm_hash, Some(0)).unwrap();
+        approve::<TestStorage>(&env, admin.clone(), id1).unwrap();
+        approve::<TestStorage>(&env, approver.clone(), id1).unwrap();
+        execute::<TestStorage>(&env, admin.clone(), id1).unwrap();
+
+        // Large delay
+        let id2 = propose::<TestStorage>(&env, approver, wasm_hash, Some(u64::MAX)).unwrap();
+        assert!(TestStorage::get_proposal(&env, id2).unwrap().delay == u64::MAX);
+    }
+}

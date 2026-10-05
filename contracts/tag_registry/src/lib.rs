@@ -319,4 +319,210 @@ mod test {
         client.register(&owner, &tag(&env, "dave"));
         let _ = IntoVal::<Env, Symbol>::into_val(&symbol_short!("tag_reg"), &env);
     }
+
+    #[test]
+    fn resolve_rejects_unknown_tag() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let res = client.try_resolve(&tag(&env, "unknown"));
+        assert_eq!(res, Err(Ok(RegistryError::TagNotRegistered)));
+    }
+
+    #[test]
+    fn transfer_rejects_unknown_tag() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        let next = Address::generate(&env);
+        let res = client.try_transfer(&owner, &next, &tag(&env, "unknown"));
+        assert_eq!(res, Err(Ok(RegistryError::TagNotRegistered)));
+    }
+
+    #[test]
+    fn transfer_rejects_non_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        let next = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        client.register(&owner, &tag(&env, "carol"));
+        let res = client.try_transfer(&stranger, &next, &tag(&env, "carol"));
+        assert_eq!(res, Err(Ok(RegistryError::NotTagOwner)));
+    }
+
+    #[test]
+    fn associate_wallet_rejects_unknown_tag() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        let wallet = Address::generate(&env);
+        let res = client.try_associate_wallet(&owner, &tag(&env, "unknown"), &wallet);
+        assert_eq!(res, Err(Ok(RegistryError::TagNotRegistered)));
+    }
+
+    #[test]
+    fn associate_wallet_rejects_non_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let wallet = Address::generate(&env);
+        client.register(&owner, &tag(&env, "carol"));
+        let res = client.try_associate_wallet(&stranger, &tag(&env, "carol"), &wallet);
+        assert_eq!(res, Err(Ok(RegistryError::NotTagOwner)));
+    }
+
+    #[test]
+    fn wallet_of_rejects_unknown_tag() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let res = client.try_wallet_of(&tag(&env, "unknown"));
+        assert_eq!(res, Err(Ok(RegistryError::TagNotRegistered)));
+    }
+
+    #[test]
+    fn owner_of_rejects_unknown_tag() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let res = client.try_owner_of(&tag(&env, "unknown"));
+        assert_eq!(res, Err(Ok(RegistryError::TagNotRegistered)));
+    }
+
+    #[test]
+    fn rejects_zero_address_as_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let zero_owner = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
+        let res = client.try_register(&zero_owner, &tag(&env, "test"));
+        assert_eq!(res, Err(Ok(RegistryError::InvalidAddress)));
+    }
+
+    #[test]
+    fn rejects_zero_address_in_transfer() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        let zero_addr = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
+        client.register(&owner, &tag(&env, "test"));
+        let res = client.try_transfer(&owner, &zero_addr, &tag(&env, "test"));
+        assert_eq!(res, Err(Ok(RegistryError::InvalidAddress)));
+    }
+
+    #[test]
+    fn rejects_zero_address_in_wallet() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        let zero_wallet = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
+        client.register(&owner, &tag(&env, "test"));
+        let res = client.try_associate_wallet(&owner, &tag(&env, "test"), &zero_wallet);
+        assert_eq!(res, Err(Ok(RegistryError::InvalidAddress)));
+    }
+
+    #[test]
+    fn case_insensitive_tag_resolution() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        client.register(&owner, &tag(&env, "Alice"));
+        assert_eq!(client.resolve(&tag(&env, "alice")), owner);
+        assert_eq!(client.resolve(&tag(&env, "ALICE")), owner);
+        assert_eq!(client.resolve(&tag(&env, "AlIcE")), owner);
+    }
+
+    #[test]
+    fn whitespace_normalization() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        client.register(&owner, &tag(&env, "  alice  "));
+        assert_eq!(client.resolve(&tag(&env, "alice")), owner);
+    }
+
+    #[test]
+    fn at_prefix_stripped() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        client.register(&owner, &tag(&env, "@alice"));
+        assert_eq!(client.resolve(&tag(&env, "alice")), owner);
+    }
+
+    #[test]
+    fn boundary_tag_lengths() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+
+        // Minimum valid tag (1 char)
+        client.register(&owner, &tag(&env, "a"));
+        assert_eq!(client.resolve(&tag(&env, "a")), owner);
+
+        // Maximum valid tag (32 chars for Symbol)
+        let max_tag = "a".repeat(32);
+        let owner2 = Address::generate(&env);
+        client.register(&owner2, &tag(&env, &max_tag));
+        assert_eq!(client.resolve(&tag(&env, &max_tag)), owner2);
+    }
+
+    #[test]
+    fn duplicate_tag_with_different_case_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        client.register(&owner, &tag(&env, "alice"));
+        let res = client.try_register(&owner, &tag(&env, "ALICE"));
+        assert_eq!(res, Err(Ok(RegistryError::TagAlreadyRegistered)));
+    }
+
+    #[test]
+    fn all_registry_error_variants_have_stable_codes() {
+        assert_eq!(RegistryError::InvalidTag as u32, 1);
+        assert_eq!(RegistryError::TagAlreadyRegistered as u32, 2);
+        assert_eq!(RegistryError::TagNotRegistered as u32, 3);
+        assert_eq!(RegistryError::NotTagOwner as u32, 4);
+        assert_eq!(RegistryError::InvalidAddress as u32, 5);
+    }
+
+    #[test]
+    fn all_registry_error_variants_are_unique() {
+        let codes = vec![
+            RegistryError::InvalidTag as u32,
+            RegistryError::TagAlreadyRegistered as u32,
+            RegistryError::TagNotRegistered as u32,
+            RegistryError::NotTagOwner as u32,
+            RegistryError::InvalidAddress as u32,
+        ];
+        let mut sorted = codes.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), codes.len());
+    }
 }
