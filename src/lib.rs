@@ -9,6 +9,99 @@
 
 use std::fmt;
 
+/// Errors produced by the validation helpers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationError {
+    /// A StrKey value was empty.
+    EmptyStrKey,
+    /// A StrKey value had an unexpected version byte / prefix.
+    InvalidStrKeyPrefix { expected: char, found: char },
+    /// A StrKey value contained characters outside the base32 alphabet.
+    InvalidStrKeyEncoding,
+    /// A StrKey value had an invalid length for its type.
+    InvalidStrKeyLength { expected: usize, found: usize },
+    /// A StrKey value failed its CRC16 checksum.
+    InvalidStrKeyChecksum,
+    /// An asset code was empty or longer than 12 characters.
+    InvalidAssetCodeLength { found: usize },
+    /// An asset code contained non-alphanumeric characters.
+    InvalidAssetCodeCharacters,
+    /// A native asset was supplied where an issued asset was required.
+    NativeAssetNotAllowed,
+    /// An issued asset was supplied where the native asset was required.
+    IssuedAssetNotAllowed,
+    /// A contract token was supplied where a classic asset was required.
+    TokenContractNotAllowed,
+    /// The network passphrase was empty.
+    EmptyNetworkPassphrase,
+    /// The network passphrase did not match the expected network.
+    NetworkMismatch { expected: String, found: String },
+    /// Used for backwards compatibility in StrKey parsing.
+    Empty,
+    /// Used for backwards compatibility in StrKey parsing.
+    WrongStrKeyType { expected: StrKeyType, found: StrKeyType },
+    /// Used for backwards compatibility in StrKey parsing.
+    InvalidLength { expected: usize, found: usize },
+    /// Used for backwards compatibility in StrKey parsing.
+    InvalidChecksum,
+    /// Used for backwards compatibility in StrKey parsing.
+    InvalidBase32,
+    /// Used for backwards compatibility in Asset validation.
+    InvalidAssetCode,
+    /// Used for backwards compatibility in Asset validation.
+    NativeTokenConfusion,
+}
+
+impl fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValidationError::EmptyStrKey => write!(f, "StrKey value is empty"),
+            ValidationError::InvalidStrKeyPrefix { expected, found } => {
+                write!(f, "invalid StrKey prefix: expected '{expected}', found '{found}'")
+            }
+            ValidationError::InvalidStrKeyEncoding => {
+                write!(f, "StrKey value contains invalid base32 characters")
+            }
+            ValidationError::InvalidStrKeyLength { expected, found } => {
+                write!(f, "invalid StrKey length: expected {expected}, found {found}")
+            }
+            ValidationError::InvalidStrKeyChecksum => write!(f, "StrKey checksum mismatch"),
+            ValidationError::InvalidAssetCodeLength { found } => {
+                write!(f, "invalid asset code length: found {found}")
+            }
+            ValidationError::InvalidAssetCodeCharacters => {
+                write!(f, "asset code contains non-alphanumeric characters")
+            }
+            ValidationError::NativeAssetNotAllowed => {
+                write!(f, "native asset not allowed")
+            }
+            ValidationError::IssuedAssetNotAllowed => {
+                write!(f, "issued asset not allowed")
+            }
+            ValidationError::TokenContractNotAllowed => {
+                write!(f, "token contract not allowed")
+            }
+            ValidationError::EmptyNetworkPassphrase => write!(f, "network passphrase is empty"),
+            ValidationError::NetworkMismatch { expected, found } => {
+                write!(f, "network mismatch: expected '{expected}', found '{found}'")
+            }
+            ValidationError::Empty => write!(f, "value is empty"),
+            ValidationError::WrongStrKeyType { expected, found } => {
+                write!(f, "wrong StrKey type: expected {expected:?}, found {found:?}")
+            }
+            ValidationError::InvalidLength { expected, found } => {
+                write!(f, "invalid length: expected {expected}, found {found}")
+            }
+            ValidationError::InvalidChecksum => write!(f, "invalid checksum"),
+            ValidationError::InvalidBase32 => write!(f, "invalid base32 character"),
+            ValidationError::InvalidAssetCode => write!(f, "invalid asset code"),
+            ValidationError::NativeTokenConfusion => write!(f, "native token confusion"),
+        }
+    }
+}
+
+impl std::error::Error for ValidationError {}
+
 /// Placeholder for a signed payload produced by a [`Signer`].
 ///
 /// The inner bytes are intentionally opaque and redacted in all formatting
@@ -66,24 +159,6 @@ impl fmt::Display for SignerError {
             SignerError::SecretManager(msg) => write!(f, "secret manager error: {msg}"),
             SignerError::InvalidSecret(name) => {
                 write!(f, "invalid secret for signer: {name}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for SignerError {}
-
-/// Secure source of signer material.
-///
-/// Implementations must only read from trusted locations such as environment
-/// variables or a secret-manager backend. Signer material must never be
-/// supplied through request payloads.
-pub trait SecretSource {
-    /// Fetch the secret material for `name`.
-    fn get(&self, name: &str) -> Result<String, SignerError>;
-}
-
-/// Reads signer material from environment
             }
         }
     }
@@ -192,7 +267,7 @@ impl SignerRole {
 }
 
 /// The kind of StrKey encoded value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StrKeyType {
     /// `G...` account ID (ed25519 public key).
     AccountId,
@@ -227,9 +302,6 @@ impl StrKeyType {
             StrKeyType::AccountId => 'G',
             StrKeyType::ContractId => 'C',
             StrKeyType::MuxedAccount => 'M',
-        }
-    }
-}
         }
     }
 }
@@ -605,45 +677,6 @@ fn crc16_xmodem(data: &[u8]) -> u16 {
     crc
 }
 
-/// The type of a StrKey, including its version byte, payload length, and prefix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum StrKeyType {
-    AccountId,
-    ContractId,
-    MuxedAccount,
-}
-
-impl StrKeyType {
-    /// The version byte of the encoded form.
-    pub fn version_byte(self) -> u8 {
-        match self {
-            StrKeyType::AccountId => 6 << 3,
-            StrKeyType::ContractId => 2 << 3,
-            StrKeyType::MuxedAccount => 12 << 3,
-        }
-    }
-
-    /// The length of the payload (excluding version byte and checksum).
-    pub fn payload_len(self) -> usize {
-        match self {
-            StrKeyType::AccountId => 32,
-            StrKeyType::ContractId => 32,
-            StrKeyType::MuxedAccount => 40,
-        }
-    }
-
-    /// The leading character of the encoded form.
-    pub fn prefix(self) -> char {
-        match self {
-            StrKeyType::AccountId => 'G',
-            StrKeyType::ContractId => 'C',
-            StrKeyType::MuxedAccount => 'M',
-        }
-    }
-}
-
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -759,6 +792,5 @@ mod tests {
         let network = Network::testnet();
         assert!(ContractCall::new("GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", network.clone()).is_err());
         assert!(ContractCall::new("", network).is_err());
-    }
     }
 }
