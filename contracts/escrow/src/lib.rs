@@ -1,6 +1,52 @@
 #![no_std]
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env, String};
+//! # Escrow Contract
+//!
+//! A minimal single-escrow Soroban contract that holds funds for a
+//! `creator`/`beneficiary` pair until they are released or the escrow is
+//! cancelled.
+//!
+//! ## Deployment & initialization
+//!
+//! The contract has no constructor: deploying the WASM and invoking `create`
+//! is the initialization step. `create` takes the escrow `id` (a `u32` chosen
+//! by the caller and used as the storage key), the `creator`, `beneficiary`,
+//! and `token` addresses, and a strictly positive `amount` (`i128`). The
+//! `creator` must authorize the call (`creator.require_auth()`). A second
+//! `create` for the same `id` fails with [`Error::AlreadyInitialized`].
+//!
+//! ## State machine
+//!
+//! ```text
+//!            create                fund
+//!   (none) ---------> Created -----------> Funded
+//!                       |                    |
+//!                  cancel|                    | (release)
+//!                       v                    v
+//!                   Cancelled            Released
+//! ```
+//!
+//! * `Created` -> `Funded` via [`EscrowContract::fund`].
+//! * `Created` -> `Cancelled` via [`EscrowContract::cancel`].
+//! * `Funded` -> `Released` (release path).
+//! * `Cancelled` and `Released` are terminal; any further operation on a
+//!   cancelled escrow fails with [`Error::AlreadyCancelled`].
+//!
+//! ## Authorization
+//!
+//! * `create` - requires `creator` auth.
+//! * `cancel` - requires `creator` auth; only valid in `Created`.
+//! * `fund` - requires `funder` auth.
+//! * `extend_deadline` - requires `creator` auth; only valid in `Funded`.
+//! * `get` - read-only, no auth.
+//!
+//! ## Events
+//!
+//! Every lifecycle event is published with topics `(name, EVENT_VERSION)` and
+//! data `(id, amount)`. Names are `created`, `funded`, and `refund` (emitted on
+//! cancellation). Consumers should key off `EVENT_VERSION` to decode payloads.
+
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, String, Symbol};
 
 /// Maximum byte length of escrow metadata accepted by [`EscrowContract::create`].
 ///
@@ -16,6 +62,54 @@ pub const MAX_METADATA_LEN: u32 = 128;
 pub const ESCROW_TTL_THRESHOLD: u32 = 100;
 pub const ESCROW_TTL_EXTEND_TO: u32 = 1000;
 
+/// Storage keys used by the escrow contract.
+///
+/// Only a single `State` entry is written per escrow, keeping storage growth
+/// bounded to one persistent record per escrow lifecycle.
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    State,
+}
+
+/// Lifecycle states for an escrow.
+///
+/// `Created` is the documented pre-funding state. An escrow in this state has
+/// not received any funds yet, so it can be cancelled by its creator.
+/// `Released` and `Cancelled` are terminal: once reached, no further state
+/// transitions are permitted and the escrowed balance is always zero.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EscrowState {
+    Created,
+    Funded,
+    Released,
+    Cancelled,
+}
+
+/// Persisted escrow record.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Escrow {
+    pub creator: Address,
+    pub beneficiary: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub state: EscrowState,
+}
+
+/// Maximum number of times a single escrow deadline may be extended.
+pub const MAX_EXTENSIONS: u32 = 3;
+
+/// Maximum duration (in seconds) of a single extension.
+pub const MAX_EXTENSION_DURATION: u64 = 30 * 24 * 60 * 60;
+
+/// Schema version emitted with every lifecycle event.
+///
+/// Consumers should key off this version to decode event payloads. Bump it
+/// only when the event schema changes in a backwards-incompatible way.
+pub const EVENT_VERSION: u32 = 1;
+
 /// Errors returned by the escrow contract.
 ///
 /// `AssetMismatch` (code 4) is returned when a deposit or payout is attempted
@@ -26,17 +120,27 @@ pub const ESCROW_TTL_EXTEND_TO: u32 = 1000;
 /// [`MAX_METADATA_LEN`] bytes. `MetadataInvalidChar` (code 7) is returned when
 /// the metadata contains a byte outside the supported character policy (see
 /// [`is_supported_metadata`]). Neither case mutates state.
+///
+/// * `AlreadyInitialized` (1) - escrow already exists for this id.
+/// * `NotFound` (2) - no escrow exists for this id.
+/// * `InvalidAmount` (3) - amount must be strictly positive.
+/// * `InvalidState` (4) - operation not allowed in the current state.
+/// * `AlreadyCancelled` (5) - escrow was already cancelled (replay rejected).
+/// * `ExtensionLimitReached` (6) - maximum extension count already reached.
+/// * `InvalidExtension` (7) - extension duration is zero or exceeds the maximum.
+/// * `DeadlineOverflow` (8) - computing the new deadline would overflow.
 #[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum Error {
     AlreadyInitialized = 1,
-    NotInitialized = 2,
-    Unauthorized = 3,
-    AssetMismatch = 4,
-    InvalidAmount = 5,
-    MetadataTooLong = 6,
-    MetadataInvalidChar = 7,
+    NotFound = 2,
+    InvalidAmount = 3,
+    InvalidState = 4,
+    AlreadyCancelled = 5,
+    ExtensionLimitReached = 6,
+    InvalidExtension = 7,
+    DeadlineOverflow = 8,
 }
 
 /// Supported character policy for escrow metadata: printable ASCII only
@@ -53,15 +157,18 @@ fn is_supported_metadata(metadata: &String) -> bool {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Escrow {
-    pub depositor: Address,
-    pub beneficiary: Address,
-    /// Asset contract address bound at creation; immutable for the escrow's lifetime.
-    pub asset: Address,
-    pub amount: i128,
-    pub released: bool,
-    /// Optional human-readable metadata, bounded by [`MAX_METADATA_LEN`].
-    pub metadata: String,
+pub enum DataKey {
+    Escrow(u32),
+}
+
+/// Emit a schema-versioned lifecycle event.
+///
+/// Topics are `(event_name, version)` so consumers can filter by event name
+/// and rely on a stable schema version. The escrow `id` and `amount` are
+/// included in the data payload for every event.
+fn emit_lifecycle(env: &Env, name: Symbol, id: u32, amount: i128) {
+    env.events()
+        .publish((name, EVENT_VERSION), (id, amount));
 }
 
 #[contract]
@@ -256,4 +363,22 @@ mod test {
         let (_env, client, _depositor, _beneficiary, _asset_id, _admin) = setup();
         assert_eq!(client.try_get_escrow(), Err(Ok(Error::NotInitialized)));
     }
+}
+
+/// Emit a schema-versioned lifecycle event.
+///
+/// Topics are `(event_name, version)` so consumers can filter by event name
+/// and rely on a stable schema version. The escrow `id` and `amount` are
+/// included in the data payload for every event.
+fn emit_lifecycle(env: &Env, name: Symbol, id: u32, amount: i128) {
+    env.events()
+        .publish((name, EVENT_VERSION), (id, amount));
+}
+
+#[contract]
+pub struct EscrowContract;
+
+#[contractimpl]
+impl EscrowContract {
+
 }
