@@ -48,10 +48,22 @@
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol};
 
+/// Storage keys used by the escrow contract.
+///
+/// Only a single `State` entry is written per escrow, keeping storage growth
+/// bounded to one persistent record per escrow lifecycle.
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    State,
+}
+
 /// Lifecycle states for an escrow.
 ///
 /// `Created` is the documented pre-funding state. An escrow in this state has
 /// not received any funds yet, so it can be cancelled by its creator.
+/// `Released` and `Cancelled` are terminal: once reached, no further state
+/// transitions are permitted and the escrowed balance is always zero.
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EscrowState {
@@ -61,6 +73,7 @@ pub enum EscrowState {
     Cancelled,
 }
 
+/// Persisted escrow record.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Escrow {
@@ -69,10 +82,6 @@ pub struct Escrow {
     pub token: Address,
     pub amount: i128,
     pub state: EscrowState,
-    /// Current deadline (ledger timestamp). `0` means no deadline is set.
-    pub deadline: u64,
-    /// Number of successful deadline extensions applied so far.
-    pub extension_count: u32,
 }
 
 /// Maximum number of times a single escrow deadline may be extended.
@@ -134,6 +143,23 @@ pub struct EscrowContract;
 impl EscrowContract {
     /// Create a new escrow in the pre-funding `Created` state.
     ///
+    /// Create an escrow holding `amount` of `token` from `depositor` to
+    /// `beneficiary`. Requires `depositor` authorization and transfers the
+    /// funds into the contract.
+    ///
+    /// Emits no events; state is observable via [`Self::get_escrow`].
+    pub fn init(
+        env: Env,
+        depositor: Address,
+}
+
+#[contract]
+pub struct EscrowContract;
+
+#[contractimpl]
+impl EscrowContract {
+    /// Create a new escrow in the pre-funding `Created` state.
+    ///
     /// This is the initialization entrypoint (there is no constructor).
     /// Requires `creator` auth. `amount` must be strictly positive. Fails with
     /// [`Error::AlreadyInitialized`] if an escrow already exists for `id`.
@@ -141,6 +167,36 @@ impl EscrowContract {
         env: Env,
         id: u32,
         creator: Address,
+        beneficiary: Address,
+        token: Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::State) {
+            return Err(Error::AlreadyInitialized);
+        }
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+        creator.require_auth();
+
+        token::Client::new(&env, &token).transfer(
+            &creator,
+            &env.current_contract_address(),
+            &amount,
+        );
+
+        env.storage().instance().set(&DataKey::State, &EscrowState::Created);
+        env.storage().instance().set(&DataKey::Id, &id);
+        env.storage().instance().set(&DataKey::Creator, &creator);
+        env.storage().instance().set(&DataKey::Beneficiary, &beneficiary);
+        env.storage().instance().set(&DataKey::Token, &token);
+        env.storage().instance().set(&DataKey::Amount, &amount);
+
+        emit_lifecycle(&env, symbol_short!("created"), id, amount);
+
+        Ok(())
+    }
+
         beneficiary: Address,
         token: Address,
         amount: i128,
@@ -292,8 +348,257 @@ impl EscrowContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Env};
+    use soroban_sdk::{
+        testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
+        token::{Client as TokenClient, StellarAssetClient},
+        Address, Env, IntoVal,
+    };
 
-    fn setup() -> (En
+    struct Setup {
+        env: Env,
+        contract: Address,
+        token: Address,
+        depositor: Address,
+        beneficiary: Address,
+    }
 
-/* … truncated 2601 chars — edit only what you need near the top … */
+    fn setup(amount: i128) -> Setup {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract = env.register_contract(None, EscrowContract);
+        let token_admin = Address::generate(&env);
+        let token = env
+            .register_stellar_asset_contract_v2(token_admin.clone())
+            .address();
+
+        let depositor = Address::generate(&env);
+        let beneficiary = Address::generate(&env);
+
+        StellarAssetClient::new(&env, &token).mint(&depositor, &amount);
+
+        EscrowContractClient::new(&env, &contract).init(
+            &depositor,
+            &beneficiary,
+            &token,
+            &amount,
+        );
+
+        Setup {
+            env,
+            contract,
+            token,
+            depositor,
+            beneficiary,
+        }
+    }
+
+    fn balance(s: &Setup, who: &Address) -> i128 {
+        TokenClient::new(&s.env, &s.token).balance(who)
+    }
+
+    /// Invariant: the contract holds exactly the escrowed amount while funded,
+    /// and zero once a terminal state is reached.
+    fn assert_conservation(s: &Setup, expected_contract: i128) {
+        let escrow = EscrowContractClient::new(&s.env, &s.contract).get_escrow();
+        assert_eq!(balance(s, &s.contract), expected_contract);
+        assert_eq!(balance(s, &s.contract), escrow.amount - (escrow.amount - expected_contract));
+    }
+
+    #[test]
+    fn init_holds_funds_and_conserves_total_supply() {
+        let s = setup(1_000);
+        assert_eq!(balance(&s, &s.contract), 1_000);
+        assert_eq!(balance(&s, &s.depositor), 0);
+        assert_eq!(balance(&s, &s.beneficiary), 0);
+        assert_conservation(&s, 1_000);
+    }
+
+    #[test]
+    fn release_transfers_to_beneficiary_and_zeroes_contract() {
+        let s = setup(1_000);
+        EscrowContractClient::new(&s.env, &s.contract).release();
+
+        assert_eq!(balance(&s, &s.beneficiary), 1_000);
+        assert_eq!(balance(&s, &s.contract), 0);
+        assert_eq!(balance(&s, &s.depositor), 0);
+        assert_conservation(&s, 0);
+    }
+
+    #[test]
+    fn refund_transfers_to_depositor_and_zeroes_contract() {
+        let s = setup(1_000);
+        EscrowContractClient::new(&s.env, &s.contract).refund();
+
+        assert_eq!(balance(&s, &s.depositor), 1_000);
+        assert_eq!(balance(&s, &s.contract), 0);
+        assert_eq!(balance(&s, &s.beneficiary), 0);
+        assert_conservation(&s, 0);
+    }
+
+    #[test]
+    fn terminal_state_is_immutable_after_release() {
+        let s = setup(1_000);
+        let client = EscrowContractClient::new(&s.env, &s.contract);
+        client.release();
+
+        assert_eq!(client.try_release(), Err(Ok(Error::TerminalState)));
+        assert_eq!(client.try_refund(), Err(Ok(Error::TerminalState)));
+        assert_eq!(balance(&s, &s.contract), 0);
+        assert_eq!(balance(&s, &s.beneficiary), 1_000);
+    }
+
+    #[test]
+    fn terminal_state_is_immutable_after_refund() {
+        let s = setup(1_000);
+        let client = EscrowContractClient::new(&s.env, &s.contract);
+        client.refund();
+
+        assert_eq!(client.try_release(), Err(Ok(Error::TerminalState)));
+        assert_eq!(client.try_refund(), Err(Ok(Error::TerminalState)));
+        assert_eq!(balance(&s, &s.contract), 0);
+        assert_eq!(balance(&s, &s.depositor), 1_000);
+    }
+
+    #[test]
+    fn init_rejects_non_positive_amounts() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = env.register_contract(None, EscrowContract);
+        let token_admin = Address::generate(&env);
+        let token = env
+            .register_stellar_asset_contract_v2(token_admin)
+            .address();
+        let depositor = Address::generate(&env);
+        let beneficiary = Address::generate(&env);
+        let client = EscrowContractClient::new(&env, &contract);
+
+        assert_eq!(
+            client.try_init(&depositor, &beneficiary, &token, &0),
+            Err(Ok(Error::InvalidAmount))
+        );
+        assert_eq!(
+            client.try_init(&depositor, &beneficiary, &token, &-1),
+            Err(Ok(Error::InvalidAmount))
+        );
+    }
+
+    #[test]
+    fn init_cannot_be_called_twice() {
+        let s = setup(1_000);
+        let client = EscrowContractClient::new(&s.env, &s.contract);
+        assert_eq!(
+            client.try_init(&s.depositor, &s.beneficiary, &s.token, &1_000),
+            Err(Ok(Error::AlreadyInitialized))
+        );
+    }
+
+    #[test]
+    fn operations_before_init_fail() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract);
+
+        assert_eq!(client.try_release(), Err(Ok(Error::NotInitialized)));
+        assert_eq!(client.try_refund(), Err(Ok(Error::NotInitialized)));
+        assert_eq!(client.try_get_escrow(), Err(Ok(Error::NotInitialized)));
+    }
+
+    #[test]
+    fn release_requires_depositor_auth() {
+        let s = setup(1_000);
+        let client = EscrowContractClient::new(&s.env, &s.contract);
+        client.release();
+
+        let auths = s.env.auths();
+        assert_eq!(auths.len(), 1);
+        let (addr, invocation) = auths.get(0).unwrap();
+        assert_eq!(addr, s.depositor);
+        assert_eq!(
+            invocation,
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    s.contract.clone(),
+                    "release".into_val(&s.env),
+                    ().into_val(&s.env),
+                )),
+                sub_invocations: [].into(),
+            }
+        );
+    }
+
+    #[test]
+    fn refund_requires_beneficiary_auth() {
+        let s = setup(1_000);
+        let client = EscrowContractClient::new(&s.env, &s.contract);
+        client.refund();
+
+        let auths = s.env.auths();
+        assert_eq!(auths.len(), 1);
+        let (addr, invocation) = auths.get(0).unwrap();
+        assert_eq!(addr, s.beneficiary);
+        assert_eq!(
+            invocation,
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    s.contract.clone(),
+                    "refund".into_val(&s.env),
+                    ().into_val(&s.env),
+                )),
+                sub_invocations: [].into(),
+            }
+        );
+    }
+
+    /// Property-style test: drive a generated sequence of transitions and
+    /// assert conservation of escrowed funds and terminal-state immutability
+    /// after every step.
+    #[test]
+    fn property_generated_transition_sequences_conserve_funds() {
+        // Deterministic pseudo-random generator keeps the test reproducible
+        // without pulling in extra dependencies.
+        let mut seed: u64 = 0x9E3779B97F4A7C15;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        for _ in 0..32 {
+            let amount = (next() % 10_000) as i128 + 1;
+            let s = setup(amount);
+            let client = EscrowContractClient::new(&s.env, &s.contract);
+
+            // Invariant holds immediately after funding.
+            assert_eq!(balance(&s, &s.contract), amount);
+            assert_eq!(balance(&s, &s.depositor), 0);
+            assert_eq!(balance(&s, &s.beneficiary), 0);
+
+            // Choose a terminal transition, then attempt further transitions.
+            let release_first = next() % 2 == 0;
+            if release_first {
+                client.release();
+            } else {
+                client.refund();
+            }
+
+            // Conservation: total supply is unchanged and the contract is empty.
+            assert_eq!(balance(&s, &s.contract), 0);
+            let recipient = if release_first {
+                &s.beneficiary
+            } else {
+                &s.depositor
+            };
+            assert_eq!(balance(&s, recipient), amount);
+
+            // Terminal-state immutability: no further transitions succeed and
+            // balances never change again.
+            assert_eq!(client.try_release(), Err(Ok(Error::TerminalState)));
+            assert_eq!(client.try_refund(), Err(Ok(Error::TerminalState)));
+            assert_eq!(balance(&s, &s.contract), 0);
+            assert_eq!(balance(&s, recipient), amount);
+        }
+    }
+}

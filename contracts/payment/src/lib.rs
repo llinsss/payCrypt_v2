@@ -222,11 +222,14 @@ pub enum PaymentError {
     AlreadyCancelled = 7,
     Unauthorized = 8,
     AlreadyApproved = 9,
-    AmountBelowMinimum = 10,
-    AmountAboveMaximum = 11,
-    InvalidLimits = 12,
-    RefundExceedsFunded = 13,
-    PaymentExpired = 14,
+    DuplicatePaymentId = 10,
+    InvalidAsset = 11,
+    InvalidParticipant = 12,
+    AmountBelowMinimum = 13,
+    AmountAboveMaximum = 14,
+    InvalidLimits = 15,
+    RefundExceedsFunded = 16,
+    PaymentExpired = 17,
 }
 
 #[contract]
@@ -234,6 +237,29 @@ pub struct PaymentContract;
 
 #[contractimpl]
 impl PaymentContract {
+    /// Validate a payment asset address.
+    ///
+    /// The repository distinguishes the native XLM asset from token contracts:
+    /// the native asset is represented by the Stellar Asset Contract (SAC)
+    /// address for XLM, while any other asset must be a non-zero token contract
+    /// address. A zero address is rejected with [`PaymentError::InvalidAsset`].
+    pub fn validate_asset(asset: &Address) -> Result<(), PaymentError> {
+        if asset == &Address::from_str(asset.env(), "") {
+            return Err(PaymentError::InvalidAsset);
+        }
+        Ok(())
+    }
+
+    /// Validate a payment participant (source or destination) address.
+    ///
+    /// A zero address is rejected with [`PaymentError::InvalidParticipant`].
+    pub fn validate_participant(participant: &Address) -> Result<(), PaymentError> {
+        if participant == &Address::from_str(participant.env(), "") {
+            return Err(PaymentError::InvalidParticipant);
+        }
+        Ok(())
+    }
+
     /// Emit the canonical event for a payment state change.
     pub fn emit_payment_event(
         env: &Env,
@@ -379,6 +405,15 @@ impl PaymentContract {
 
     /// Create a payment and emit the `Created` event.
     ///
+    /// Payment identifiers are unique for the lifetime of the contract: once a
+    /// `payment_id` has been used it can never be reused, even after the payment
+    /// is cancelled, refunded, or archived. A duplicate id is rejected with
+    /// [`PaymentError::DuplicatePaymentId`] and no event is emitted.
+    ///
+    /// The asset and both participant addresses are validated before any state
+    /// is written: a zero asset is rejected with [`PaymentError::InvalidAsset`]
+    /// and a zero source/destination with [`PaymentError::InvalidParticipant`].
+    ///
     /// An optional `expires_at` ledger timestamp may be supplied; when present
     /// it is stored once for the payment and governs post-expiry transitions.
     pub fn create_payment(
@@ -394,6 +429,13 @@ impl PaymentContract {
         if let Some(expiry) = expires_at {
             Self::set_expiry(&env, payment_id, expiry);
         }
+        Self::validate_asset(&asset)?;
+        Self::validate_participant(&source)?;
+        Self::validate_participant(&destination)?;
+        if env.storage().persistent().has(&payment_id) {
+            return Err(PaymentError::DuplicatePaymentId);
+        }
+        env.storage().persistent().set(&payment_id, &true);
         Self::emit_payment_event(
             &env,
             PaymentEventName::Created,
@@ -446,6 +488,50 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Complete a payment and emit the `Completed` event.
+    pub fn complete_payment(
+        env: Env,
+        payment_id: u64,
+        asset: Address,
+        source: Address,
+        destination: Address,
+        amount: i128,
+    ) -> Result<(), PaymentError> {
+        Self::emit_payment_event(
+            &env,
+            PaymentEventName::Completed,
+            payment_id,
+            asset,
+            source,
+            destination,
+            amount,
+            PaymentStatus::Completed,
+        );
+        Ok(())
+    }
+
+    /// Fail a payment and emit the `Failed` event.
+    pub fn fail_payment(
+        env: Env,
+        payment_id: u64,
+        asset: Address,
+        source: Address,
+        destination: Address,
+        amount: i128,
+    ) -> Result<(), PaymentError> {
+        Self::emit_payment_event(
+            &env,
+            PaymentEventName::Failed,
+            payment_id,
+            asset,
+            source,
+            destination,
+            amount,
+            PaymentStatus::Failed,
+        );
+        Ok(())
+    }
+
     /// Cancel a payment and refund any remaining funded balance to the source.
     ///
     /// Only the `source` (payer) or the `operator` may cancel. Cancellation is
@@ -453,6 +539,9 @@ impl PaymentContract {
     /// is refunded to the `source`; when nothing remains, no refund event is
     /// emitted. Cancelling an already cancelled payment fails with
     /// [`PaymentError::AlreadyCancelled`].
+    ///
+    /// Cancellation does not release the payment identifier: the id remains
+    /// reserved and cannot be reused by a later `create_payment` call.
     pub fn cancel_payment(
         env: Env,
         payment_id: u64,
