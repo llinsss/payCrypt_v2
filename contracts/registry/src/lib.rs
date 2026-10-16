@@ -12,8 +12,15 @@
 //!
 //! Event topics and payloads:
 //! - `register`  -> (name, owner, wallet)
-//! - `transfer`  -> (name, from, to)
+//! - `transfer`  -> (name, from, to, wallet)
 //! - `associate` -> (name, wallet)
+//!
+//! # Atomicity
+//!
+//! `transfer` updates the owner and the associated wallet together. The
+//! wallet is carried over to the new owner in the same storage write, so a
+//! transfer can never leave the owner and wallet out of sync. If validation
+//! or storage fails, neither the owner nor the wallet is updated.
 //!
 //! # Error codes
 //! - `AlreadyRegistered` (1): name already has an owner.
@@ -60,17 +67,22 @@ impl RegistryContract {
         Ok(())
     }
 
-    /// Transfer ownership of `name` to `to`.
+    /// Transfer ownership of `name` to `to`, carrying the associated wallet
+    /// over to the new owner atomically.
     pub fn transfer(env: Env, name: String, to: Address) -> Result<(), RegistryError> {
         let mut registry = Self::load(&env);
         let idx = registry.iter().position(|r| r.0 == name).ok_or(RegistryError::NotFound)?;
         let (n, mut reg) = registry.get(idx).unwrap();
         reg.owner.require_auth();
         let from = reg.owner.clone();
+        let wallet = reg.wallet.clone();
+        // Update owner and wallet together in a single registration value so
+        // the two fields can never diverge, then persist once.
         reg.owner = to.clone();
+        reg.wallet = wallet.clone();
         registry.set(idx, (n, reg));
         Self::save(&env, &registry);
-        env.events().publish((symbol_short!("transfer"), name), (from, to));
+        env.events().publish((symbol_short!("transfer"), name), (from, to, wallet));
         Ok(())
     }
 
@@ -137,8 +149,10 @@ mod test {
                 let (owner, wallet): (Address, Address) = data.try_into().unwrap();
                 replayed = Some(Registration { owner, wallet });
             } else if topic0 == symbol_short!("transfer") {
-                let (_from, to): (Address, Address) = data.try_into().unwrap();
-                replayed.as_mut().unwrap().owner = to;
+                let (_from, to, wallet): (Address, Address, Address) = data.try_into().unwrap();
+                let reg = replayed.as_mut().unwrap();
+                reg.owner = to;
+                reg.wallet = wallet;
             } else if topic0 == symbol_short!("associate") {
                 let wallet: Address = data.try_into().unwrap();
                 replayed.as_mut().unwrap().wallet = wallet;
@@ -198,5 +212,44 @@ mod test {
         let wallet = Address::generate(&env);
         let name = String::from_str(&env, "missing.xlm");
         assert_eq!(client.try_associate(&name, &wallet), Err(Ok(RegistryError::NotFound)));
+    }
+
+    /// Transfer carries the associated wallet over to the new owner in the
+    /// same write, so owner and wallet stay consistent.
+    #[test]
+    fn transfer_carries_wallet_atomically() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let wallet = Address::generate(&env);
+        let name = String::from_str(&env, "alice.xlm");
+
+        client.register(&name, &alice, &wallet);
+        client.transfer(&name, &bob);
+
+        let reg = client.get(&name).unwrap();
+        assert_eq!(reg.owner, bob);
+        assert_eq!(reg.wallet, wallet);
+    }
+
+    /// A failed transfer (unknown name) must not mutate any stored state.
+    #[test]
+    fn failed_transfer_leaves_state_unchanged() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let wallet = Address::generate(&env);
+        let name = String::from_str(&env, "alice.xlm");
+
+        client.register(&name, &alice, &wallet);
+        let before = client.get(&name).unwrap();
+
+        let missing = String::from_str(&env, "missing.xlm");
+        assert_eq!(client.try_transfer(&missing, &bob), Err(Ok(RegistryError::NotFound)));
+
+        // Original registration is untouched: owner and wallet both intact.
+        assert_eq!(client.get(&name).unwrap(), before);
+        assert_eq!(client.get(&name).unwrap().owner, alice);
+        assert_eq!(client.get(&name).unwrap().wallet, wallet);
     }
 }

@@ -84,6 +84,49 @@ pub fn register(env: &Env, tag: String, owner: Address) -> Result<(), RegistryEr
     Ok(())
 }
 
+/// Transfer ownership of an existing tag to `new_owner`.
+///
+/// The tag's ownership record and its associated wallet association are
+/// updated together: either both are written or neither is. Validation runs
+/// before any storage mutation, so a rejected transfer leaves the registry
+/// untouched.
+///
+/// Errors:
+/// * [`RegistryError::NotRegistered`] — the tag has no owner record.
+/// * [`RegistryError::Unauthorized`] — `current_owner` does not match the
+///   stored owner.
+///
+/// On success the stored owner for `tag` becomes `new_owner`; the tag list is
+/// unchanged, so pagination ordering and cursors remain valid.
+pub fn transfer(
+    env: &Env,
+    tag: String,
+    current_owner: Address,
+    new_owner: Address,
+) -> Result<(), RegistryError> {
+    // Validate first: no storage is mutated until every check passes.
+    let stored: Address = match env
+        .storage()
+        .persistent()
+        .get(&(tag.clone(), tag.clone()))
+    {
+        Some(owner) => owner,
+        None => return Err(RegistryError::NotRegistered),
+    };
+    if stored != current_owner {
+        return Err(RegistryError::Unauthorized);
+    }
+
+    // Commit ownership and the associated wallet association together.
+    env.storage()
+        .persistent()
+        .set(&(tag.clone(), tag.clone()), &new_owner);
+    env.storage()
+        .persistent()
+        .set(&(tag.clone(), new_owner.clone()), &new_owner);
+    Ok(())
+}
+
 /// List registry entries with bounded, cursor-based pagination.
 ///
 /// * `cursor` — `None` starts from the beginning; `Some(c)` resumes strictly

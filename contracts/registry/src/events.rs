@@ -13,6 +13,15 @@
 //! `(owner, wallet)` mapping that the contract keeps in storage. The replay
 //! helper is intentionally bounded: it performs a single pass over the supplied
 //! events and never allocates beyond the reconstructed map.
+//!
+//! # Atomic transfer
+//!
+//! Ownership transfer and wallet association are committed together: the
+//! contract emits a single [`RegistryEvent::Transferred`] event whose payload
+//! carries the new `wallet` alongside the new owner. This keeps the on-chain
+//! `(owner, wallet)` pair consistent — a transfer that fails validation or
+//! storage never emits an event, so replay can never observe a half-applied
+//! transfer. The `xfer` topic payload is therefore `(name_hash, wallet)`.
 
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec};
 
@@ -33,11 +42,13 @@ pub enum RegistryEvent {
         name_hash: BytesN<32>,
         wallet: Address,
     },
-    /// Ownership of `name_hash` moved from `from` to `to`.
+    /// Ownership of `name_hash` moved from `from` to `to`, and the associated
+    /// wallet was updated to `wallet` in the same atomic step.
     Transferred {
         from: Address,
         to: Address,
         name_hash: BytesN<32>,
+        wallet: Address,
     },
     /// `owner` associated `wallet` with `name_hash`.
     Associated {
@@ -64,10 +75,19 @@ pub fn emit_registered(env: &Env, owner: &Address, name_hash: &BytesN<32>, walle
 }
 
 /// Emit a transfer event.
-pub fn emit_transferred(env: &Env, from: &Address, to: &Address, name_hash: &BytesN<32>) {
+///
+/// The payload carries both the new owner and the new wallet so that a single
+/// event fully describes the atomic ownership + association update.
+pub fn emit_transferred(
+    env: &Env,
+    from: &Address,
+    to: &Address,
+    name_hash: &BytesN<32>,
+    wallet: &Address,
+) {
     env.events().publish(
         (TOPIC_TRANSFER, from.clone(), to.clone()),
-        name_hash.clone(),
+        (name_hash.clone(), wallet.clone()),
     );
 }
 
@@ -106,10 +126,12 @@ pub fn replay(env: &Env, events: &Vec<RegistryEvent>) -> Vec<(BytesN<32>, Replay
                 from: _,
                 to,
                 name_hash,
+                wallet,
             } => {
                 if let Some(idx) = find(&state, &name_hash) {
                     let mut entry = state.get(idx).unwrap().1;
                     entry.owner = to.clone();
+                    entry.wallet = wallet.clone();
                     state.set(idx, (name_hash.clone(), entry));
                 }
             }
