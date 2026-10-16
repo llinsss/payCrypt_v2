@@ -1,6 +1,35 @@
 //! Registry contract: maps a stable identifier to a contract address and
 //! tracks the schema version of persisted records so that records written by
 //! older schemas can be safely read and upgraded.
+//!
+//! # Externally visible behavior
+//!
+//! The registry emits events for every state-changing operation so that
+//! off-chain indexers can reconstruct the full registry state by replaying
+//! the event log. The reconstruction invariant is:
+//!
+//! ```text
+//! replay(events) == contract storage
+//! ```
+//!
+//! Event topics and payloads:
+//! - `register`  -> (name, owner, wallet)
+//! - `transfer`  -> (name, from, to, wallet)
+//! - `associate` -> (name, wallet)
+//!
+//! # Atomicity
+//!
+//! `transfer` updates the owner and the associated wallet together. The
+//! wallet is carried over to the new owner in the same storage write, so a
+//! transfer can never leave the owner and wallet out of sync. If validation
+//! or storage fails, neither the owner nor the wallet is updated.
+//!
+//! # Error codes
+//! - `TagNotFound` (1): the referenced tag id does not exist.
+//! - `Unauthorized` (2): caller is not authorized to perform the operation.
+//! - `TagReleased` (3): the tag id has been released and cannot be reused.
+//! - `TagInactive` (4): the tag is already inactive/released.
+//! - `VersionOverflow` (5): the schema version counter would overflow.
 
 #![no_std]
 
@@ -81,7 +110,8 @@ pub enum RegistryError {
     /// The schema version counter would overflow.
     VersionOverflow = 5,
 }
-}
+
+const REGISTRY: Symbol = symbol_short!("REGISTRY");
 
 #[contract]
 pub struct RegistryContract;
@@ -189,15 +219,141 @@ impl RegistryContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env};
+    use soroban_sdk::{testutils::{Address as _, Events}, Env};
 
-    fn setup() -> (Env, RegistryContractClient<'static>, Address) {
+    fn setup() -> (Env, RegistryContractClient<'static>) {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, RegistryContract);
-        let client = RegistryContractClient::new(&env, &contract_id);
-        let admin = Address::generate(&env);
-        (env, client, admin)
+        let id = env.register_contract(None, RegistryContract);
+        let client = RegistryContractClient::new(&env, &id);
+        (env, client)
+    }
+
+    /// Reconstruct registry state purely from emitted events and compare it
+    /// against contract storage. This is the core replay invariant test.
+    #[test]
+    fn replay_reconstructs_storage() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let carol = Address::generate(&env);
+        let name = String::from_str(&env, "alice.xlm");
+
+        client.register(&name, &alice, &alice);
+        client.transfer(&name, &bob);
+        client.associate(&name, &carol);
+
+        // Rebuild state from the event log only.
+        let mut replayed: Option<Registration> = None;
+        for event in env.events().all().iter() {
+            let (topics, data) = event;
+            let topic0: Symbol = topics.get(0).unwrap().try_into().unwrap();
+            if topic0 == symbol_short!("register") {
+                let (owner, wallet): (Address, Address) = data.try_into().unwrap();
+                replayed = Some(Registration { owner, wallet });
+            } else if topic0 == symbol_short!("transfer") {
+                let (_from, to, wallet): (Address, Address, Address) = data.try_into().unwrap();
+                let reg = replayed.as_mut().unwrap();
+                reg.owner = to;
+                reg.wallet = wallet;
+            } else if topic0 == symbol_short!("associate") {
+                let wallet: Address = data.try_into().unwrap();
+                replayed.as_mut().unwrap().wallet = wallet;
+            }
+        }
+
+        assert_eq!(replayed, client.get(&name));
+        assert_eq!(replayed.unwrap().owner, bob);
+        assert_eq!(replayed.unwrap().wallet, carol);
+    }
+
+    #[test]
+    fn register_emits_event_and_stores() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let name = String::from_str(&env, "alice.xlm");
+        client.register(&name, &alice, &alice);
+        assert_eq!(client.get(&name).unwrap().owner, alice);
+        assert_eq!(env.events().all().len(), 1);
+    }
+
+    #[test]
+    fn duplicate_register_fails() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let name = String::from_str(&env, "alice.xlm");
+        client.register(&name, &alice, &alice);
+        assert_eq!(client.try_register(&name, &alice, &alice), Err(Ok(RegistryError::AlreadyRegistered)));
+    }
+
+    #[test]
+    fn transfer_requires_owner_auth() {
+        let env = Env::default();
+        let id = env.register_contract(None, RegistryContract);
+        let client = RegistryContractClient::new(&env, &id);
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let name = String::from_str(&env, "alice.xlm");
+        env.mock_all_auths();
+        client.register(&name, &alice, &alice);
+        // Without mocked auth for bob, transfer must fail authorization.
+        env.set_auths(&[]);
+        assert!(client.try_transfer(&name, &bob).is_err());
+    }
+
+    #[test]
+    fn transfer_unknown_name_fails() {
+        let (env, client) = setup();
+        let bob = Address::generate(&env);
+        let name = String::from_str(&env, "missing.xlm");
+        assert_eq!(client.try_transfer(&name, &bob), Err(Ok(RegistryError::NotFound)));
+    }
+
+    #[test]
+    fn associate_unknown_name_fails() {
+        let (env, client) = setup();
+        let wallet = Address::generate(&env);
+        let name = String::from_str(&env, "missing.xlm");
+        assert_eq!(client.try_associate(&name, &wallet), Err(Ok(RegistryError::NotFound)));
+    }
+
+    /// Transfer carries the associated wallet over to the new owner in the
+    /// same write, so owner and wallet stay consistent.
+    #[test]
+    fn transfer_carries_wallet_atomically() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let wallet = Address::generate(&env);
+        let name = String::from_str(&env, "alice.xlm");
+
+        client.register(&name, &alice, &wallet);
+        client.transfer(&name, &bob);
+
+        let reg = client.get(&name).unwrap();
+        assert_eq!(reg.owner, bob);
+        assert_eq!(reg.wallet, wallet);
+    }
+
+    /// A failed transfer (unknown name) must not mutate any stored state.
+    #[test]
+    fn failed_transfer_leaves_state_unchanged() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let wallet = Address::generate(&env);
+        let name = String::from_str(&env, "alice.xlm");
+
+        client.register(&name, &alice, &wallet);
+        let before = client.get(&name).unwrap();
+
+        let missing = String::from_str(&env, "missing.xlm");
+        assert_eq!(client.try_transfer(&missing, &bob), Err(Ok(RegistryError::NotFound)));
+
+        // Original registration is untouched: owner and wallet both intact.
+        assert_eq!(client.get(&name).unwrap(), before);
+        assert_eq!(client.get(&name).unwrap().owner, alice);
+        assert_eq!(client.get(&name).unwrap().wallet, wallet);
     }
 
     #[test]
@@ -435,5 +591,21 @@ mod test {
         assert_eq!(client.set_schema_version(), CURRENT_SCHEMA_VERSION);
         assert_eq!(client.schema_version(), CURRENT_SCHEMA_VERSION);
     }
+
+    // Fall back to the legacy (pre-versioning) layout and upgrade it.
+    if let Some(legacy) = env
+        .storage()
+        .persistent()
+        .get::<Symbol, LegacyRegistryRecord>(id)
+    {
+        return Ok(RegistryRecord {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            address: legacy.address,
+        });
+    }
+
+    Err(RegistryError::NotFound)
+}
+
     }
 }
