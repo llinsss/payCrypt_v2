@@ -21,7 +21,7 @@ fn release_transfers_to_beneficiary() {
 
     token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
     client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
-    client.release();
+    client.release(&token_id);
 
     assert_eq!(token::Client::new(&env, &token_id).balance(&beneficiary), 100);
     assert_eq!(client.get().state, EscrowState::Released);
@@ -70,8 +70,96 @@ fn terminal_state_blocks_further_transitions() {
 
     token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
     client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
-    client.release();
+    client.release(&token_id);
 
     assert_eq!(client.try_cancel(), Err(Ok(EscrowError::NotCreated)));
-    assert_eq!(client.try_release(), Err(Ok(EscrowError::NotCreated)));
+    assert_eq!(client.try_release(&token_id), Err(Ok(EscrowError::NotCreated)));
+}
+
+#[test]
+fn create_binds_asset_address() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+
+    assert_eq!(client.get().asset, token_id);
+}
+
+#[test]
+fn release_rejects_mismatched_asset() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let other_admin = Address::generate(&env);
+    let other_token = env.register_stellar_asset_contract(other_admin);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+
+    assert_eq!(client.try_release(&other_token), Err(Ok(EscrowError::AssetMismatch)));
+    assert_eq!(client.get().state, EscrowState::Created);
+    assert_eq!(token::Client::new(&env, &token_id).balance(&beneficiary), 0);
+}
+
+#[test]
+fn deposit_rejects_mismatched_asset() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let other_admin = Address::generate(&env);
+    let other_token = env.register_stellar_asset_contract(other_admin);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+
+    assert_eq!(client.try_deposit(&other_token, &50), Err(Ok(EscrowError::AssetMismatch)));
+    assert_eq!(client.get().state, EscrowState::Created);
+}
+
+#[test]
+fn deposit_with_correct_asset_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+    client.deposit(&token_id, &50);
+
+    assert_eq!(client.get().state, EscrowState::Created);
+}
+
+#[test]
+fn deposit_rejects_zero_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+
+    assert_eq!(client.try_deposit(&token_id, &0), Err(Ok(EscrowError::InvalidAmount)));
+}
+
+#[test]
+fn release_requires_depositor_auth() {
+    let env = Env::default();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+
+    assert!(client.try_release(&token_id).is_err());
+    assert_eq!(client.get().state, EscrowState::Created);
 }
