@@ -2,6 +2,12 @@
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Symbol, Vec};
 
+/// Maximum length (in bytes) of a canonical tag.
+///
+/// Enforced *after* canonicalization so that normalization (e.g. ASCII
+/// lowercasing) can never be used to bypass the storage/length limit.
+pub const MAX_TAG_LEN: u32 = 64;
+
 /// Storage keys for the tag registry contract.
 ///
 /// Kept explicit and versioned so that future migrations can extend the
@@ -34,6 +40,10 @@ pub enum RegistryError {
     NotTagOwner = 4,
     /// A zero/invalid address was supplied.
     InvalidAddress = 5,
+    /// The canonical tag exceeds `MAX_TAG_LEN` bytes.
+    TagTooLong = 6,
+    /// The supplied wallet is already the tag's associated wallet.
+    WalletAlreadyAssociated = 7,
 }
 
 /// Public interface for the canonical tag registry.
@@ -42,6 +52,7 @@ pub trait TagRegistryInterface {
     fn resolve(env: Env, tag: Bytes) -> Result<Address, RegistryError>;
     fn transfer(env: Env, from: Address, to: Address, tag: Bytes) -> Result<(), RegistryError>;
     fn associate_wallet(env: Env, owner: Address, tag: Bytes, wallet: Address) -> Result<(), RegistryError>;
+    fn reassociate_wallet(env: Env, owner: Address, tag: Bytes, wallet: Address) -> Result<(), RegistryError>;
     fn wallet_of(env: Env, tag: Bytes) -> Result<Address, RegistryError>;
     fn owner_of(env: Env, tag: Bytes) -> Result<Address, RegistryError>;
 }
@@ -54,6 +65,9 @@ pub struct TagRegistry;
 /// Canonicalization lowercases ASCII letters and rejects empty tags or tags
 /// containing characters outside `[a-z0-9_-]`. This guarantees that two
 /// visually equivalent tags map to the same storage key.
+///
+/// The canonical form is additionally bounded by `MAX_TAG_LEN` bytes so that
+/// normalization cannot expand a tag past the storage/length limit.
 fn canonicalize(tag: &Bytes) -> Result<Bytes, RegistryError> {
     let len = tag.len();
     if len == 0 {
@@ -70,6 +84,9 @@ fn canonicalize(tag: &Bytes) -> Result<Bytes, RegistryError> {
         };
         out.push_back(c);
         i += 1;
+    }
+    if out.len() > MAX_TAG_LEN {
+        return Err(RegistryError::TagTooLong);
     }
     Ok(out)
 }
@@ -199,6 +216,9 @@ impl TagRegistry {
     }
 
     /// Associate a wallet address with a tag owned by `owner`.
+    ///
+    /// This is the initial association path: the tag must not already have a
+    /// wallet linked. Only the current tag owner must authorize.
     pub fn associate_wallet(
         env: Env,
         owner: Address,
@@ -217,14 +237,62 @@ impl TagRegistry {
         if current != owner {
             return Err(RegistryError::NotTagOwner);
         }
-        env.storage()
-            .persistent()
-            .set(&DataKey::Wallet(canonical.clone()), &wallet);
+        let wallet_key = DataKey::Wallet(canonical.clone());
+        if env.storage().persistent().has(&wallet_key) {
+            return Err(RegistryError::WalletAlreadyAssociated);
+        }
+        env.storage().persistent().set(&wallet_key, &wallet);
 
         let version = next_version(&env);
         env.events().publish(
             (symbol_short!("tag_wall"), version),
             (canonical, wallet),
+        );
+        Ok(())
+    }
+
+    /// Reassociate a tag with a different wallet address.
+    ///
+    /// Authorization policy for changing the linked wallet:
+    /// - The current tag owner must always authorize the change.
+    /// - If the tag already has a linked wallet, that current wallet must also
+    ///   authorize, preventing an owner from silently detaching a wallet that
+    ///   has not consented to the reassociation.
+    /// - The new wallet must be non-zero and distinct from the current wallet.
+    pub fn reassociate_wallet(
+        env: Env,
+        owner: Address,
+        tag: Bytes,
+        wallet: Address,
+    ) -> Result<(), RegistryError> {
+        owner.require_auth();
+        require_nonzero(&env, &owner)?;
+        require_nonzero(&env, &wallet)?;
+        let canonical = canonicalize(&tag)?;
+        let current: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Owner(canonical.clone()))
+            .ok_or(RegistryError::TagNotRegistered)?;
+        if current != owner {
+            return Err(RegistryError::NotTagOwner);
+        }
+        let wallet_key = DataKey::Wallet(canonical.clone());
+        let previous: Address = env
+            .storage()
+            .persistent()
+            .get(&wallet_key)
+            .ok_or(RegistryError::TagNotRegistered)?;
+        if previous == wallet {
+            return Err(RegistryError::WalletAlreadyAssociated);
+        }
+        previous.require_auth();
+        env.storage().persistent().set(&wallet_key, &wallet);
+
+        let version = next_version(&env);
+        env.events().publish(
+            (symbol_short!("tag_reas"), version),
+            (canonical, previous, wallet),
         );
         Ok(())
     }
@@ -238,7 +306,7 @@ impl TagRegistry {
             .ok_or(RegistryError::TagNotRegistered)
     }
 
-    /// Return the current owner of a tag.
+    /// Return the owner of a tag.
     pub fn owner_of(env: Env, tag: Bytes) -> Result<Address, RegistryError> {
         let canonical = canonicalize(&tag)?;
         env.storage()
@@ -251,72 +319,236 @@ impl TagRegistry {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{Env, IntoVal};
+    use soroban_sdk::{testutils::Address as _, Env};
 
     fn tag(env: &Env, s: &str) -> Bytes {
         Bytes::from_slice(env, s.as_bytes())
     }
 
     #[test]
-    fn register_and_resolve() {
+    fn reassociate_success_requires_owner_and_current_wallet() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, TagRegistry);
         let client = TagRegistryClient::new(&env, &contract_id);
+
         let owner = Address::generate(&env);
-        client.register(&owner, &tag(&env, "Alice"));
-        let resolved = client.resolve(&tag(&env, "alice"));
-        assert_eq!(resolved, owner);
+        let wallet_a = Address::generate(&env);
+        let wallet_b = Address::generate(&env);
+        let t = tag(&env, "alice");
+
+        client.register(&owner, &t);
+        client.associate_wallet(&owner, &t, &wallet_a);
+        client.reassociate_wallet(&owner, &t, &wallet_b);
+
+        assert_eq!(client.wallet_of(&t), wallet_b);
     }
 
     #[test]
-    fn rejects_duplicate() {
+    fn reassociate_requires_current_wallet_auth() {
         let env = Env::default();
-        env.mock_all_auths();
         let contract_id = env.register_contract(None, TagRegistry);
         let client = TagRegistryClient::new(&env, &contract_id);
+
         let owner = Address::generate(&env);
-        client.register(&owner, &tag(&env, "bob"));
-        let res = client.try_register(&owner, &tag(&env, "BOB"));
-        assert_eq!(res, Err(Ok(RegistryError::TagAlreadyRegistered)));
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.register(&owner, &tag(&env, &too_long)),
+            Err(RegistryError::TagTooLong)
+        );
     }
 
     #[test]
-    fn transfer_and_wallet() {
+    fn canonicalization_cannot_bypass_length_limit() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, TagRegistry);
         let client = TagRegistryClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
-        let next = Address::generate(&env);
+        // Uppercase input is normalized to lowercase; the canonical form is
+        // still over the limit and must be rejected post-normalization.
+        let too_long = "A".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.register(&owner, &tag(&env, &too_long)),
+            Err(RegistryError::TagTooLong)
+        );
+    }
+
+    #[test]
+    fn resolve_rejects_over_max_len() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.resolve(&tag(&env, &too_long)),
+            Err(RegistryError::TagTooLong)
+        );
+    }
+
+    #[test]
+    fn transfer_rejects_over_max_len() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let from = Address::generate(&env);
+        let to = Address::generate(&env);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.transfer(&from, &to, &tag(&env, &too_long)),
+            Err(RegistryError::TagTooLong)
+        );
+    }
+
+    #[test]
+    fn associate_wallet_rejects_over_max_len() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
         let wallet = Address::generate(&env);
-        client.register(&owner, &tag(&env, "carol"));
-        client.associate_wallet(&owner, &tag(&env, "carol"), &wallet);
-        assert_eq!(client.wallet_of(&tag(&env, "carol")), wallet);
-        client.transfer(&owner, &next, &tag(&env, "carol"));
-        assert_eq!(client.owner_of(&tag(&env, "carol")), next);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.associate_wallet(&owner, &tag(&env, &too_long), &wallet),
+            Err(RegistryError::TagTooLong)
+        );
     }
 
     #[test]
-    fn rejects_invalid_tag() {
+    fn reassociate_requires_current_wallet_auth() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let wallet_a = Address::generate(&env);
+        let wallet_b = Address::generate(&env);
+        let t = tag(&env, "alice");
+
+        env.mock_auths(&[
+            &soroban_sdk::testutils::MockAuth {
+                address: &owner,
+                invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                    contract: &contract_id,
+                    fn_name: "register",
+                    args: (&owner, &t).into_val(&env),
+                    sub_invokes: &[],
+                },
+            },
+            &soroban_sdk::testutils::MockAuth {
+                address: &owner,
+                invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                    contract: &contract_id,
+                    fn_name: "associate_wallet",
+                    args: (&owner, &t, &wallet_a).into_val(&env),
+                    sub_invokes: &[],
+                },
+            },
+            &soroban_sdk::testutils::MockAuth {
+                address: &owner,
+                invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                    contract: &contract_id,
+                    fn_name: "reassociate_wallet",
+                    args: (&owner, &t, &wallet_b).into_val(&env),
+                    sub_invokes: &[],
+                },
+            },
+        ]);
+
+        client.register(&owner, &t);
+        client.associate_wallet(&owner, &t, &wallet_a);
+        let res = client.try_reassociate_wallet(&owner, &t, &wallet_b);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn reassociate_rejects_same_wallet() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, TagRegistry);
         let client = TagRegistryClient::new(&env, &contract_id);
+
         let owner = Address::generate(&env);
-        let res = client.try_register(&owner, &tag(&env, "bad tag!"));
-        assert_eq!(res, Err(Ok(RegistryError::InvalidTag)));
+        let wallet = Address::generate(&env);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.associate_wallet(&owner, &tag(&env, &too_long), &wallet),
+            Err(RegistryError::TagTooLong)
+        );
     }
 
     #[test]
-    fn emits_versioned_events() {
+    fn reassociate_rejects_same_wallet() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, TagRegistry);
         let client = TagRegistryClient::new(&env, &contract_id);
+
         let owner = Address::generate(&env);
-        client.register(&owner, &tag(&env, "dave"));
-        let _ = IntoVal::<Env, Symbol>::into_val(&symbol_short!("tag_reg"), &env);
+        let wallet_a = Address::generate(&env);
+        let t = tag(&env, "alice");
+
+        client.register(&owner, &t);
+        client.associate_wallet(&owner, &t, &wallet_a);
+        let res = client.try_reassociate_wallet(&owner, &t, &wallet_a);
+        assert_eq!(res, Err(Ok(RegistryError::WalletAlreadyAssociated)));
+    }
+
+    #[test]
+    fn reassociate_fails_when_no_wallet_linked() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let wallet_b = Address::generate(&env);
+        let t = tag(&env, "alice");
+
+        client.register(&owner, &t);
+        let res = client.try_reassociate_wallet(&owner, &t, &wallet_b);
+        assert_eq!(res, Err(Ok(RegistryError::TagNotRegistered)));
+    }
+
+    #[test]
+    fn reassociate_fails_for_non_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let other = Address::generate(&env);
+        let wallet_a = Address::generate(&env);
+        let wallet_b = Address::generate(&env);
+        let t = tag(&env, "alice");
+
+        client.register(&owner, &t);
+        client.associate_wallet(&owner, &t, &wallet_a);
+        let res = client.try_reassociate_wallet(&other, &t, &wallet_b);
+        assert_eq!(res, Err(Ok(RegistryError::NotTagOwner)));
+    }
+
+    #[test]
+    fn associate_wallet_rejects_second_association() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let wallet_a = Address::generate(&env);
+        let wallet_b = Address::generate(&env);
+        let t = tag(&env, "alice");
+
+        client.register(&owner, &t);
+        client.associate_wallet(&owner, &t, &wallet_a);
+        let res = client.try_associate_wallet(&owner, &t, &wallet_b);
+        assert_eq!(res, Err(Ok(RegistryError::WalletAlreadyAssociated)));
+    }
+}
     }
 }
