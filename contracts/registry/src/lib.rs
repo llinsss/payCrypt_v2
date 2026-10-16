@@ -14,7 +14,15 @@ pub enum DataKey {
     WalletTags(Address),
     /// Tombstone marker preventing reuse of a released tag id.
     Released(u64),
+    /// Schema version of the persisted registry state.
+    SchemaVersion,
 }
+
+/// Current persisted registry schema version.
+///
+/// Bump this whenever the on-chain storage layout changes so that upgrade
+/// compatibility can be asserted against state written by prior versions.
+pub const CURRENT_SCHEMA_VERSION: u32 = 1;
 
 /// A registry tag binding a human readable name to an owning wallet.
 #[contracttype]
@@ -134,6 +142,28 @@ impl RegistryContract {
             .get(&DataKey::WalletTags(owner))
             .unwrap_or(Vec::new(&env))
     }
+
+    /// Return the persisted registry schema version.
+    ///
+    /// State written before the schema version key existed reports `0`, which
+    /// lets an upgraded implementation detect and migrate legacy state.
+    pub fn schema_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::SchemaVersion)
+            .unwrap_or(0)
+    }
+
+    /// Record the current schema version in instance storage.
+    ///
+    /// Called by an upgraded implementation to stamp state it has migrated to
+    /// the current layout. Idempotent and bounded to a single storage write.
+    pub fn set_schema_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .set(&DataKey::SchemaVersion, &CURRENT_SCHEMA_VERSION);
+        CURRENT_SCHEMA_VERSION
+    }
 }
 
 #[cfg(test)]
@@ -188,5 +218,55 @@ mod test {
         let (_env, client, owner) = setup();
         let result = client.try_release(&owner, &999);
         assert_eq!(result, Err(Ok(RegistryError::TagNotFound)));
+    }
+
+    #[test]
+    fn legacy_state_reports_zero_schema_version() {
+        let (_env, client, _owner) = setup();
+        // State written before the schema version key existed reports 0.
+        assert_eq!(client.schema_version(), 0);
+    }
+
+    #[test]
+    fn upgrade_preserves_owner_wallet_and_version() {
+        let (env, client, owner) = setup();
+        let id = client.register(&owner, &String::from_str(&env, "alice"));
+
+        // Simulate an upgrade: the next implementation stamps the schema version
+        // and must still read the state written by the current schema.
+        let version = client.set_schema_version();
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(client.schema_version(), CURRENT_SCHEMA_VERSION);
+
+        // Owner and wallet association survive the upgrade.
+        let tag = client.get_tag(&id).unwrap();
+        assert_eq!(tag.owner, owner);
+        assert!(tag.active);
+        assert_eq!(client.tags_of(&owner).len(), 1);
+        assert_eq!(client.tags_of(&owner).get(0).unwrap(), id);
+    }
+
+    #[test]
+    fn upgrade_preserves_released_tombstone() {
+        let (env, client, owner) = setup();
+        let id = client.register(&owner, &String::from_str(&env, "alice"));
+        client.release(&owner, &id);
+
+        client.set_schema_version();
+
+        // Released state and tombstone remain intact after the upgrade.
+        let tag = client.get_tag(&id).unwrap();
+        assert!(!tag.active);
+        assert_eq!(client.tags_of(&owner).len(), 0);
+        let result = client.try_release(&owner, &id);
+        assert_eq!(result, Err(Ok(RegistryError::TagReleased)));
+    }
+
+    #[test]
+    fn set_schema_version_is_idempotent() {
+        let (_env, client, _owner) = setup();
+        assert_eq!(client.set_schema_version(), CURRENT_SCHEMA_VERSION);
+        assert_eq!(client.set_schema_version(), CURRENT_SCHEMA_VERSION);
+        assert_eq!(client.schema_version(), CURRENT_SCHEMA_VERSION);
     }
 }
