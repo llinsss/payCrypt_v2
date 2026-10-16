@@ -13,8 +13,32 @@ pub enum DataKey {
     OwnerTagCount(Address),
     /// (Owner address, index) -> canonical tag owned by that address.
     OwnerTag(Address, u32),
+    /// Canonical tag -> ledger sequence at which it was released.
+    ///
+    /// Present only while a released tag is inside its reservation window.
+    /// The entry is removed once the reservation expires or the tag is
+    /// re-registered, keeping storage growth bounded.
+    TagReservation(String),
     /// Monotonic counter used to version emitted events.
     EventVersion,
+}
+
+/// Number of ledgers a released tag stays reserved to its previous owner.
+///
+/// During this bounded window the tag cannot be re-registered by anyone
+/// else, which reduces accidental or malicious tag takeovers. The window is
+/// short enough that storage growth stays bounded: at most one reservation
+/// entry exists per recently released tag.
+pub const RESERVATION_PERIOD_LEDGERS: u32 = 17_280;
+
+/// Returns `true` when a tag released at `released_at` is still inside its
+/// reservation window at `now`.
+///
+/// The window is inclusive of the release ledger and exclusive of the
+/// ledger `released_at + RESERVATION_PERIOD_LEDGERS`, so a reservation
+/// expires exactly `RESERVATION_PERIOD_LEDGERS` ledgers after release.
+pub fn is_reservation_active(released_at: u32, now: u32) -> bool {
+    now < released_at.saturating_add(RESERVATION_PERIOD_LEDGERS)
 }
 
 /// Normalize a tag into its canonical form.
