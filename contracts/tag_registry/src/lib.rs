@@ -2,6 +2,12 @@
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Symbol, Vec};
 
+/// Maximum length (in bytes) of a canonical tag.
+///
+/// Enforced *after* canonicalization so that normalization (e.g. ASCII
+/// lowercasing) can never be used to bypass the storage/length limit.
+pub const MAX_TAG_LEN: u32 = 64;
+
 /// Storage keys for the tag registry contract.
 ///
 /// Kept explicit and versioned so that future migrations can extend the
@@ -34,8 +40,10 @@ pub enum RegistryError {
     NotTagOwner = 4,
     /// A zero/invalid address was supplied.
     InvalidAddress = 5,
+    /// The canonical tag exceeds `MAX_TAG_LEN` bytes.
+    TagTooLong = 6,
     /// The supplied wallet is already the tag's associated wallet.
-    WalletAlreadyAssociated = 6,
+    WalletAlreadyAssociated = 7,
 }
 
 /// Public interface for the canonical tag registry.
@@ -57,6 +65,9 @@ pub struct TagRegistry;
 /// Canonicalization lowercases ASCII letters and rejects empty tags or tags
 /// containing characters outside `[a-z0-9_-]`. This guarantees that two
 /// visually equivalent tags map to the same storage key.
+///
+/// The canonical form is additionally bounded by `MAX_TAG_LEN` bytes so that
+/// normalization cannot expand a tag past the storage/length limit.
 fn canonicalize(tag: &Bytes) -> Result<Bytes, RegistryError> {
     let len = tag.len();
     if len == 0 {
@@ -73,6 +84,9 @@ fn canonicalize(tag: &Bytes) -> Result<Bytes, RegistryError> {
         };
         out.push_back(c);
         i += 1;
+    }
+    if out.len() > MAX_TAG_LEN {
+        return Err(RegistryError::TagTooLong);
     }
     Ok(out)
 }
@@ -305,8 +319,7 @@ impl TagRegistry {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{Env, IntoVal};
+    use soroban_sdk::{testutils::Address as _, Env};
 
     fn tag(env: &Env, s: &str) -> Bytes {
         Bytes::from_slice(env, s.as_bytes())
@@ -329,6 +342,79 @@ mod test {
         client.reassociate_wallet(&owner, &t, &wallet_b);
 
         assert_eq!(client.wallet_of(&t), wallet_b);
+    }
+
+    #[test]
+    fn reassociate_requires_current_wallet_auth() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.register(&owner, &tag(&env, &too_long)),
+            Err(RegistryError::TagTooLong)
+        );
+    }
+
+    #[test]
+    fn canonicalization_cannot_bypass_length_limit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        // Uppercase input is normalized to lowercase; the canonical form is
+        // still over the limit and must be rejected post-normalization.
+        let too_long = "A".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.register(&owner, &tag(&env, &too_long)),
+            Err(RegistryError::TagTooLong)
+        );
+    }
+
+    #[test]
+    fn resolve_rejects_over_max_len() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.resolve(&tag(&env, &too_long)),
+            Err(RegistryError::TagTooLong)
+        );
+    }
+
+    #[test]
+    fn transfer_rejects_over_max_len() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+        let from = Address::generate(&env);
+        let to = Address::generate(&env);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.transfer(&from, &to, &tag(&env, &too_long)),
+            Err(RegistryError::TagTooLong)
+        );
+    }
+
+    #[test]
+    fn associate_wallet_rejects_over_max_len() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let wallet = Address::generate(&env);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.associate_wallet(&owner, &tag(&env, &too_long), &wallet),
+            Err(RegistryError::TagTooLong)
+        );
     }
 
     #[test]
@@ -376,6 +462,22 @@ mod test {
         client.associate_wallet(&owner, &t, &wallet_a);
         let res = client.try_reassociate_wallet(&owner, &t, &wallet_b);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn reassociate_rejects_same_wallet() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TagRegistry);
+        let client = TagRegistryClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let wallet = Address::generate(&env);
+        let too_long = "a".repeat(MAX_TAG_LEN as usize + 1);
+        assert_eq!(
+            client.associate_wallet(&owner, &tag(&env, &too_long), &wallet),
+            Err(RegistryError::TagTooLong)
+        );
     }
 
     #[test]
@@ -446,5 +548,7 @@ mod test {
         client.associate_wallet(&owner, &t, &wallet_a);
         let res = client.try_associate_wallet(&owner, &t, &wallet_b);
         assert_eq!(res, Err(Ok(RegistryError::WalletAlreadyAssociated)));
+    }
+}
     }
 }

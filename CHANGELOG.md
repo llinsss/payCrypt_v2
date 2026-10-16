@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     exercised against a local Soroban network.
   - Coverage for authorization checks, boundary values (e.g. zero/max upgrade
     amounts and ledger bounds), resource limits, and external-call f
+- Shared tag name normalization conformance vectors covering Unicode
+  normalization, whitespace handling, case folding, and rejected confusables,
+  run against the Rust/Soroban tag contract behavior (#946).
 
 ### Security
 - Circuit breaker inspection and reset endpoints are now restricted to

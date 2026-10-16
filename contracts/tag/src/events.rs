@@ -45,6 +45,26 @@ pub struct TagTransferCancelled {
     pub pending_owner: Address,
 }
 
+/// Emitted when a tag's expiry is extended by its owner.
+/// `expires_at` is the new deterministic ledger-time boundary (inclusive).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TagRenewed {
+    pub tag: Symbol,
+    pub owner: Address,
+    pub expires_at: u64,
+}
+
+/// Emitted when a tag is observed to be expired at the current ledger time.
+/// `expires_at` is the boundary at which the tag ceased to be valid.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TagExpired {
+    pub tag: Symbol,
+    pub owner: Address,
+    pub expires_at: u64,
+}
+
 pub fn tag_registered(env: &Env, tag: Symbol, owner: Address) {
     env.events().publish(
         (Symbol::new(env, "tag_registered"), tag.clone()),
@@ -84,6 +104,28 @@ pub fn tag_transfer_cancelled(env: &Env, tag: Symbol, owner: Address, pending_ow
             tag,
             owner,
             pending_owner,
+        },
+    );
+}
+
+pub fn tag_renewed(env: &Env, tag: Symbol, owner: Address, expires_at: u64) {
+    env.events().publish(
+        (Symbol::new(env, "tag_renewed"), tag.clone()),
+        TagRenewed {
+            tag,
+            owner,
+            expires_at,
+        },
+    );
+}
+
+pub fn tag_expired(env: &Env, tag: Symbol, owner: Address, expires_at: u64) {
+    env.events().publish(
+        (Symbol::new(env, "tag_expired"), tag.clone()),
+        TagExpired {
+            tag,
+            owner,
+            expires_at,
         },
     );
 }
