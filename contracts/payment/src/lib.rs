@@ -5,10 +5,35 @@
 //!
 //! Contract replacement is governed by a timelock + multisig approval flow so a
 //! single hot key cannot immediately swap the payment contract.
+//!
+//! # Payment event schema evolution
+//!
+//! Events are the public, indexer-facing interface of this contract, so their
+//! schema is versioned and evolves under strict compatibility rules:
+//!
+//! - **Additive-only.** New fields may only be appended to [`PaymentEvent`].
+//!   Existing fields keep their name, type, and position; fields are never
+//!   removed, renamed, or reordered.
+//! - **Versioned.** Any change to the payload shape bumps
+//!   [`EVENT_SCHEMA_VERSION`]. Purely additive changes bump the minor version
+//!   (e.g. `1` -> `2`); breaking changes are not permitted and would require a
+//!   new event name/topic instead.
+//! - **Stable identity.** Event names ([`PaymentEventName`]), the payment topic
+//!   ([`PAYMENT_EVENT_TOPIC`]), and the meaning of existing fields never change
+//!   within a schema version.
+//! - **Stable payload.** For a given schema version the emitted payload for a
+//!   state transition is deterministic: the same inputs always produce the same
+//!   field values, so indexers can rely on it across compatible upgrades.
+//!
+//! Consumers should read [`EVENT_SCHEMA_VERSION`] from the payload and tolerate
+//! unknown trailing fields when a newer minor version is observed.
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Symbol};
 
 /// Schema version for all payment events emitted by this contract.
+///
+/// Bumped on every additive change to [`PaymentEvent`]; see the module-level
+/// schema evolution rules.
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
 
 /// Topic used for every payment lifecycle event.
@@ -55,6 +80,9 @@ pub struct AmountLimits {
 }
 
 /// Canonical payload emitted for every payment state change.
+///
+/// Fields are append-only: new fields are added at the end and
+/// [`EVENT_SCHEMA_VERSION`] is bumped, so existing indexers keep working.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentEvent {
@@ -324,36 +352,4 @@ impl PaymentContract {
         );
         Ok(())
     }
-
-    // --- Governance: timelock + multisig upgrade flow ---------------------
-
-    /// Propose replacing the contract with `new_wasm_hash`.
-    ///
-    /// The proposal becomes executable only after `delay` seconds have elapsed
-    /// and `threshold` distinct approvals have been collected. The proposer is
-    /// recorded as the first approval.
-    pub fn propose_upgrade(
-        env: Env,
-        proposal_id: u64,
-        proposer: Address,
-        new_wasm_hash: Symbol,
-        delay: u64,
-        threshold: u32,
-    ) -> Result<(), PaymentError> {
-        proposer.require_auth();
-        if threshold == 0 {
-            return Err(PaymentError::NotEnoughApprovals);
-        }
-        let now = env.ledger().timestamp();
-        let proposal = UpgradeProposal {
-            new_wasm_hash,
-            executable_at: now + delay,
-            approvals: 1,
-            executed: false,
-            cancelled: false,
-        };
-        env.storage().persistent().set(&proposal_id, &proposal);
-        env.storage().persistent().set(&(proposal_id, proposer.clone()), &true);
-        env.storage().persistent().set(&(proposal_id, sym
-
-/* … truncated 6098 chars — edit only what you need near the top … */
+}
