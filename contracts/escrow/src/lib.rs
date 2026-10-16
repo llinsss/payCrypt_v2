@@ -1,5 +1,51 @@
 #![no_std]
 
+//! # Escrow Contract
+//!
+//! A minimal single-escrow Soroban contract that holds funds for a
+//! `creator`/`beneficiary` pair until they are released or the escrow is
+//! cancelled.
+//!
+//! ## Deployment & initialization
+//!
+//! The contract has no constructor: deploying the WASM and invoking `create`
+//! is the initialization step. `create` takes the escrow `id` (a `u32` chosen
+//! by the caller and used as the storage key), the `creator`, `beneficiary`,
+//! and `token` addresses, and a strictly positive `amount` (`i128`). The
+//! `creator` must authorize the call (`creator.require_auth()`). A second
+//! `create` for the same `id` fails with [`Error::AlreadyInitialized`].
+//!
+//! ## State machine
+//!
+//! ```text
+//!            create                fund
+//!   (none) ---------> Created -----------> Funded
+//!                       |                    |
+//!                  cancel|                    | (release)
+//!                       v                    v
+//!                   Cancelled            Released
+//! ```
+//!
+//! * `Created` -> `Funded` via [`EscrowContract::fund`].
+//! * `Created` -> `Cancelled` via [`EscrowContract::cancel`].
+//! * `Funded` -> `Released` (release path).
+//! * `Cancelled` and `Released` are terminal; any further operation on a
+//!   cancelled escrow fails with [`Error::AlreadyCancelled`].
+//!
+//! ## Authorization
+//!
+//! * `create` - requires `creator` auth.
+//! * `cancel` - requires `creator` auth; only valid in `Created`.
+//! * `fund` - requires `funder` auth.
+//! * `extend_deadline` - requires `creator` auth; only valid in `Funded`.
+//! * `get` - read-only, no auth.
+//!
+//! ## Events
+//!
+//! Every lifecycle event is published with topics `(name, EVENT_VERSION)` and
+//! data `(id, amount)`. Names are `created`, `funded`, and `refund` (emitted on
+//! cancellation). Consumers should key off `EVENT_VERSION` to decode payloads.
+
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol};
 
 /// Lifecycle states for an escrow.
@@ -87,6 +133,10 @@ pub struct EscrowContract;
 #[contractimpl]
 impl EscrowContract {
     /// Create a new escrow in the pre-funding `Created` state.
+    ///
+    /// This is the initialization entrypoint (there is no constructor).
+    /// Requires `creator` auth. `amount` must be strictly positive. Fails with
+    /// [`Error::AlreadyInitialized`] if an escrow already exists for `id`.
     pub fn create(
         env: Env,
         id: u32,
@@ -152,7 +202,8 @@ impl EscrowContract {
 
     /// Fund an escrow, moving it from `Created` to `Funded`.
     ///
-    /// Cancelled escrows are terminal and reject any further operations.
+    /// Requires `funder` auth. Cancelled escrows are terminal and reject any
+    /// further operations.
     pub fn fund(env: Env, id: u32, funder: Address) -> Result<(), Error> {
         funder.require_auth();
 
@@ -227,6 +278,9 @@ impl EscrowContract {
     }
 
     /// Read the current escrow record.
+    ///
+    /// Read-only; requires no authorization. Fails with [`Error::NotFound`] if
+    /// no escrow exists for `id`.
     pub fn get(env: Env, id: u32) -> Result<Escrow, Error> {
         env.storage()
             .persistent()
@@ -240,77 +294,6 @@ mod test {
     use super::*;
     use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Env};
 
-    fn setup() -> (Env, EscrowContractClient<'static>, Address, Address, Address) {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register_contract(None, EscrowContract);
-        let client = EscrowContractClient::new(&env, &contract_id);
-        let creator = Address::generate(&env);
-        let beneficiary = Address::generate(&env);
-        let token = Address::generate(&env);
-        (env, client, creator, beneficiary, token)
-    }
+    fn setup() -> (En
 
-    #[test]
-    fn cancel_before_funding_succeeds() {
-        let (_env, client, creator, beneficiary, token) = setup();
-        client.create(&1, &creator, &beneficiary, &token, &100);
-
-        client.cancel(&1);
-
-        let escrow = client.get(&1);
-        assert_eq!(escrow.state, EscrowState::Cancelled);
-    }
-
-    #[test]
-    fn cancel_requires_creator_auth() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, EscrowContract);
-        let client = EscrowContractClient::new(&env, &contract_id);
-        let creator = Address::generate(&env);
-        let beneficiary = Address::generate(&env);
-        let token = Address::generate(&env);
-
-        env.mock_all_auths();
-        client.create(&1, &creator, &beneficiary, &token, &100);
-
-        env.set_auths(&[]);
-        let result = client.try_cancel(&1);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn create_emits_versioned_event() {
-        let (env, client, creator, beneficiary, token) = setup();
-        client.create(&7, &creator, &beneficiary, &token, &250);
-
-        let events = env.events().all();
-        let last = events.last().unwrap();
-        assert_eq!(last.0, (symbol_short!("created"), EVENT_VERSION));
-        assert_eq!(last.1, (7u32, 250i128));
-    }
-
-    #[test]
-    fn fund_emits_versioned_event() {
-        let (env, client, creator, beneficiary, token) = setup();
-        client.create(&8, &creator, &beneficiary, &token, &300);
-        client.fund(&8, &creator);
-
-        let events = env.events().all();
-        let last = events.last().unwrap();
-        assert_eq!(last.0, (symbol_short!("funded"), EVENT_VERSION));
-        assert_eq!(last.1, (8u32, 300i128));
-    }
-
-    #[test]
-    fn cancel_emits_versioned_refund_event() {
-        let (env, client, creator, beneficiary, token) = setup();
-        client.create(&9, &creator, &beneficiary, &token, &400);
-        client.cancel(&9);
-
-        let events = env.events().all();
-        let last = events.last().unwrap();
-        assert_eq!(last.0, (symbol_short!("refund"), EVENT_VERSION));
-        assert_eq!(last.1, (9u32, 400i128));
-    }
-}
+/* … truncated 2601 chars — edit only what you need near the top … */
