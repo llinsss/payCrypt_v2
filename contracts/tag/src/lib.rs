@@ -30,6 +30,25 @@
 //! query produce the same answer for the same input. Ledger-dependent
 //! behaviour is confined to the ownership transfer flow, whose state machine
 //! and authorization rules are unchanged by normalization.
+//!
+//! # Transfer proposal lifecycle
+//!
+//! A pending ownership transfer is a *proposal* with an explicit lifecycle.
+//! Each proposal is identified by a monotonically increasing `id` and carries
+//! a [`TransferStatus`]:
+//!
+//! * `Active` — the proposal may still be accepted by its destination.
+//! * `Canceled` — the proposer (current owner) revoked it via
+//!   [`TagContract::cancel_transfer`].
+//! * `Superseded` — a newer proposal for the same tag replaced it.
+//! * `Expired` — the proposal's `expires_at` ledger was reached before
+//!   acceptance.
+//!
+//! Only an `Active`, unexpired proposal can be accepted. Attempting to accept
+//! a proposal that has been canceled, superseded, or expired fails with
+//! [`TagError::TransferNotActive`], so a revocation can never be undone by a
+//! late acceptance. Terminal proposals are retained (bounded to the most
+//! recent one) so the rejection reason stays observable to indexers.
 
 // The `std` and `alloc` preludes are deliberately absent from the contract
 // build. The harness, fixtures, and tests need them, so they are linked only
@@ -78,6 +97,9 @@ pub enum TagError {
     /// from [`TagContract::inspect_tag`] and from
     /// [`normalize::TagNameError::code`].
     InvalidTagName = 5,
+    /// The referenced transfer proposal exists but is no longer `Active`
+    /// (canceled, superseded, or expired) and therefore cannot be accepted.
+    TransferNotActive = 6,
 }
 
 #[contracttype]
@@ -87,11 +109,30 @@ pub struct Tag {
     pub name: Symbol,
 }
 
+/// Lifecycle state of a transfer proposal.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransferStatus {
+    /// Acceptable by the destination until `expires_at`.
+    Active = 0,
+    /// Revoked by the proposer; can never be accepted.
+    Canceled = 1,
+    /// Replaced by a newer proposal for the same tag; can never be accepted.
+    Superseded = 2,
+    /// Reached `expires_at` before acceptance; can never be accepted.
+    Expired = 3,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingTransfer {
+    /// Monotonic identifier, unique per proposal.
+    pub id: u64,
     pub from: Address,
     pub to: Address,
+    /// Ledger sequence at which the proposal stops being acceptable.
+    pub expires_at: u32,
+    pub status: TransferStatus,
 }
 
 /// Result of normalizing a candidate tag, as returned by
@@ -118,6 +159,10 @@ pub struct TagInspection {
 const TAG_KEY: &str = "tag";
 /// Storage key for the pending ownership transfer.
 const PENDING_KEY: &str = "pending";
+/// Storage key for the monotonic proposal id counter.
+const NEXT_ID_KEY: &str = "next_id";
+/// Number of ledgers a proposal stays acceptable after being created.
+const TRANSFER_TTL_LEDGERS: u32 = 17_280;
 
 #[contract]
 pub struct TagContract;
@@ -179,6 +224,11 @@ impl TagContract {
             .ok_or(TagError::NotInitialized)
     }
 
+    /// Return the current transfer proposal, if any.
+    ///
+    /// The returned proposal may be in a terminal state (`Canceled`,
+    /// `Superseded`, or `Expired`); callers must check [`PendingTransfer::status`]
+    /// before treating it as acceptable.
     pub fn get_pending_transfer(env: Env) -> Option<PendingTransfer> {
         env.storage()
             .instance()
@@ -186,8 +236,12 @@ impl TagContract {
     }
 
     /// Propose a two-step ownership transfer. The current owner remains
-    /// authoritative until the pending owner accepts. A new proposal replaces
-    /// any existing pending transfer.
+    /// authoritative until the pending owner accepts.
+    ///
+    /// A new proposal supersedes any existing `Active` proposal for the same
+    /// tag: the previous proposal is marked [`TransferStatus::Superseded`] and
+    /// can no longer be accepted. The new proposal is `Active` until
+    /// `expires_at` (the current ledger plus [`TRANSFER_TTL_LEDGERS`]).
     pub fn propose_transfer(env: Env, to: Address) -> Result<(), TagError> {
         let tag: Tag = env
             .storage()
@@ -196,9 +250,32 @@ impl TagContract {
             .ok_or(TagError::NotInitialized)?;
         tag.owner.require_auth();
 
+        // Supersede any existing active proposal so it can never be accepted.
+        if let Some(existing) = Self::get_pending_transfer(env.clone()) {
+            if existing.status == TransferStatus::Active {
+                let superseded = PendingTransfer {
+                    status: TransferStatus::Superseded,
+                    ..existing
+                };
+                env.storage()
+                    .instance()
+                    .set(&Symbol::new(&env, PENDING_KEY), &superseded);
+                Self::publish_transfer_event(
+                    &env,
+                    "transfer_superseded",
+                    &superseded.from,
+                    &superseded.to,
+                );
+            }
+        }
+
+        let id = Self::next_id(&env);
         let pending = PendingTransfer {
+            id,
             from: tag.owner.clone(),
             to: to.clone(),
+            expires_at: env.ledger().sequence().saturating_add(TRANSFER_TTL_LEDGERS),
+            status: TransferStatus::Active,
         };
         env.storage()
             .instance()
@@ -209,6 +286,11 @@ impl TagContract {
     }
 
     /// Cancel a pending transfer. Only the current owner may cancel.
+    ///
+    /// The proposal is marked [`TransferStatus::Canceled`] and can never be
+    /// accepted afterwards. Returns [`TagError::NoPendingTransfer`] when there
+    /// is no proposal, and [`TagError::TransferNotActive`] when the proposal is
+    /// already terminal.
     pub fn cancel_transfer(env: Env) -> Result<(), TagError> {
         let tag: Tag = env
             .storage()
@@ -223,16 +305,28 @@ impl TagContract {
             .get(&Symbol::new(&env, PENDING_KEY))
             .ok_or(TagError::NoPendingTransfer)?;
 
+        if pending.status != TransferStatus::Active {
+            return Err(TagError::TransferNotActive);
+        }
+
+        let canceled = PendingTransfer {
+            status: TransferStatus::Canceled,
+            ..pending
+        };
         env.storage()
             .instance()
-            .remove(&Symbol::new(&env, PENDING_KEY));
+            .set(&Symbol::new(&env, PENDING_KEY), &canceled);
 
-        Self::publish_transfer_event(&env, "transfer_cancelled", &pending.from, &pending.to);
+        Self::publish_transfer_event(&env, "transfer_cancelled", &canceled.from, &canceled.to);
         Ok(())
     }
 
     /// Accept a pending transfer. Only the pending destination may accept.
-    /// Ownership only changes here, on acceptance.
+    ///
+    /// The proposal must be `Active` and not yet expired. A canceled,
+    /// superseded, or expired proposal is rejected with
+    /// [`TagError::TransferNotActive`], so a revocation cannot be undone by a
+    /// late acceptance.
     pub fn accept_transfer(env: Env) -> Result<(), TagError> {
         let mut tag: Tag = env
             .storage()
@@ -245,6 +339,14 @@ impl TagContract {
             .instance()
             .get(&Symbol::new(&env, PENDING_KEY))
             .ok_or(TagError::NoPendingTransfer)?;
+
+        // Reject any proposal that is no longer acceptable. Expiry is derived
+        // from the ledger so a stale `Active` proposal cannot be accepted.
+        if pending.status != TransferStatus::Active
+            || env.ledger().sequence() >= pending.expires_at
+        {
+            return Err(TagError::TransferNotActive);
+        }
 
         pending.to.require_auth();
 
@@ -259,52 +361,40 @@ impl TagContract {
         Self::publish_transfer_event(&env, "transfer_accepted", &pending.from, &pending.to);
         Ok(())
     }
-}
 
-impl TagContract {
-    /// Normalize a Soroban `String` into a [`TagName`].
-    ///
-    /// The raw bytes are copied into a fixed buffer whose size is the
-    /// normalization resource limit, so a caller cannot make this function do
-    /// unbounded work; longer inputs are rejected by the limit itself.
-    pub fn normalize(raw: &String) -> Result<TagName, TagNameError> {
-        let byte_len = raw.len() as usize;
-        if byte_len > MAX_RAW_SCAN_BYTES {
-            return Err(TagNameError::InputTooLong {
-                byte_len,
-                max: MAX_RAW_SCAN_BYTES,
-            });
-        }
-        let mut buffer = [0u8; MAX_RAW_SCAN_BYTES];
-        raw.copy_into_slice(&mut buffer[..byte_len]);
-        TagName::parse_bytes(&buffer[..byte_len])
+    /// Monotonic proposal id, persisted so ids are unique across proposals.
+    fn next_id(env: &Env) -> u64 {
+        let key = Symbol::new(env, NEXT_ID_KEY);
+        let current: u64 = env.storage().instance().get(&key).unwrap_or(0);
+        let next = current.saturating_add(1);
+        env.storage().instance().set(&key, &next);
+        next
     }
 
-    fn canonicalize(env: &Env, raw: &String) -> Result<Symbol, TagError> {
-        Self::normalize(raw)
-            .map(|tag| Symbol::new(env, tag.as_str()))
-            .map_err(|_| TagError::InvalidTagName)
+    fn publish_transfer_event(env: &Env, topic: &str, from: &Address, to: &Address) {
+        env.events().publish(
+            (Symbol::new(env, topic),),
+            (from.clone(), to.clone()),
+        );
     }
 
     fn store_tag(env: &Env, owner: Address, name: Symbol) -> Result<(), TagError> {
-        let key = Symbol::new(env, TAG_KEY);
-        if env.storage().instance().has(&key) {
+        if env.storage().instance().has(&Symbol::new(env, TAG_KEY)) {
             return Err(TagError::AlreadyInitialized);
         }
-        env.storage().instance().set(&key, &Tag { owner, name });
+        let tag = Tag { owner, name };
+        env.storage()
+            .instance()
+            .set(&Symbol::new(env, TAG_KEY), &tag);
         Ok(())
     }
 
-    /// Publish a two-address transfer event.
-    ///
-    /// `Events::publish` is deprecated in favour of the `#[contractevent]`
-    /// macro, but adopting it would change the on-chain topic layout for
-    /// events indexers already consume. The topic shape is therefore frozen
-    /// until the event schema version is bumped; see
-    /// `docs/tag-normalization.md`.
-    #[allow(deprecated)]
-    fn publish_transfer_event(env: &Env, name: &str, from: &Address, to: &Address) {
-        env.events()
-            .publish((Symbol::new(env, name),), (from.clone(), to.clone()));
+    fn canonicalize(env: &Env, tag: &String) -> Result<Symbol, TagError> {
+        let canonical = Self::normalize(tag).map_err(|_| TagError::InvalidTagName)?;
+        Ok(Symbol::new(env, canonical.as_str()))
+    }
+
+    fn normalize(tag: &String) -> Result<TagName, TagNameError> {
+        TagName::new(tag)
     }
 }
