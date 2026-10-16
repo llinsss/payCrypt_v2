@@ -36,4 +36,14 @@ pub enum Error {
     ///
     /// Used for idempotent operations such as duplicate refund attempts.
     DuplicateOperation = 11,
+    /// The supplied expiry is not valid (e.g. not in the future).
+    ///
+    /// Returned when a payment is created or updated with an expiry that is
+    /// not strictly after the current ledger timestamp.
+    InvalidExpiry = 12,
+    /// The payment has not yet expired.
+    ///
+    /// Returned when an expiry-gated transition (e.g. expiry cancellation)
+    /// is attempted before the stored expiry has been reached.
+    PaymentNotExpired = 13,
 }

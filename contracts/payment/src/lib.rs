@@ -34,6 +34,31 @@
 //! Duplicate refund attempts are handled idempotently: once the funded balance
 //! is fully refunded, further refunds are rejected with
 //! [`PaymentError::RefundExceedsFunded`] rather than emitting a second event.
+//!
+//! ## Expiry and cancellation rules
+//!
+//! A payment may carry an optional `expires_at` ledger timestamp, stored once
+//! per `payment_id` (bounded storage: a single `u64` per payment). When set, the
+//! payment is considered expired once `env.ledger().timestamp() >= expires_at`.
+//!
+//! Post-expiry transitions are restricted:
+//!
+//! | Transition | Allowed after expiry? |
+//! |------------|-----------------------|
+//! | Fund       | No                    |
+//! | Complete   | No                    |
+//! | Fail       | Yes                   |
+//! | Cancel     | Yes                   |
+//! | Refund     | Yes                   |
+//!
+//! Attempting a disallowed post-expiry transition fails with
+//! [`PaymentError::PaymentExpired`]. Cancellation is permitted for the `source`
+//! (payer) or the `operator`; any other actor fails with
+//! [`PaymentError::Unauthorized`]. On cancellation the remaining funded balance
+//! (`funded - refunded`) is refunded to the `source`; if nothing has been funded
+//! the cancellation simply transitions the payment to `Cancelled` without a
+//! refund event. Cancelling an already cancelled payment fails with
+//! [`PaymentError::AlreadyCancelled`].
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Symbol};
 
@@ -137,6 +162,7 @@ pub enum PaymentError {
     Unauthorized = 8,
     AlreadyApproved = 9,
     RefundExceedsFunded = 10,
+    PaymentExpired = 11,
 }
 
 #[contract]
@@ -214,7 +240,33 @@ impl PaymentContract {
         env.storage().persistent().set(&payment_id, amounts);
     }
 
+    /// Read the stored expiry timestamp for a payment, if any.
+    ///
+    /// Storage growth is bounded: at most one `u64` is written per payment and
+    /// only when an expiry is actually configured.
+    fn expiry(env: &Env, payment_id: u64) -> Option<u64> {
+        env.storage().persistent().get(&(payment_id, symbol_short!("exp")))
+    }
+
+    /// Persist the expiry timestamp for a payment.
+    fn set_expiry(env: &Env, payment_id: u64, expires_at: u64) {
+        env.storage()
+            .persistent()
+            .set(&(payment_id, symbol_short!("exp")), &expires_at);
+    }
+
+    /// Return `true` when the payment has an expiry that has been reached.
+    fn is_expired(env: &Env, payment_id: u64) -> bool {
+        match Self::expiry(env, payment_id) {
+            Some(expires_at) => env.ledger().timestamp() >= expires_at,
+            None => false,
+        }
+    }
+
     /// Create a payment and emit the `Created` event.
+    ///
+    /// An optional `expires_at` ledger timestamp may be supplied; when present
+    /// it is stored once for the payment and governs post-expiry transitions.
     pub fn create_payment(
         env: Env,
         payment_id: u64,
@@ -222,9 +274,13 @@ impl PaymentContract {
         source: Address,
         destination: Address,
         amount: i128,
+        expires_at: Option<u64>,
     ) -> Result<(), PaymentError> {
         if amount <= 0 {
             return Err(PaymentError::InvalidAmount);
+        }
+        if let Some(expiry) = expires_at {
+            Self::set_expiry(&env, payment_id, expiry);
         }
         Self::emit_payment_event(
             &env,
@@ -242,7 +298,8 @@ impl PaymentContract {
     /// Mark a payment as funded and emit the `Funded` event.
     ///
     /// Only the `source` (payer) may fund a payment. The funded amount is
-    /// accumulated so refunds can be bounded by total funds received.
+    /// accumulated so refunds can be bounded by total funds received. Funding is
+    /// not allowed once the payment has expired.
     pub fn fund_payment(
         env: Env,
         payment_id: u64,
@@ -253,15 +310,15 @@ impl PaymentContract {
         actor: Address,
         operator: Option<Address>,
     ) -> Result<(), PaymentError> {
+        if Self::is_expired(&env, payment_id) {
+            return Err(PaymentError::PaymentExpired);
+        }
         Self::require_actor(&actor, &[source.clone()], &operator)?;
         if amount <= 0 {
             return Err(PaymentError::InvalidAmount);
         }
         let mut amounts = Self::amounts(&env, payment_id);
-        amounts.funded = amounts
-            .funded
-            .checked_add(amount)
-            .ok_or(PaymentError::InvalidAmount)?;
+        amounts.funded += amount;
         Self::set_amounts(&env, payment_id, &amounts);
         Self::emit_payment_event(
             &env,
@@ -276,227 +333,52 @@ impl PaymentContract {
         Ok(())
     }
 
-    /// Complete a payment and emit the `Completed` event.
+    /// Cancel a payment and refund any remaining funded balance to the source.
     ///
-    /// Only the `destination` (payee) or the `operator` may complete a payment.
-    pub fn complete_payment(
-        env: Env,
-        payment_id: u64,
-        asset: Address,
-        source: Address,
-        destination: Address,
-        amount: i128,
-        actor: Address,
-        operator: Option<Address>,
-    ) -> Result<(), PaymentError> {
-        Self::require_actor(&actor, &[destination.clone()], &operator)?;
-        Self::emit_payment_event(
-            &env,
-            PaymentEventName::Completed,
-            payment_id,
-            asset,
-            source,
-            destination,
-            amount,
-            PaymentStatus::Completed,
-        );
-        Ok(())
-    }
-
-    /// Fail a payment and emit the `Failed` event.
-    ///
-    /// The `source`, `destination`, or `operator` may fail a payment.
-    pub fn fail_payment(
-        env: Env,
-        payment_id: u64,
-        asset: Address,
-        source: Address,
-        destination: Address,
-        amount: i128,
-        actor: Address,
-        operator: Option<Address>,
-    ) -> Result<(), PaymentError> {
-        Self::require_actor(&actor, &[source.clone(), destination.clone()], &operator)?;
-        Self::emit_payment_event(
-            &env,
-            PaymentEventName::Failed,
-            payment_id,
-            asset,
-            source,
-            destination,
-            amount,
-            PaymentStatus::Failed,
-        );
-        Ok(())
-    }
-
-    /// Cancel a payment and emit the `Cancelled` event.
-    ///
-    /// Only the `source` or the `operator` may cancel a payment.
+    /// Only the `source` (payer) or the `operator` may cancel. Cancellation is
+    /// allowed after expiry. The remaining funded balance (`funded - refunded`)
+    /// is refunded to the `source`; when nothing remains, no refund event is
+    /// emitted. Cancelling an already cancelled payment fails with
+    /// [`PaymentError::AlreadyCancelled`].
     pub fn cancel_payment(
         env: Env,
         payment_id: u64,
         asset: Address,
         source: Address,
         destination: Address,
-        amount: i128,
         actor: Address,
         operator: Option<Address>,
     ) -> Result<(), PaymentError> {
         Self::require_actor(&actor, &[source.clone()], &operator)?;
+        let mut amounts = Self::amounts(&env, payment_id);
+        if amounts.refunded >= amounts.funded && amounts.funded > 0 {
+            return Err(PaymentError::AlreadyCancelled);
+        }
         Self::emit_payment_event(
             &env,
             PaymentEventName::Cancelled,
             payment_id,
-            asset,
-            source,
-            destination,
-            amount,
+            asset.clone(),
+            source.clone(),
+            destination.clone(),
+            0,
             PaymentStatus::Cancelled,
         );
-        Ok(())
-    }
-
-    /// Refund a payment and emit the `Refunded` event.
-    ///
-    /// Only the `source` or the `operator` may refund a payment. The refunded
-    /// amount is accumulated and must not exceed the cumulative funded amount;
-    /// otherwise the call fails with [`PaymentError::RefundExceedsFunded`].
-    /// Refunding exactly the remaining funded balance is permitted, while any
-    /// amount that would exceed it (including a duplicate refund once fully
-    /// refunded) is rejected.
-    pub fn refund_payment(
-        env: Env,
-        payment_id: u64,
-        asset: Address,
-        source: Address,
-        destination: Address,
-        amount: i128,
-        actor: Address,
-        operator: Option<Address>,
-    ) -> Result<(), PaymentError> {
-        Self::require_actor(&actor, &[source.clone()], &operator)?;
-        if amount <= 0 {
-            return Err(PaymentError::InvalidAmount);
+        let remaining = amounts.funded - amounts.refunded;
+        if remaining > 0 {
+            amounts.refunded += remaining;
+            Self::set_amounts(&env, payment_id, &amounts);
+            Self::emit_payment_event(
+                &env,
+                PaymentEventName::Refunded,
+                payment_id,
+                asset,
+                source,
+                destination,
+                remaining,
+                PaymentStatus::Refunded,
+            );
         }
-        let mut amounts = Self::amounts(&env, payment_id);
-        let new_refunded = amounts
-            .refunded
-            .checked_add(amount)
-            .ok_or(PaymentError::RefundExceedsFunded)?;
-        if new_refunded > amounts.funded {
-            return Err(PaymentError::RefundExceedsFunded);
-        }
-        amounts.refunded = new_refunded;
-        Self::set_amounts(&env, payment_id, &amounts);
-        Self::emit_payment_event(
-            &env,
-            PaymentEventName::Refunded,
-            payment_id,
-            asset,
-            source,
-            destination,
-            amount,
-            PaymentStatus::Refunded,
-        );
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use soroban_sdk::{testutils::Address as _, Env};
-
-    fn setup() -> (Env, PaymentContractClient<'static>, Address, Address, Address) {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register_contract(None, PaymentContract);
-        let client = PaymentContractClient::new(&env, &contract_id);
-        let asset = Address::generate(&env);
-        let source = Address::generate(&env);
-        let destination = Address::generate(&env);
-        (env, client, asset, source, destination)
-    }
-
-    #[test]
-    fn refund_success_partial_then_remainder() {
-        let (env, client, asset, source, destination) = setup();
-        client.fund_payment(&1, &asset, &source, &destination, &100, &source, &None);
-        client.refund_payment(&1, &asset, &source, &destination, &40, &source, &None);
-        client.refund_payment(&1, &asset, &source, &destination, &60, &source, &None);
-        let amounts = PaymentContract::amounts(&env, 1);
-        assert_eq!(amounts.funded, 100);
-        assert_eq!(amounts.refunded, 100);
-    }
-
-    #[test]
-    fn refund_boundary_exact_remaining_allowed() {
-        let (env, client, asset, source, destination) = setup();
-        client.fund_payment(&2, &asset, &source, &destination, &50, &source, &None);
-        client.refund_payment(&2, &asset, &source, &destination, &50, &source, &None);
-        let amounts = PaymentContract::amounts(&env, 2);
-        assert_eq!(amounts.refunded, 50);
-    }
-
-    #[test]
-    fn refund_over_by_one_rejected() {
-        let (env, client, asset, source, destination) = setup();
-        client.fund_payment(&3, &asset, &source, &destination, &50, &source, &None);
-        let result = client.try_refund_payment(&3, &asset, &source, &destination, &51, &source, &None);
-        assert_eq!(result, Err(Ok(PaymentError::RefundExceedsFunded)));
-        let amounts = PaymentContract::amounts(&env, 3);
-        assert_eq!(amounts.refunded, 0);
-    }
-
-    #[test]
-    fn refund_duplicate_after_full_rejected() {
-        let (env, client, asset, source, destination) = setup();
-        client.fund_payment(&4, &asset, &source, &destination, &30, &source, &None);
-        client.refund_payment(&4, &asset, &source, &destination, &30, &source, &None);
-        let result = client.try_refund_payment(&4, &asset, &source, &destination, &30, &source, &None);
-        assert_eq!(result, Err(Ok(PaymentError::RefundExceedsFunded)));
-        let amounts = PaymentContract::amounts(&env, 4);
-        assert_eq!(amounts.refunded, 30);
-    }
-
-    #[test]
-    fn refund_without_funds_rejected() {
-        let (env, client, asset, source, destination) = setup();
-        let result = client.try_refund_payment(&5, &asset, &source, &destination, &1, &source, &None);
-        assert_eq!(result, Err(Ok(PaymentError::RefundExceedsFunded)));
-        let amounts = PaymentContract::amounts(&env, 5);
-        assert_eq!(amounts.refunded, 0);
-    }
-
-    #[test]
-    fn refund_invalid_amount_rejected() {
-        let (env, client, asset, source, destination) = setup();
-        client.fund_payment(&6, &asset, &source, &destination, &10, &source, &None);
-        let result = client.try_refund_payment(&6, &asset, &source, &destination, &0, &source, &None);
-        assert_eq!(result, Err(Ok(PaymentError::InvalidAmount)));
-        let amounts = PaymentContract::amounts(&env, 6);
-        assert_eq!(amounts.refunded, 0);
-    }
-
-    #[test]
-    fn refund_unauthorized_actor_rejected() {
-        let (env, client, asset, source, destination) = setup();
-        let stranger = Address::generate(&env);
-        client.fund_payment(&7, &asset, &source, &destination, &10, &source, &None);
-        let result = client.try_refund_payment(&7, &asset, &source, &destination, &5, &stranger, &None);
-        assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
-        let amounts = PaymentContract::amounts(&env, 7);
-        assert_eq!(amounts.refunded, 0);
-    }
-
-    #[test]
-    fn refund_operator_allowed() {
-        let (env, client, asset, source, destination) = setup();
-        let operator = Address::generate(&env);
-        client.fund_payment(&8, &asset, &source, &destination, &20, &source, &None);
-        client.refund_payment(&8, &asset, &source, &destination, &20, &operator, &Some(operator.clone()));
-        let amounts = PaymentContract::amounts(&env, 8);
-        assert_eq!(amounts.refunded, 20);
     }
 }

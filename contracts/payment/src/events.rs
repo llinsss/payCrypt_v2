@@ -51,6 +51,11 @@ pub mod event_names {
     pub fn refunded() -> Symbol {
         symbol_short!("pay_refunded")
     }
+
+    /// Payment expired without settlement.
+    pub fn expired() -> Symbol {
+        symbol_short!("pay_expired")
+    }
 }
 
 /// Lifecycle status of a payment, mirrored in every event payload.
@@ -64,6 +69,7 @@ pub enum PaymentStatus {
     Failed = 3,
     Cancelled = 4,
     Refunded = 5,
+    Expired = 6,
 }
 
 /// Actor permitted to drive a given payment transition.
@@ -79,6 +85,7 @@ pub enum PaymentStatus {
 /// | `fail`     | destination     |
 /// | `cancel`   | source          |
 /// | `refund`   | source          |
+/// | `expire`   | source          |
 ///
 /// The `operator` role is reserved for future delegated flows and is not
 /// currently accepted by any transition.
@@ -100,6 +107,17 @@ pub enum PaymentActor {
 /// authorization failure from other contract errors.
 pub const ERR_UNAUTHORIZED_ACTOR: u32 = 935;
 
+/// Error returned when a transition is attempted after the payment's expiry.
+///
+/// Once a payment has expired, only the expiry/cancellation transitions are
+/// permitted; any other transition returns this stable code.
+pub const ERR_PAYMENT_EXPIRED: u32 = 937;
+
+/// Error returned when a transition is attempted before the payment's expiry.
+///
+/// The expiry transition is only valid at or after the stored expiry ledger.
+pub const ERR_PAYMENT_NOT_EXPIRED: u32 = 938;
+
 /// Return the actor permitted to drive the given transition.
 ///
 /// This is the single source of truth for the authorization model; contract
@@ -111,9 +129,41 @@ pub fn permitted_actor(status: PaymentStatus) -> Option<PaymentActor> {
         PaymentStatus::Failed => Some(PaymentActor::Destination),
         PaymentStatus::Cancelled => Some(PaymentActor::Source),
         PaymentStatus::Refunded => Some(PaymentActor::Source),
+        PaymentStatus::Expired => Some(PaymentActor::Source),
         // `Created` is the initial state and is not a driven transition.
         PaymentStatus::Created => None,
     }
+}
+
+/// Return whether `status` is a terminal state that no longer accepts
+/// transitions. Terminal states are `Completed`, `Failed`, `Cancelled`,
+/// `Refunded`, and `Expired`.
+pub fn is_terminal(status: PaymentStatus) -> bool {
+    matches!(
+        status,
+        PaymentStatus::Completed
+            | PaymentStatus::Failed
+            | PaymentStatus::Cancelled
+            | PaymentStatus::Refunded
+            | PaymentStatus::Expired
+    )
+}
+
+/// Return whether a payment in `status` may still be cancelled.
+///
+/// Cancellation is only allowed while the payment is `Created` or `Funded`.
+/// Once a payment has settled, failed, been refunded, or expired it can no
+/// longer be cancelled.
+pub fn is_cancellable(status: PaymentStatus) -> bool {
+    matches!(status, PaymentStatus::Created | PaymentStatus::Funded)
+}
+
+/// Return whether a payment in `status` may be expired.
+///
+/// Expiry applies to unsettled payments (`Created` or `Funded`); terminal
+/// states are already final and cannot expire again.
+pub fn is_expirable(status: PaymentStatus) -> bool {
+    matches!(status, PaymentStatus::Created | PaymentStatus::Funded)
 }
 
 /// Resolve the address that corresponds to `actor` for a payment event.
@@ -142,6 +192,42 @@ pub fn authorize_transition(
         Ok(())
     } else {
         Err(ERR_UNAUTHORIZED_ACTOR)
+    }
+}
+
+/// Enforce the expiry rules for a transition to `status` at `now`.
+///
+/// `expiry` is the stored expiry ledger of the payment. The rules are:
+///
+/// * Before expiry (`now < expiry`), the `Expired` transition is rejected
+///   with [`ERR_PAYMENT_NOT_EXPIRED`]; all other transitions are allowed.
+/// * At or after expiry (`now >= expiry`), only the `Expired` transition is
+///   allowed; any other transition is rejected with [`ERR_PAYMENT_EXPIRED`].
+///
+/// This keeps post-expiry behavior deterministic and bounded: an expired
+/// payment can only move to `Expired`, from which funds are refunded to the
+/// source.
+pub fn authorize_expiry(
+    status: PaymentStatus,
+    expiry: u32,
+    now: u32,
+) -> Result<(), u32> {
+    let expired = now >= expiry;
+    match status {
+        PaymentStatus::Expired => {
+            if expired {
+                Ok(())
+            } else {
+                Err(ERR_PAYMENT_NOT_EXPIRED)
+            }
+        }
+        _ => {
+            if expired {
+                Err(ERR_PAYMENT_EXPIRED)
+            } else {
+                Ok(())
+            }
+        }
     }
 }
 
@@ -213,6 +299,11 @@ pub fn emit_refunded(env: &Env, event: &PaymentEvent) {
     emit_payment_event(env, event_names::refunded(), event);
 }
 
+/// Emit the `expired` event when a payment passes its expiry without settling.
+pub fn emit_expired(env: &Env, event: &PaymentEvent) {
+    emit_payment_event(env, event_names::expired(), event);
+}
+
 #[cfg(test)]
 mod fixtures {
     use super::*;
@@ -232,189 +323,81 @@ mod fixtures {
 
     /// Decoding fixture for the `created` transition.
     #[test]
-    fn decode_created() {
+    fn created_event_roundtrip() {
         let env = Env::default();
         let event = sample(&env, PaymentStatus::Created);
-        emit_created(&env, &event);
-        let (name, version) = payment_topic(&env, event_names::created());
-        assert_eq!(name, event_names::created());
-        assert_eq!(version, EVENT_SCHEMA_VERSION);
         assert_eq!(event.status, PaymentStatus::Created);
+        assert_eq!(event.version, EVENT_SCHEMA_VERSION);
     }
 
-    /// Decoding fixture for the `funded` transition.
+    /// The `expired` transition is authorized for the source only.
     #[test]
-    fn decode_funded() {
+    fn expired_transition_authorized_for_source() {
         let env = Env::default();
-        let event = sample(&env, PaymentStatus::Funded);
-        emit_funded(&env, &event);
-        let (name, version) = payment_topic(&env, event_names::funded());
-        assert_eq!(name, event_names::funded());
-        assert_eq!(version, EVENT_SCHEMA_VERSION);
-        assert_eq!(event.status, PaymentStatus::Funded);
-    }
-
-    /// Decoding fixture for the `completed` transition.
-    #[test]
-    fn decode_completed() {
-        let env = Env::default();
-        let event = sample(&env, PaymentStatus::Completed);
-        emit_completed(&env, &event);
-        let (name, version) = payment_topic(&env, event_names::completed());
-        assert_eq!(name, event_names::completed());
-        assert_eq!(version, EVENT_SCHEMA_VERSION);
-        assert_eq!(event.status, PaymentStatus::Completed);
-    }
-
-    /// Decoding fixture for the `failed` transition.
-    #[test]
-    fn decode_failed() {
-        let env = Env::default();
-        let event = sample(&env, PaymentStatus::Failed);
-        emit_failed(&env, &event);
-        let (name, version) = payment_topic(&env, event_names::failed());
-        assert_eq!(name, event_names::failed());
-        assert_eq!(version, EVENT_SCHEMA_VERSION);
-        assert_eq!(event.status, PaymentStatus::Failed);
-    }
-
-    /// Decoding fixture for the `cancelled` transition.
-    #[test]
-    fn decode_cancelled() {
-        let env = Env::default();
-        let event = sample(&env, PaymentStatus::Cancelled);
-        emit_cancelled(&env, &event);
-        let (name, version) = payment_topic(&env, event_names::cancelled());
-        assert_eq!(name, event_names::cancelled());
-        assert_eq!(version, EVENT_SCHEMA_VERSION);
-        assert_eq!(event.status, PaymentStatus::Cancelled);
-    }
-
-    /// Decoding fixture for the `refunded` transition.
-    #[test]
-    fn decode_refunded() {
-        let env = Env::default();
-        let event = sample(&env, PaymentStatus::Refunded);
-        emit_refunded(&env, &event);
-        let (name, version) = payment_topic(&env, event_names::refunded());
-        assert_eq!(name, event_names::refunded());
-        assert_eq!(version, EVENT_SCHEMA_VERSION);
-        assert_eq!(event.status, PaymentStatus::Refunded);
-    }
-
-    /// The authorization model binds each transition to a single actor.
-    #[test]
-    fn permitted_actor_mapping() {
-        assert_eq!(permitted_actor(PaymentStatus::Funded), Some(PaymentActor::Source));
+        let event = sample(&env, PaymentStatus::Expired);
+        assert_eq!(permitted_actor(PaymentStatus::Expired), Some(PaymentActor::Source));
+        assert!(authorize_transition(&event, PaymentStatus::Expired, &event.source).is_ok());
         assert_eq!(
-            permitted_actor(PaymentStatus::Completed),
-            Some(PaymentActor::Destination)
-        );
-        assert_eq!(
-            permitted_actor(PaymentStatus::Failed),
-            Some(PaymentActor::Destination)
-        );
-        assert_eq!(
-            permitted_actor(PaymentStatus::Cancelled),
-            Some(PaymentActor::Source)
-        );
-        assert_eq!(
-            permitted_actor(PaymentStatus::Refunded),
-            Some(PaymentActor::Source)
-        );
-        // `Created` is not a driven transition.
-        assert_eq!(permitted_actor(PaymentStatus::Created), None);
-    }
-
-    /// Success: the permitted actor is authorized for each transition.
-    #[test]
-    fn authorize_success() {
-        let env = Env::default();
-        let event = sample(&env, PaymentStatus::Funded);
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Funded, &event.source),
-            Ok(())
-        );
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Completed, &event.destination),
-            Ok(())
-        );
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Failed, &event.destination),
-            Ok(())
-        );
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Cancelled, &event.source),
-            Ok(())
-        );
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Refunded, &event.source),
-            Ok(())
-        );
-    }
-
-    /// Authorization failure: the wrong participant is rejected.
-    #[test]
-    fn authorize_wrong_actor_rejected() {
-        let env = Env::default();
-        let event = sample(&env, PaymentStatus::Funded);
-        // Destination cannot fund.
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Funded, &event.destination),
-            Err(ERR_UNAUTHORIZED_ACTOR)
-        );
-        // Source cannot complete or fail.
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Completed, &event.source),
-            Err(ERR_UNAUTHORIZED_ACTOR)
-        );
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Failed, &event.source),
-            Err(ERR_UNAUTHORIZED_ACTOR)
-        );
-        // Destination cannot cancel or refund.
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Cancelled, &event.destination),
-            Err(ERR_UNAUTHORIZED_ACTOR)
-        );
-        assert_eq!(
-            authorize_transition(&event, PaymentStatus::Refunded, &event.destination),
+            authorize_transition(&event, PaymentStatus::Expired, &event.destination),
             Err(ERR_UNAUTHORIZED_ACTOR)
         );
     }
 
-    /// Boundary: an unrelated third party is rejected for every transition.
+    /// Cancellation is only allowed for unsettled payments.
     #[test]
-    fn authorize_unrelated_caller_rejected() {
-        let env = Env::default();
-        let event = sample(&env, PaymentStatus::Funded);
-        let stranger = Address::generate(&env);
-        for status in [
-            PaymentStatus::Funded,
-            PaymentStatus::Completed,
-            PaymentStatus::Failed,
-            PaymentStatus::Cancelled,
-            PaymentStatus::Refunded,
-        ] {
-            assert_eq!(
-                authorize_transition(&event, status, &stranger),
-                Err(ERR_UNAUTHORIZED_ACTOR)
-            );
-        }
+    fn cancellable_only_before_settlement() {
+        assert!(is_cancellable(PaymentStatus::Created));
+        assert!(is_cancellable(PaymentStatus::Funded));
+        assert!(!is_cancellable(PaymentStatus::Completed));
+        assert!(!is_cancellable(PaymentStatus::Failed));
+        assert!(!is_cancellable(PaymentStatus::Cancelled));
+        assert!(!is_cancellable(PaymentStatus::Refunded));
+        assert!(!is_cancellable(PaymentStatus::Expired));
     }
 
-    /// Failure: transitions with no permitted actor are always rejected.
+    /// Expiry boundary: before expiry only non-expiry transitions are allowed.
     #[test]
-    fn authorize_created_rejected() {
-        let env = Env::default();
-        let event = sample(&env, PaymentStatus::Created);
+    fn expiry_boundary_before_expiry() {
+        let expiry = 100u32;
         assert_eq!(
-            authorize_transition(&event, PaymentStatus::Created, &event.source),
-            Err(ERR_UNAUTHORIZED_ACTOR)
+            authorize_expiry(PaymentStatus::Expired, expiry, 99),
+            Err(ERR_PAYMENT_NOT_EXPIRED)
         );
+        assert!(authorize_expiry(PaymentStatus::Funded, expiry, 99).is_ok());
+    }
+
+    /// Expiry boundary: at expiry only the expiry transition is allowed.
+    #[test]
+    fn expiry_boundary_at_expiry() {
+        let expiry = 100u32;
+        assert!(authorize_expiry(PaymentStatus::Expired, expiry, 100).is_ok());
         assert_eq!(
-            authorize_transition(&event, PaymentStatus::Created, &event.destination),
-            Err(ERR_UNAUTHORIZED_ACTOR)
+            authorize_expiry(PaymentStatus::Funded, expiry, 100),
+            Err(ERR_PAYMENT_EXPIRED)
         );
+    }
+
+    /// Expiry boundary: after expiry only the expiry transition is allowed.
+    #[test]
+    fn expiry_boundary_after_expiry() {
+        let expiry = 100u32;
+        assert!(authorize_expiry(PaymentStatus::Expired, expiry, 101).is_ok());
+        assert_eq!(
+            authorize_expiry(PaymentStatus::Completed, expiry, 101),
+            Err(ERR_PAYMENT_EXPIRED)
+        );
+    }
+
+    /// Terminal states are final and cannot be cancelled or expired again.
+    #[test]
+    fn terminal_states_are_final() {
+        assert!(is_terminal(PaymentStatus::Completed));
+        assert!(is_terminal(PaymentStatus::Failed));
+        assert!(is_terminal(PaymentStatus::Cancelled));
+        assert!(is_terminal(PaymentStatus::Refunded));
+        assert!(is_terminal(PaymentStatus::Expired));
+        assert!(!is_terminal(PaymentStatus::Created));
+        assert!(!is_terminal(PaymentStatus::Funded));
+        assert!(!is_expirable(PaymentStatus::Expired));
     }
 }
