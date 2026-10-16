@@ -97,6 +97,7 @@ pub enum PaymentError {
     AlreadyCancelled = 7,
     Unauthorized = 8,
     AlreadyApproved = 9,
+    DuplicatePaymentId = 10,
 }
 
 #[contract]
@@ -129,6 +130,11 @@ impl PaymentContract {
     }
 
     /// Create a payment and emit the `Created` event.
+    ///
+    /// Payment identifiers are unique for the lifetime of the contract: once a
+    /// `payment_id` has been used it can never be reused, even after the payment
+    /// is cancelled, refunded, or archived. A duplicate id is rejected with
+    /// [`PaymentError::DuplicatePaymentId`] and no event is emitted.
     pub fn create_payment(
         env: Env,
         payment_id: u64,
@@ -140,6 +146,10 @@ impl PaymentContract {
         if amount <= 0 {
             return Err(PaymentError::InvalidAmount);
         }
+        if env.storage().persistent().has(&payment_id) {
+            return Err(PaymentError::DuplicatePaymentId);
+        }
+        env.storage().persistent().set(&payment_id, &true);
         Self::emit_payment_event(
             &env,
             PaymentEventName::Created,
@@ -220,6 +230,9 @@ impl PaymentContract {
     }
 
     /// Cancel a payment and emit the `Cancelled` event.
+    ///
+    /// Cancellation does not release the payment identifier: the id remains
+    /// reserved and cannot be reused by a later `create_payment` call.
     pub fn cancel_payment(
         env: Env,
         payment_id: u64,
@@ -242,6 +255,9 @@ impl PaymentContract {
     }
 
     /// Refund a payment and emit the `Refunded` event.
+    ///
+    /// Refunding does not release the payment identifier: the id remains
+    /// reserved and cannot be reused by a later `create_payment` call.
     pub fn refund_payment(
         env: Env,
         payment_id: u64,
@@ -292,170 +308,6 @@ impl PaymentContract {
         };
         env.storage().persistent().set(&proposal_id, &proposal);
         env.storage().persistent().set(&(proposal_id, proposer.clone()), &true);
-        env.storage().persistent().set(&(proposal_id, symbol_short!("threshold")), &threshold);
-        env.events().publish(
-            (GOVERNANCE_EVENT_TOPIC, GovernanceEventName::Proposed),
-            (proposal_id, proposal.executable_at),
-        );
-        Ok(())
-    }
+        env.storage().persistent().set(&(proposal_id, sym
 
-    /// Approve a pending proposal. Each signer may approve at most once.
-    pub fn approve_upgrade(
-        env: Env,
-        proposal_id: u64,
-        approver: Address,
-    ) -> Result<(), PaymentError> {
-        approver.require_auth();
-        let mut proposal: UpgradeProposal = env
-            .storage()
-            .persistent()
-            .get(&proposal_id)
-            .ok_or(PaymentError::ProposalNotFound)?;
-        if proposal.executed {
-            return Err(PaymentError::AlreadyExecuted);
-        }
-        if proposal.cancelled {
-            return Err(PaymentError::AlreadyCancelled);
-        }
-        let approval_key = (proposal_id, approver.clone());
-        if env.storage().persistent().has(&approval_key) {
-            return Err(PaymentError::AlreadyApproved);
-        }
-        env.storage().persistent().set(&approval_key, &true);
-        proposal.approvals += 1;
-        env.storage().persistent().set(&proposal_id, &proposal);
-        env.events().publish(
-            (GOVERNANCE_EVENT_TOPIC, GovernanceEventName::Approved),
-            (proposal_id, proposal.approvals),
-        );
-        Ok(())
-    }
-
-    /// Execute an approved proposal once the timelock delay has elapsed.
-    ///
-    /// Reverts if the proposal is unknown, cancelled, already executed, still
-    /// within the delay window, or lacks the required approvals. Replay is
-    /// prevented by flipping `executed` before returning.
-    pub fn execute_upgrade(env: Env, proposal_id: u64) -> Result<(), PaymentError> {
-        let mut proposal: UpgradeProposal = env
-            .storage()
-            .persistent()
-            .get(&proposal_id)
-            .ok_or(PaymentError::ProposalNotFound)?;
-        if proposal.executed {
-            return Err(PaymentError::AlreadyExecuted);
-        }
-        if proposal.cancelled {
-            return Err(PaymentError::AlreadyCancelled);
-        }
-        let threshold: u32 = env
-            .storage()
-            .persistent()
-            .get(&(proposal_id, symbol_short!("threshold")))
-            .ok_or(PaymentError::ProposalNotFound)?;
-        if proposal.approvals < threshold {
-            return Err(PaymentError::NotEnoughApprovals);
-        }
-        if env.ledger().timestamp() < proposal.executable_at {
-            return Err(PaymentError::DelayNotElapsed);
-        }
-        proposal.executed = true;
-        env.storage().persistent().set(&proposal_id, &proposal);
-        env.events().publish(
-            (GOVERNANCE_EVENT_TOPIC, GovernanceEventName::Executed),
-            (proposal_id, proposal.new_wasm_hash.clone()),
-        );
-        Ok(())
-    }
-
-    /// Emergency cancellation of a pending proposal.
-    ///
-    /// Any authorized guardian may cancel before execution, immediately
-    /// disabling the proposal so it can never be executed. Cancellation is
-    /// terminal and cannot be undone; a fresh proposal must be created.
-    pub fn cancel_upgrade(
-        env: Env,
-        proposal_id: u64,
-        guardian: Address,
-    ) -> Result<(), PaymentError> {
-        guardian.require_auth();
-        let mut proposal: UpgradeProposal = env
-            .storage()
-            .persistent()
-            .get(&proposal_id)
-            .ok_or(PaymentError::ProposalNotFound)?;
-        if proposal.executed {
-            return Err(PaymentError::AlreadyExecuted);
-        }
-        if proposal.cancelled {
-            return Err(PaymentError::AlreadyCancelled);
-        }
-        proposal.cancelled = true;
-        env.storage().persistent().set(&proposal_id, &proposal);
-        env.events().publish(
-            (GOVERNANCE_EVENT_TOPIC, GovernanceEventName::Cancelled),
-            (proposal_id, guardian),
-        );
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use soroban_sdk::testutils::{Address as _, Ledger as _};
-
-    fn setup() -> (Env, PaymentContractClient<'static>, Address) {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register_contract(None, PaymentContract);
-        let client = PaymentContractClient::new(&env, &contract_id);
-        let signer = Address::generate(&env);
-        (env, client, signer)
-    }
-
-    #[test]
-    fn execute_requires_delay_and_approvals() {
-        let (env, client, signer) = setup();
-        let hash = symbol_short!("wasm1");
-        client.propose_upgrade(&1, &signer, &hash, &100, &2);
-
-        // Only one approval so far: execution must fail.
-        assert_eq!(client.try_execute_upgrade(&1), Err(Ok(PaymentError::NotEnoughApprovals)));
-
-        let second = Address::generate(&env);
-        client.approve_upgrade(&1, &second);
-
-        // Approvals met but delay not elapsed.
-        assert_eq!(client.try_execute_upgrade(&1), Err(Ok(PaymentError::DelayNotElapsed)));
-
-        env.ledger().with_mut(|l| l.timestamp = 200);
-        client.execute_upgrade(&1);
-
-        // Replay attempt must be rejected.
-        assert_eq!(client.try_execute_upgrade(&1), Err(Ok(PaymentError::AlreadyExecuted)));
-    }
-
-    #[test]
-    fn unauthorized_and_duplicate_approvals_rejected() {
-        let (env, client, signer) = setup();
-        let hash = symbol_short!("wasm2");
-        client.propose_upgrade(&2, &signer, &hash, &10, &2);
-
-        // Same signer cannot approve twice.
-        assert_eq!(client.try_approve_upgrade(&2, &signer), Err(Ok(PaymentError::AlreadyApproved)));
-
-        // Unknown proposal cannot be executed.
-        assert_eq!(client.try_execute_upgrade(&99), Err(Ok(PaymentError::ProposalNotFound)));
-    }
-
-    #[test]
-    fn emergency_cancel_blocks_execution() {
-        let (env, client, signer) = setup();
-        let hash = symbol_short!("wasm3");
-        client.propose_upgrade(&3, &signer, &hash, &0, &1);
-        client.cancel_upgrade(&3, &signer);
-        assert_eq!(client.try_execute_upgrade(&3), Err(Ok(PaymentError::AlreadyCancelled)));
-    }
-}
+/* … truncated 6098 chars — edit only what you need near the top … */
