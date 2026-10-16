@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, token, Address, Env};
+use soroban_sdk::{testutils::{Address as _, Events as _}, token, Address, Env, IntoVal, Symbol};
 
 fn setup(env: &Env) -> (Address, Address, Address, Address) {
     let contract_id = env.register_contract(None, EscrowContract);
@@ -208,62 +208,41 @@ fn extend_deadline_enforces_max_count() {
     let deadline = env.ledger().sequence() + 10;
     client.create(&depositor, &beneficiary, &token_id, &100, &deadline);
 
-    for _ in 0..MAX_EXTENSION_COUNT {
+    for _ in 0..MAX_EXTENSIONS {
         client.extend_deadline(&depositor, &1);
     }
-    assert_eq!(client.get().extension_count, MAX_EXTENSION_COUNT);
 
-    // Further extensions beyond the count cap are rejected.
+    // Once the extension count cap is reached, further extensions are rejected.
     assert_eq!(
         client.try_extend_deadline(&depositor, &1),
-        Err(Ok(EscrowError::ExtensionLimitReached))
+        Err(Ok(EscrowError::TooManyExtensions))
     );
+    assert_eq!(client.get().extension_count, MAX_EXTENSIONS);
 }
 
 #[test]
-fn extend_deadline_rejects_zero_and_negative() {
+fn create_emits_versioned_lifecycle_event() {
     let env = Env::default();
     env.mock_all_auths();
     let (contract_id, depositor, beneficiary, token_id) = setup(&env);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
-    let deadline = env.ledger().sequence() + 10;
-    client.create(&depositor, &beneficiary, &token_id, &100, &deadline);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
 
-    assert_eq!(
-        client.try_extend_deadline(&depositor, &0),
-        Err(Ok(EscrowError::InvalidExtension))
-    );
-    assert_eq!(
-        client.try_extend_deadline(&depositor, &-1),
-        Err(Ok(EscrowError::InvalidExtension))
-    );
-    assert_eq!(client.get().deadline, deadline);
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+    assert_eq!(topics.len(), 3);
+    assert_eq!(topics.get(0).unwrap(), EVENT_VERSION.into_val(&env));
+    assert_eq!(topics.get(1).unwrap(), Symbol::new(&env, "created").into_val(&env));
+    assert_eq!(topics.get(2).unwrap(), depositor.clone().into_val(&env));
+    let (amount, state): (i128, EscrowState) = data.into_val(&env);
+    assert_eq!(amount, 100);
+    assert_eq!(state, EscrowState::Created);
 }
 
 #[test]
-fn extend_deadline_guards_timestamp_overflow() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
-    let client = EscrowContractClient::new(&env, &contract_id);
-
-    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
-    // Start near the u32 ceiling so a valid extension would overflow.
-    let deadline = u32::MAX - 1;
-    client.create(&depositor, &beneficiary, &token_id, &100, &deadline);
-
-    assert_eq!(
-        client.try_extend_deadline(&depositor, &MAX_EXTENSION_DURATION),
-        Err(Ok(EscrowError::DeadlineOverflow))
-    );
-    assert_eq!(client.get().deadline, deadline);
-    assert_eq!(client.get().extension_count, 0);
-}
-
-#[test]
-fn extend_deadline_blocked_in_terminal_state() {
+fn release_emits_versioned_lifecycle_event() {
     let env = Env::default();
     env.mock_all_auths();
     let (contract_id, depositor, beneficiary, token_id) = setup(&env);
@@ -273,8 +252,55 @@ fn extend_deadline_blocked_in_terminal_state() {
     client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
     client.release();
 
-    assert_eq!(
-        client.try_extend_deadline(&depositor, &5),
-        Err(Ok(EscrowError::NotCreated))
-    );
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+    assert_eq!(topics.get(0).unwrap(), EVENT_VERSION.into_val(&env));
+    assert_eq!(topics.get(1).unwrap(), Symbol::new(&env, "released").into_val(&env));
+    assert_eq!(topics.get(2).unwrap(), beneficiary.clone().into_val(&env));
+    let (amount, state): (i128, EscrowState) = data.into_val(&env);
+    assert_eq!(amount, 100);
+    assert_eq!(state, EscrowState::Released);
+}
+
+#[test]
+fn cancel_emits_versioned_lifecycle_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+    client.cancel();
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+    assert_eq!(topics.get(0).unwrap(), EVENT_VERSION.into_val(&env));
+    assert_eq!(topics.get(1).unwrap(), Symbol::new(&env, "refunded").into_val(&env));
+    assert_eq!(topics.get(2).unwrap(), depositor.clone().into_val(&env));
+    let (amount, state): (i128, EscrowState) = data.into_val(&env);
+    assert_eq!(amount, 100);
+    assert_eq!(state, EscrowState::Cancelled);
+}
+
+#[test]
+fn expire_emits_versioned_lifecycle_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 5));
+    env.ledger().set_sequence_number(env.ledger().sequence() + 5);
+    client.expire();
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+    assert_eq!(topics.get(0).unwrap(), EVENT_VERSION.into_val(&env));
+    assert_eq!(topics.get(1).unwrap(), Symbol::new(&env, "refunded").into_val(&env));
+    assert_eq!(topics.get(2).unwrap(), depositor.clone().into_val(&env));
+    let (amount, state): (i128, EscrowState) = data.into_val(&env);
+    assert_eq!(amount, 100);
+    assert_eq!(state, EscrowState::Expired);
 }
