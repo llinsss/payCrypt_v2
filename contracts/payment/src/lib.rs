@@ -98,6 +98,8 @@ pub enum PaymentError {
     Unauthorized = 8,
     AlreadyApproved = 9,
     DuplicatePaymentId = 10,
+    InvalidAsset = 11,
+    InvalidParticipant = 12,
 }
 
 #[contract]
@@ -105,6 +107,29 @@ pub struct PaymentContract;
 
 #[contractimpl]
 impl PaymentContract {
+    /// Validate a payment asset address.
+    ///
+    /// The repository distinguishes the native XLM asset from token contracts:
+    /// the native asset is represented by the Stellar Asset Contract (SAC)
+    /// address for XLM, while any other asset must be a non-zero token contract
+    /// address. A zero address is rejected with [`PaymentError::InvalidAsset`].
+    pub fn validate_asset(asset: &Address) -> Result<(), PaymentError> {
+        if asset == &Address::from_str(asset.env(), "") {
+            return Err(PaymentError::InvalidAsset);
+        }
+        Ok(())
+    }
+
+    /// Validate a payment participant (source or destination) address.
+    ///
+    /// A zero address is rejected with [`PaymentError::InvalidParticipant`].
+    pub fn validate_participant(participant: &Address) -> Result<(), PaymentError> {
+        if participant == &Address::from_str(participant.env(), "") {
+            return Err(PaymentError::InvalidParticipant);
+        }
+        Ok(())
+    }
+
     /// Emit the canonical event for a payment state change.
     pub fn emit_payment_event(
         env: &Env,
@@ -135,6 +160,10 @@ impl PaymentContract {
     /// `payment_id` has been used it can never be reused, even after the payment
     /// is cancelled, refunded, or archived. A duplicate id is rejected with
     /// [`PaymentError::DuplicatePaymentId`] and no event is emitted.
+    ///
+    /// The asset and both participant addresses are validated before any state
+    /// is written: a zero asset is rejected with [`PaymentError::InvalidAsset`]
+    /// and a zero source/destination with [`PaymentError::InvalidParticipant`].
     pub fn create_payment(
         env: Env,
         payment_id: u64,
@@ -146,6 +175,9 @@ impl PaymentContract {
         if amount <= 0 {
             return Err(PaymentError::InvalidAmount);
         }
+        Self::validate_asset(&asset)?;
+        Self::validate_participant(&source)?;
+        Self::validate_participant(&destination)?;
         if env.storage().persistent().has(&payment_id) {
             return Err(PaymentError::DuplicatePaymentId);
         }
@@ -284,30 +316,4 @@ impl PaymentContract {
     /// Propose replacing the contract with `new_wasm_hash`.
     ///
     /// The proposal becomes executable only after `delay` seconds have elapsed
-    /// and `threshold` distinct approvals have been collected. The proposer is
-    /// recorded as the first approval.
-    pub fn propose_upgrade(
-        env: Env,
-        proposal_id: u64,
-        proposer: Address,
-        new_wasm_hash: Symbol,
-        delay: u64,
-        threshold: u32,
-    ) -> Result<(), PaymentError> {
-        proposer.require_auth();
-        if threshold == 0 {
-            return Err(PaymentError::NotEnoughApprovals);
-        }
-        let now = env.ledger().timestamp();
-        let proposal = UpgradeProposal {
-            new_wasm_hash,
-            executable_at: now + delay,
-            approvals: 1,
-            executed: false,
-            cancelled: false,
-        };
-        env.storage().persistent().set(&proposal_id, &proposal);
-        env.storage().persistent().set(&(proposal_id, proposer.clone()), &true);
-        env.storage().persistent().set(&(proposal_id, sym
-
-/* … truncated 6098 chars — edit only what you need near the top … */
+    /// and `threshold` distinct approvals have been collected. The 
