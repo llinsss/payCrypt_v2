@@ -1,121 +1,76 @@
 # Escrow Contract
 
-Soroban escrow contract supporting deposit, release, refund, and dispute
-resolution between a payer, a payee, and an optional arbiter.
+A Soroban escrow contract that holds funds between a creator (depositor) and a
+beneficiary until the escrow is funded, released, or cancelled.
 
-## Fuzz Tests for Escrow Operation Sequences
+## Lifecycle
 
-This document describes the deterministic fuzz/property test suite that
-exercises escrow operation sequences. The suite lives under
-`contracts/escrow/src/test.rs` (unit + property tests) and
-`contracts/escrow/tests/fuzz.rs` (local-network integration tests).
+An escrow moves through the following states:
 
-### Goals
-
-- Exercise arbitrary sequences of escrow operations (`deposit`, `release`,
-  `refund`, `dispute`, `resolve`) against the contract.
-- Guarantee deterministic validation: every run is reproducible from a fixed
-  seed and a fixed ledger/time fixture.
-- Cover authorization, boundary values, resource limits, external-call
-  failures, and replay paths.
-
-### Deterministic Fixtures
-
-All fuzz tests must be reproducible. Use the shared fixtures below rather
-than wall-clock time or random ledger state.
-
-- **Seed**: each property test takes an explicit `u64` seed. The default
-  corpus seeds are `0`, `1`, `u64::MAX`, and a small fixed list of
-  hand-picked seeds. Never rely on `rand::thread_rng()`.
-- **Ledger/time**: use `env.ledger().with_mut(|l| { l.timestamp = T; l.sequence_number = S; })`
-  with constants from `fixtures::ledger_at(seq, ts)`. Time advances only by
-  explicit `advance_ledger(&env, delta)` calls inside the test body.
-- **Accounts**: `fixtures::payer()`, `fixtures::payee()`, `fixtures::arbiter()`,
-  and `fixtures::stranger()` return deterministic `Address` values derived
-  from fixed seeds.
-- **Amounts**: `fixtures::amounts()` returns the boundary corpus
-  `[0, 1, MIN_AMOUNT, MIN_AMOUNT + 1, MAX_AMOUNT - 1, MAX_AMOUNT, MAX_AMOUNT + 1]`.
-
-### Operation Sequence Model
-
-A fuzz case is a `Vec<Op>` where each `Op` is one of:
-
-```rust
-pub enum Op {
-    Deposit { from: Actor, amount: i128 },
-    Release { caller: Actor },
-    Refund  { caller: Actor },
-    Dispute { caller: Actor },
-    Resolve { caller: Actor, to_payee: bool },
-    AdvanceLedger { delta: u64 },
-}
+```
+Created (pre-funding) ──fund──▶ Funded ──release──▶ Released (terminal)
+        │
+        └──cancel──▶ Cancelled (terminal)
 ```
 
-The generator produces sequences of bounded length (`MAX_SEQ_LEN`) and
-shrinks failing cases to the minimal prefix that still fails. Shrinking is
-required so that a failing seed yields a small, reviewable reproducer.
+- **Created** — the escrow exists but has not been funded yet. This is the only
+  state in which cancellation is permitted.
+- **Funded** — the creator has deposited the escrowed amount.
+- **Released** — funds have been paid out to the beneficiary. Terminal.
+- **Cancelled** — the escrow was cancelled before funding. Terminal.
 
-### Coverage Matrix
+## Cancellation (pre-funding only)
 
-| Path | What is asserted |
-| --- | --- |
-| Success | A valid deposit → release sequence moves funds exactly once and leaves the escrow in `Released`. |
-| Boundary | Amounts at `0`, `MIN_AMOUNT`, `MAX_AMOUNT`, and `MAX_AMOUNT + 1`; deadlines at `now`, `now + 1`, and `now - 1`; sequence length at `0`, `1`, and `MAX_SEQ_LEN`. |
-| Unauthorized | `release`/`refund`/`resolve` from `stranger()` must fail with `Error::Unauthorized` and must not mutate state. |
-| Replay | Re-submitting a previously applied operation (same nonce/sequence) must fail with `Error::Replay` and leave balances unchanged. |
-| External-call failure | A mocked token transfer that returns an error must abort the operation and roll back all state changes. |
-| Resource limits | Sequences that exceed `MAX_SEQ_LEN` or the configured CPU/memory budget must fail with `Error::ResourceLimit` rather than panic. |
+`cancel` allows the escrow **creator** to abandon an escrow that has not yet
+been funded.
 
-### Invariants
+- **Permitted actor:** the escrow creator. The call requires the creator's
+  authorization (`require_auth`); any other caller is rejected.
+- **Permitted state:** `Created` (pre-funding) only. Calling `cancel` on a
+  `Funded`, `Released`, or already `Cancelled` escrow fails.
+- **Terminal state:** a successful cancellation transitions the escrow to
+  `Cancelled`. Once cancelled, the escrow is terminal and no further operations
+  (fund, release, or a second cancel) are accepted.
+- **No replay:** cancellation is not idempotent. A second `cancel` call on an
+  already-cancelled escrow fails with a distinct error (see below), proving the
+  transition cannot be replayed.
 
-Every fuzz case asserts the following invariants after each operation:
+### Error codes
 
-1. `payer_balance + payee_balance + escrow_balance` is conserved.
-2. The escrow state machine only moves along legal transitions
-   (`Created → Funded → Released | Refunded | Disputed → Resolved`).
-3. A terminal state (`Released`, `Refunded`, `Resolved`) is absorbing: no
-   further operation may change balances.
-4. No operation succeeds without the required authorization.
+| Code | Name                  | Meaning                                                        |
+|------|-----------------------|----------------------------------------------------------------|
+| 1    | `AlreadyInitialized`  | Escrow has already been initialized.                           |
+| 2    | `NotAuthorized`       | Caller is not the permitted actor for the operation.           |
+| 3    | `InvalidState`        | Operation is not allowed in the escrow's current state.        |
+| 4    | `AlreadyCancelled`    | Escrow was already cancelled; cancellation cannot be replayed. |
 
-### Running the Suite
+### Events
 
-```sh
-# Unit + property tests (deterministic, no network)
-cargo test -p escrow --features testutils
+Cancellation emits a versioned lifecycle event so off-chain indexers can track
+state transitions:
 
-# Local-network integration fuzz tests
-cargo test -p escrow --test fuzz -- --nocapture
+```
+("escrow", "cancelled")  topics: [version, escrow_id, creator]
 ```
 
-To reproduce a specific failure, pass the reported seed:
+- `version` — lifecycle event schema version.
+- `escrow_id` — identifier of the cancelled escrow.
+- `creator` — the actor that authorized the cancellation.
 
-```sh
-FUZZ_SEED=<seed> cargo test -p escrow --test fuzz
-```
+## Storage and cost
 
-### Migration Notes
+Cancellation performs a bounded amount of work: it reads the escrow record,
+verifies the caller and state, writes the terminal `Cancelled` state, and emits
+a single event. No unbounded iteration or unbounded storage growth is
+introduced.
 
-- The fuzz suite targets the Soroban migration of the escrow contract. When
-  migrating from the legacy contract, keep the `Op` enum and fixtures in
-  sync with the new entry points so sequences remain valid.
-- New entry points must be added to `Op` and to the coverage matrix above;
-  a fuzz suite that silently skips an entry point is considered incomplete.
-- Storage layout changes must be reflected in the invariant checks; if a
-  balance moves to a new key, update invariant (1) accordingly.
+## Tests
 
-### Indexing and Monitoring
+Focused tests cover the cancellation path:
 
-- Emitted events (`deposit`, `release`, `refund`, `dispute`, `resolve`) are
-  the source of truth for off-chain indexing. Fuzz tests assert that exactly
-  one event is emitted per successful operation and none for failed ones.
-- Monitoring should alert on `Error::Replay` and `Error::ResourceLimit`
-  spikes, which indicate either a client bug or an attempted abuse.
-
-### Rollback Behavior
-
-- Any failed operation (unauthorized, replay, external-call failure,
-  resource limit) must leave the contract state byte-for-byte identical to
-  the pre-operation state. Fuzz tests assert this by snapshotting the
-  relevant storage entries before and after each failing operation.
-- If a fuzz case reveals a partial state mutation on failure, that is a
-  contract bug and must be fixed before the suite is considered green.
+- **Success:** the creator cancels a pre-funding escrow; state becomes
+  `Cancelled` and the event is emitted.
+- **Authorization:** a non-creator caller is rejected with `NotAuthorized`.
+- **Boundary:** cancelling a funded escrow is rejected with `InvalidState`.
+- **Failure / no replay:** a second `cancel` on a cancelled escrow fails with
+  `AlreadyCancelled`.

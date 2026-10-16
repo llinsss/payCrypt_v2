@@ -43,6 +43,55 @@ fn cancel_refunds_depositor() {
 }
 
 #[test]
+fn cancel_before_funding_refunds_depositor() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+
+    // Pre-funding state: escrow is Created but not yet released/expired.
+    assert_eq!(client.get().state, EscrowState::Created);
+    client.cancel();
+
+    assert_eq!(token::Client::new(&env, &token_id).balance(&depositor), 100);
+    assert_eq!(client.get().state, EscrowState::Cancelled);
+}
+
+#[test]
+fn cancel_requires_depositor_auth() {
+    let env = Env::default();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+
+    // No auth mocked: the depositor's require_auth must reject the caller.
+    assert!(client.try_cancel().is_err());
+    assert_eq!(client.get().state, EscrowState::Created);
+}
+
+#[test]
+fn cancel_cannot_be_replayed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+    client.cancel();
+
+    // A second cancel must fail with a distinct error and leave state terminal.
+    assert_eq!(client.try_cancel(), Err(Ok(EscrowError::NotCreated)));
+    assert_eq!(client.get().state, EscrowState::Cancelled);
+    assert_eq!(token::Client::new(&env, &token_id).balance(&depositor), 100);
+}
+
+#[test]
 fn expire_after_expiry_ledger() {
     let env = Env::default();
     env.mock_all_auths();
