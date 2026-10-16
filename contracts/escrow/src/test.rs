@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, token, Address, Env};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
 fn setup(env: &Env) -> (Address, Address, Address, Address) {
     let contract_id = env.register_contract(None, EscrowContract);
@@ -162,4 +162,50 @@ fn release_requires_depositor_auth() {
 
     assert!(client.try_release(&token_id).is_err());
     assert_eq!(client.get().state, EscrowState::Created);
+}
+
+#[test]
+fn create_accepts_metadata_at_max_length() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    let metadata = String::from_str(&env, &"a".repeat(MAX_METADATA_LEN as usize));
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata);
+
+    assert_eq!(client.get().metadata, metadata);
+}
+
+#[test]
+fn create_rejects_metadata_over_max_length() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    let metadata = String::from_str(&env, &"a".repeat(MAX_METADATA_LEN as usize + 1));
+
+    assert_eq!(
+        client.try_create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata),
+        Err(Ok(EscrowError::MetadataTooLong))
+    );
+}
+
+#[test]
+fn create_rejects_metadata_with_unsupported_chars() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    let metadata = String::from_str(&env, "bad\nmetadata");
+
+    assert_eq!(
+        client.try_create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata),
+        Err(Ok(EscrowError::InvalidMetadata))
+    );
 }

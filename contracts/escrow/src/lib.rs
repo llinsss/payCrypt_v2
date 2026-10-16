@@ -1,12 +1,25 @@
 #![no_std]
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env, String};
+
+/// Maximum byte length of escrow metadata accepted by [`EscrowContract::create`].
+///
+/// Metadata is stored in instance storage, so its size is bounded to keep
+/// storage growth and per-invocation work predictable. Values longer than this
+/// (in bytes) are rejected with [`Error::MetadataTooLong`] before any storage
+/// write occurs.
+pub const MAX_METADATA_LEN: u32 = 128;
 
 /// Errors returned by the escrow contract.
 ///
 /// `AssetMismatch` (code 4) is returned when a deposit or payout is attempted
 /// with an asset contract address that does not match the asset bound to the
 /// escrow at creation time. No state is mutated in that case.
+///
+/// `MetadataTooLong` (code 6) is returned when the supplied metadata exceeds
+/// [`MAX_METADATA_LEN`] bytes. `MetadataInvalidChar` (code 7) is returned when
+/// the metadata contains a byte outside the supported character policy (see
+/// [`is_supported_metadata`]). Neither case mutates state.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -16,6 +29,20 @@ pub enum Error {
     Unauthorized = 3,
     AssetMismatch = 4,
     InvalidAmount = 5,
+    MetadataTooLong = 6,
+    MetadataInvalidChar = 7,
+}
+
+/// Supported character policy for escrow metadata: printable ASCII only
+/// (bytes `0x20..=0x7E`). This keeps metadata human-readable and avoids
+/// ambiguous or control characters in stored records.
+fn is_supported_metadata(metadata: &String) -> bool {
+    let len = metadata.len();
+    let mut buf = [0u8; MAX_METADATA_LEN as usize];
+    metadata.copy_into_slice(&mut buf[..len as usize]);
+    buf[..len as usize]
+        .iter()
+        .all(|b| (0x20..=0x7E).contains(b))
 }
 
 #[contracttype]
@@ -27,6 +54,8 @@ pub struct Escrow {
     pub asset: Address,
     pub amount: i128,
     pub released: bool,
+    /// Optional human-readable metadata, bounded by [`MAX_METADATA_LEN`].
+    pub metadata: String,
 }
 
 #[contract]
@@ -35,16 +64,27 @@ pub struct EscrowContract;
 #[contractimpl]
 impl EscrowContract {
     /// Create an escrow, binding the asset contract address for its lifetime.
+    ///
+    /// `metadata` must be at most [`MAX_METADATA_LEN`] bytes and contain only
+    /// printable ASCII characters; otherwise `Error::MetadataTooLong` or
+    /// `Error::MetadataInvalidChar` is returned and no state is written.
     pub fn create(
         env: Env,
         depositor: Address,
         beneficiary: Address,
         asset: Address,
         amount: i128,
+        metadata: String,
     ) -> Result<(), Error> {
         depositor.require_auth();
         if amount <= 0 {
             return Err(Error::InvalidAmount);
+        }
+        if metadata.len() > MAX_METADATA_LEN {
+            return Err(Error::MetadataTooLong);
+        }
+        if !is_supported_metadata(&metadata) {
+            return Err(Error::MetadataInvalidChar);
         }
         if env.storage().instance().has(&DataKey::Escrow) {
             return Err(Error::AlreadyInitialized);
@@ -55,6 +95,7 @@ impl EscrowContract {
             asset,
             amount,
             released: false,
+            metadata,
         };
         env.storage().instance().set(&DataKey::Escrow, &escrow);
         Ok(())
@@ -131,7 +172,7 @@ pub enum DataKey {
 mod test {
     use super::*;
     use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{token, Env};
+    use soroban_sdk::{token, Env, String};
 
     fn setup() -> (Env, EscrowContractClient<'static>, Address, Address, Address, Address) {
         let env = Env::default();
@@ -145,12 +186,16 @@ mod test {
         (env, client, depositor, beneficiary, asset_id, asset_admin)
     }
 
+    fn meta(env: &Env, s: &str) -> String {
+        String::from_str(env, s)
+    }
+
     #[test]
     fn deposit_and_payout_with_correct_asset() {
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
         let sac = token::StellarAssetClient::new(&env, &asset_id);
         sac.mint(&depositor, &1000);
-        client.create(&depositor, &beneficiary, &asset_id, &1000);
+        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "invoice-1"));
         client.deposit(&asset_id, &1000);
         client.payout(&asset_id);
         let token_client = token::Client::new(&env, &asset_id);
@@ -162,7 +207,7 @@ mod test {
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
         let other_admin = Address::generate(&env);
         let other_asset = env.register_stellar_asset_contract(other_admin);
-        client.create(&depositor, &beneficiary, &asset_id, &1000);
+        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "m"));
         let res = client.try_deposit(&other_asset, &1000);
         assert_eq!(res, Err(Ok(Error::AssetMismatch)));
     }
@@ -172,7 +217,7 @@ mod test {
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
         let other_admin = Address::generate(&env);
         let other_asset = env.register_stellar_asset_contract(other_admin);
-        client.create(&depositor, &beneficiary, &asset_id, &1000);
+        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "m"));
         let res = client.try_payout(&other_asset);
         assert_eq!(res, Err(Ok(Error::AssetMismatch)));
     }
@@ -180,7 +225,7 @@ mod test {
     #[test]
     fn deposit_rejects_zero_amount() {
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        client.create(&depositor, &beneficiary, &asset_id, &1000);
+        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "m"));
         let res = client.try_deposit(&asset_id, &0);
         assert_eq!(res, Err(Ok(Error::InvalidAmount)));
     }
@@ -188,7 +233,7 @@ mod test {
     #[test]
     fn create_rejects_zero_amount() {
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        let res = client.try_create(&depositor, &beneficiary, &asset_id, &0);
+        let res = client.try_create(&depositor, &beneficiary, &asset_id, &0, &meta(&env, "m"));
         assert_eq!(res, Err(Ok(Error::InvalidAmount)));
     }
 
@@ -196,8 +241,32 @@ mod test {
     fn deposit_requires_depositor_auth() {
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
         env.mock_auths(&[]);
-        client.create(&depositor, &beneficiary, &asset_id, &1000);
+        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "m"));
         let res = client.try_deposit(&asset_id, &1000);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn create_accepts_metadata_at_max_length() {
+        let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
+        let max = "a".repeat(MAX_METADATA_LEN as usize);
+        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, &max));
+        let escrow = client.get_escrow();
+        assert_eq!(escrow.metadata.len(), MAX_METADATA_LEN);
+    }
+
+    #[test]
+    fn create_rejects_metadata_over_max_length() {
+        let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
+        let over = "a".repeat(MAX_METADATA_LEN as usize + 1);
+        let res = client.try_create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, &over));
+        assert_eq!(res, Err(Ok(Error::MetadataTooLong)));
+    }
+
+    #[test]
+    fn create_rejects_metadata_with_unsupported_chars() {
+        let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
+        let res = client.try_create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "bad\nmeta"));
+        assert_eq!(res, Err(Ok(Error::MetadataInvalidChar)));
     }
 }

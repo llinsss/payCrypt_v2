@@ -23,4 +23,10 @@ pub enum Error {
     /// The supplied asset contract address does not match the asset bound to
     /// the escrow at creation time. No state is mutated when this is returned.
     AssetMismatch = 7,
+    /// The supplied metadata exceeds the maximum allowed byte length. No state
+    /// is mutated when this is returned.
+    MetadataTooLong = 8,
+    /// The supplied metadata contains characters outside the supported policy
+    /// (printable ASCII only). No state is mutated when this is returned.
+    MetadataInvalidChars = 9,
 }
