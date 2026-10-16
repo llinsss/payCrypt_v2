@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Wallet destination allowlist enforcement: every withdrawal route now checks
+  the recipient against an admin-managed allowlist before funds move, so no
+  route can bypass the restriction. Allowlist entries are added/removed only by
+  the authorized admin, and an empty allowlist rejects all withdrawals. Includes
+  focused tests for success, authorization failure, boundary (empty allowlist /
+  exact-match), and invalid recipient cases, plus documentation of externally
+  visible behavior, error codes, and event changes (#969).
+- Wallet daily withdrawal limits: usage is tracked per ledger day with bounded
+  storage, and cumulative per-day accounting prevents split withdrawals from
+  bypassing the configured cap. Includes focused tests for success,
+  authorization, boundary, and failure cases, plus documentation of externally
+  visible behavior, error codes, and event changes (#968).
 - Local-network authorization integration tests for the Rust/Soroban migration,
   covering success, boundary, unauthorized, replay, and external-call failure
   paths with deterministic ledger/time fixtures (#830).
