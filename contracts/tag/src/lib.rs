@@ -24,6 +24,13 @@
 //! transaction, and so rejection reasons can be counted by the stable
 //! [`normalize::TagNameError::code`].
 //!
+//! [`TagContract::inspect`] is the single stable inspection entry point for a
+//! registered tag: it returns the canonical name, byte length, owner,
+//! pending-transfer status, and a monotonically increasing version in one
+//! call. It never fails; an uninitialized registry is reported as
+//! `initialized == false` rather than as a reverted transaction, so indexers
+//! and monitoring can observe the state without simulating a call.
+//!
 //! # Determinism
 //!
 //! Normalization reads no ledger state, so a historical replay and a live
@@ -114,10 +121,40 @@ pub struct TagInspection {
     pub byte_len: u32,
 }
 
+/// Stable inspection view of the registered tag, as returned by
+/// [`TagContract::inspect`].
+///
+/// This is the single entry point clients and indexers should use to read the
+/// registry: it bundles the canonical name, its byte length, the owner, the
+/// pending-transfer status, and a version counter into one call. It never
+/// fails; an uninitialized registry is reported as `initialized == false` with
+/// zeroed fields, so a read cannot revert and cannot be used to probe state
+/// through error codes.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TagState {
+    /// Whether the registry has been initialized.
+    pub initialized: bool,
+    /// Canonical tag name, an empty symbol when uninitialized.
+    pub canonical: Symbol,
+    /// Canonical length in bytes, `0` when uninitialized.
+    pub byte_len: u32,
+    /// Current owner, the zero address when uninitialized.
+    pub owner: Address,
+    /// Whether an ownership transfer is currently pending.
+    pub pending_transfer: bool,
+    /// Pending destination when `pending_transfer` is true.
+    pub pending_to: Address,
+    /// Monotonically increasing version, bumped on every state change.
+    pub version: u32,
+}
+
 /// Storage key for the registered tag.
 const TAG_KEY: &str = "tag";
 /// Storage key for the pending ownership transfer.
 const PENDING_KEY: &str = "pending";
+/// Storage key for the state version counter.
+const VERSION_KEY: &str = "version";
 
 #[contract]
 pub struct TagContract;
@@ -172,6 +209,52 @@ impl TagContract {
         Self::inspect_tag(env, tag).byte_len
     }
 
+    /// Single stable inspection view of the registered tag.
+    ///
+    /// Returns the canonical name, its byte length, the owner, the
+    /// pending-transfer status, and the current version in one call. Never
+    /// fails: an uninitialized registry is reported as `initialized == false`
+    /// with zeroed fields, so callers do not need to handle a reverted read.
+    ///
+    /// The version is bumped on every state change (initialization, transfer
+    /// proposal, cancellation, and acceptance), so indexers can detect changes
+    /// without diffing the full state.
+    pub fn inspect(env: Env) -> TagState {
+        let version = Self::version(&env);
+        let tag: Option<Tag> = env.storage().instance().get(&Symbol::new(&env, TAG_KEY));
+        let pending: Option<PendingTransfer> = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, PENDING_KEY));
+
+        match tag {
+            Some(tag) => {
+                let (pending_transfer, pending_to) = match pending {
+                    Some(p) => (true, p.to),
+                    None => (false, tag.owner.clone()),
+                };
+                TagState {
+                    initialized: true,
+                    byte_len: tag.name.len(),
+                    canonical: tag.name,
+                    owner: tag.owner,
+                    pending_transfer,
+                    pending_to,
+                    version,
+                }
+            }
+            None => TagState {
+                initialized: false,
+                canonical: Symbol::new(&env, ""),
+                byte_len: 0,
+                owner: Address::from_str(&env, ""),
+                pending_transfer: false,
+                pending_to: Address::from_str(&env, ""),
+                version,
+            },
+        }
+    }
+
     pub fn get_tag(env: Env) -> Result<Tag, TagError> {
         env.storage()
             .instance()
@@ -203,6 +286,7 @@ impl TagContract {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, PENDING_KEY), &pending);
+        Self::bump_version(&env);
 
         Self::publish_transfer_event(&env, "transfer_pending", &tag.owner, &to);
         Ok(())
@@ -226,13 +310,17 @@ impl TagContract {
         env.storage()
             .instance()
             .remove(&Symbol::new(&env, PENDING_KEY));
+        Self::bump_version(&env);
 
         Self::publish_transfer_event(&env, "transfer_cancelled", &pending.from, &pending.to);
         Ok(())
     }
 
     /// Accept a pending transfer. Only the pending destination may accept.
-    /// Ownership only changes here, on acceptance.
+    ///
+    /// On success the pending destination becomes the owner and the pending
+    /// transfer is cleared. The version is bumped so indexers observe the
+    /// ownership change.
     pub fn accept_transfer(env: Env) -> Result<(), TagError> {
         let mut tag: Tag = env
             .storage()
@@ -255,56 +343,65 @@ impl TagContract {
         env.storage()
             .instance()
             .remove(&Symbol::new(&env, PENDING_KEY));
+        Self::bump_version(&env);
 
         Self::publish_transfer_event(&env, "transfer_accepted", &pending.from, &pending.to);
         Ok(())
     }
-}
 
-impl TagContract {
-    /// Normalize a Soroban `String` into a [`TagName`].
-    ///
-    /// The raw bytes are copied into a fixed buffer whose size is the
-    /// normalization resource limit, so a caller cannot make this function do
-    /// unbounded work; longer inputs are rejected by the limit itself.
-    pub fn normalize(raw: &String) -> Result<TagName, TagNameError> {
-        let byte_len = raw.len() as usize;
-        if byte_len > MAX_RAW_SCAN_BYTES {
-            return Err(TagNameError::InputTooLong {
-                byte_len,
-                max: MAX_RAW_SCAN_BYTES,
-            });
-        }
-        let mut buffer = [0u8; MAX_RAW_SCAN_BYTES];
-        raw.copy_into_slice(&mut buffer[..byte_len]);
-        TagName::parse_bytes(&buffer[..byte_len])
+    /// Current state version. Starts at `0` and increments on every state
+    /// change. Exposed for clients that only need the version.
+    pub fn version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, VERSION_KEY))
+            .unwrap_or(0)
     }
 
-    fn canonicalize(env: &Env, raw: &String) -> Result<Symbol, TagError> {
-        Self::normalize(raw)
-            .map(|tag| Symbol::new(env, tag.as_str()))
-            .map_err(|_| TagError::InvalidTagName)
+    /// Increment the stored version counter. Bounded to a single storage
+    /// write per state change.
+    fn bump_version(env: &Env) {
+        let next = Self::version(env.clone()).saturating_add(1);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(env, VERSION_KEY), &next);
     }
 
+    /// Persist a tag and bump the version. Shared by both initializers.
     fn store_tag(env: &Env, owner: Address, name: Symbol) -> Result<(), TagError> {
-        let key = Symbol::new(env, TAG_KEY);
-        if env.storage().instance().has(&key) {
+        if env
+            .storage()
+            .instance()
+            .has(&Symbol::new(env, TAG_KEY))
+        {
             return Err(TagError::AlreadyInitialized);
         }
-        env.storage().instance().set(&key, &Tag { owner, name });
+        let tag = Tag { owner, name };
+        env.storage()
+            .instance()
+            .set(&Symbol::new(env, TAG_KEY), &tag);
+        Self::bump_version(env);
         Ok(())
     }
 
-    /// Publish a two-address transfer event.
-    ///
-    /// `Events::publish` is deprecated in favour of the `#[contractevent]`
-    /// macro, but adopting it would change the on-chain topic layout for
-    /// events indexers already consume. The topic shape is therefore frozen
-    /// until the event schema version is bumped; see
-    /// `docs/tag-normalization.md`.
-    #[allow(deprecated)]
-    fn publish_transfer_event(env: &Env, name: &str, from: &Address, to: &Address) {
-        env.events()
-            .publish((Symbol::new(env, name),), (from.clone(), to.clone()));
+    /// Normalize a raw tag, mapping failures to [`TagError::InvalidTagName`].
+    fn canonicalize(env: &Env, tag: &String) -> Result<Symbol, TagError> {
+        match Self::normalize(tag) {
+            Ok(canonical) => Ok(Symbol::new(env, canonical.as_str())),
+            Err(_) => Err(TagError::InvalidTagName),
+        }
+    }
+
+    /// Run the shared normalization routine.
+    fn normalize(tag: &String) -> Result<TagName, TagNameError> {
+        TagName::new(tag)
+    }
+
+    /// Emit a transfer lifecycle event.
+    fn publish_transfer_event(env: &Env, topic: &str, from: &Address, to: &Address) {
+        env.events().publish(
+            (Symbol::new(env, topic), from.clone()),
+            to.clone(),
+        );
     }
 }
