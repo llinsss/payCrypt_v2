@@ -15,7 +15,22 @@ pub enum DataKey {
     OwnerTag(Address, u32),
     /// Monotonic counter used to version emitted events.
     EventVersion,
+    /// Canonical tag -> pending transfer record (recipient + expiry deadline).
+    PendingTransfer(String),
+    /// Canonical tag -> ledger sequence at which its pending transfer expires.
+    PendingTransferExpiry(String),
+    /// Bounded queue of canonical tags with pending transfers, used for cleanup.
+    PendingTransferQueue(u32),
+    /// Number of entries currently held in the pending transfer queue.
+    PendingTransferQueueLen,
+    /// Index of the oldest entry in the pending transfer queue.
+    PendingTransferQueueHead,
 }
+
+/// Maximum number of pending transfers that a single cleanup invocation will
+/// scan and expire. Keeps per-invocation work bounded regardless of how many
+/// pending transfers have accumulated.
+pub const MAX_CLEANUP_PER_INVOCATION: u32 = 20;
 
 /// Normalize a tag into its canonical form.
 ///
