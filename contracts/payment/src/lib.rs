@@ -155,6 +155,38 @@ pub struct AmountLimits {
     pub max: i128,
 }
 
+impl PaymentStatus {
+    /// Returns `true` when a payment may move from `self` to `next`.
+    ///
+    /// The lifecycle is a directed acyclic graph:
+    ///
+    /// ```text
+    /// Created -> Funded -> Completed
+    ///                   -> Failed
+    ///                   -> Cancelled
+    ///         -> Cancelled
+    /// Completed -> Refunded
+    /// Failed    -> Refunded
+    /// ```
+    ///
+    /// Terminal states (`Completed`, `Failed`, `Cancelled`, `Refunded`) only
+    /// permit the transitions listed above; every other pair is rejected with
+    /// [`PaymentError::InvalidTransition`].
+    pub fn can_transition_to(self, next: PaymentStatus) -> bool {
+        matches!(
+            (self, next),
+            (PaymentStatus::Created, PaymentStatus::Funded)
+                | (PaymentStatus::Created, PaymentStatus::Cancelled)
+                | (PaymentStatus::Funded, PaymentStatus::Completed)
+                | (PaymentStatus::Funded, PaymentStatus::Failed)
+                | (PaymentStatus::Funded, PaymentStatus::Cancelled)
+                | (PaymentStatus::Completed, PaymentStatus::Refunded)
+                | (PaymentStatus::Failed, PaymentStatus::Refunded)
+        )
+    }
+}
+}
+
 /// Canonical payload emitted for every payment state change.
 ///
 /// Fields are append-only: new fields are added at the end and

@@ -2,6 +2,8 @@
 
 ## Handsoff notes
 
+<!-- handsoff-issue-950 -->
+- #950: Add tag transfer event schema versioning
 <!-- handsoff-issue-970 -->
 - #970: Add wallet supported-token policy tests
 <!-- handsoff-issue-938 -->
