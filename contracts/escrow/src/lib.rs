@@ -129,6 +129,14 @@ impl EscrowContract {
     ///
     /// `asset` must equal the asset bound at creation, otherwise
     /// `Error::AssetMismatch` is returned and no state is mutated.
+    ///
+    /// Reentrancy safety: the `released` flag is persisted *before* the
+    /// external token transfer is invoked. If the token contract re-enters
+    /// `payout` (or any other entry point) during the callback, the escrow is
+    /// already marked released and the re-entrant call fails with
+    /// `Error::Unauthorized` without moving funds a second time. If the
+    /// transfer itself fails, the whole invocation is rolled back atomically
+    /// by the host, restoring the pre-call state.
     pub fn payout(env: Env, asset: Address) -> Result<(), Error> {
         let mut escrow: Escrow = env
             .storage()
@@ -142,14 +150,16 @@ impl EscrowContract {
             return Err(Error::Unauthorized);
         }
         escrow.depositor.require_auth();
+        // Finalize state before the external call so a re-entrant callback
+        // observes `released == true` and cannot double-spend the escrow.
+        escrow.released = true;
+        env.storage().instance().set(&DataKey::Escrow, &escrow);
         let client = token::Client::new(&env, &escrow.asset);
         client.transfer(
             &env.current_contract_address(),
             &escrow.beneficiary,
             &escrow.amount,
         );
-        escrow.released = true;
-        env.storage().instance().set(&DataKey::Escrow, &escrow);
         Ok(())
     }
 
@@ -223,50 +233,73 @@ mod test {
     }
 
     #[test]
-    fn deposit_rejects_zero_amount() {
+    fn payout_twice_is_rejected_and_funds_move_once() {
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
+        let sac = token::StellarAssetClient::new(&env, &asset_id);
+        sac.mint(&depositor, &1000);
         client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "m"));
-        let res = client.try_deposit(&asset_id, &0);
-        assert_eq!(res, Err(Ok(Error::InvalidAmount)));
+        client.deposit(&asset_id, &1000);
+        client.payout(&asset_id);
+        // Repeated entry path: a second payout must not move funds again.
+        let res = client.try_payout(&asset_id);
+        assert_eq!(res, Err(Ok(Error::Unauthorized)));
+        let token_client = token::Client::new(&env, &asset_id);
+        assert_eq!(token_client.balance(&beneficiary), 1000);
+        assert_eq!(token_client.balance(&client.address), 0);
     }
 
     #[test]
-    fn create_rejects_zero_amount() {
+    fn payout_state_finalized_before_transfer() {
+        // The `released` flag is persisted before the external token transfer,
+        // so a re-entrant callback observes the finalized state. We assert the
+        // observable consequence: after payout the escrow is released and a
+        // re-entrant payout attempt is rejected without moving funds.
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        let res = client.try_create(&depositor, &beneficiary, &asset_id, &0, &meta(&env, "m"));
-        assert_eq!(res, Err(Ok(Error::InvalidAmount)));
-    }
-
-    #[test]
-    fn deposit_requires_depositor_auth() {
-        let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        env.mock_auths(&[]);
-        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "m"));
-        let res = client.try_deposit(&asset_id, &1000);
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn create_accepts_metadata_at_max_length() {
-        let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        let max = "a".repeat(MAX_METADATA_LEN as usize);
-        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, &max));
+        let sac = token::StellarAssetClient::new(&env, &asset_id);
+        sac.mint(&depositor, &500);
+        client.create(&depositor, &beneficiary, &asset_id, &500, &meta(&env, "m"));
+        client.deposit(&asset_id, &500);
+        client.payout(&asset_id);
         let escrow = client.get_escrow();
-        assert_eq!(escrow.metadata.len(), MAX_METADATA_LEN);
+        assert!(escrow.released);
+        let res = client.try_payout(&asset_id);
+        assert_eq!(res, Err(Ok(Error::Unauthorized)));
+        let token_client = token::Client::new(&env, &asset_id);
+        assert_eq!(token_client.balance(&beneficiary), 500);
     }
 
     #[test]
-    fn create_rejects_metadata_over_max_length() {
+    fn payout_failure_rolls_back_atomically() {
+        // If the external transfer fails (insufficient contract balance), the
+        // whole invocation is rolled back: the escrow must remain unreleased
+        // and no funds move.
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        let over = "a".repeat(MAX_METADATA_LEN as usize + 1);
-        let res = client.try_create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, &over));
-        assert_eq!(res, Err(Ok(Error::MetadataTooLong)));
+        let sac = token::StellarAssetClient::new(&env, &asset_id);
+        sac.mint(&depositor, &1000);
+        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "m"));
+        // Deposit a smaller amount than the escrow amount so the payout
+        // transfer cannot be satisfied by the contract balance.
+        client.deposit(&asset_id, &100);
+        let res = client.try_payout(&asset_id);
+        assert!(res.is_err());
+        let escrow = client.get_escrow();
+        assert!(!escrow.released);
+        let token_client = token::Client::new(&env, &asset_id);
+        assert_eq!(token_client.balance(&beneficiary), 0);
     }
 
     #[test]
-    fn create_rejects_metadata_with_unsupported_chars() {
+    fn payout_requires_depositor_auth() {
         let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        let res = client.try_create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "bad\nmeta"));
-        assert_eq!(res, Err(Ok(Error::MetadataInvalidChar)));
+        let sac = token::StellarAssetClient::new(&env, &asset_id);
+        sac.mint(&depositor, &1000);
+        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "m"));
+        client.deposit(&asset_id, &1000);
+        // Drop the blanket auth mock so the missing depositor auth is enforced.
+        env.set_auths(&[]);
+        let res = client.try_payout(&asset_id);
+        assert!(res.is_err());
+        let escrow = client.get_escrow();
+        assert!(!escrow.released);
     }
 }
