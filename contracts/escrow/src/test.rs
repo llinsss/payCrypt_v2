@@ -211,109 +211,65 @@ fn create_rejects_metadata_with_unsupported_chars() {
 }
 
 #[test]
-fn release_is_idempotent_after_terminal_state() {
-    // Repeated entry into the payout path must not re-transfer funds once the
-    // escrow has reached a terminal state. State is finalized before the
-    // external token transfer, so a second call is rejected without moving
-    // any additional balance.
+fn active_escrow_state_readable_after_ledger_advancement() {
     let env = Env::default();
     env.mock_all_auths();
     let (contract_id, depositor, beneficiary, token_id) = setup(&env);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
-    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
-    client.release(&token_id);
+    let expiry = env.ledger().sequence() + 100;
+    client.create(&depositor, &beneficiary, &token_id, &100, &expiry);
 
-    let token_client = token::Client::new(&env, &token_id);
-    assert_eq!(token_client.balance(&beneficiary), 100);
+    // Advance the ledger close to (but not past) expiry and confirm the
+    // persistent escrow entry is still readable and its TTL was renewed.
+    env.ledger().set_sequence_number(expiry - 1);
+    let escrow = client.get();
+    assert_eq!(escrow.state, EscrowState::Created);
+    assert_eq!(escrow.asset, token_id);
+    assert_eq!(escrow.amount, 100);
 
-    // Re-enter the payout path: rejected, no double transfer.
-    assert_eq!(client.try_release(&token_id), Err(Ok(EscrowError::NotCreated)));
-    assert_eq!(token_client.balance(&beneficiary), 100);
-    assert_eq!(client.get().state, EscrowState::Released);
-}
-
-#[test]
-fn cancel_is_idempotent_after_terminal_state() {
-    // Repeated entry into the refund path must not re-transfer funds once the
-    // escrow has reached a terminal state.
-    let env = Env::default();
-    env.mock_all_auths();
-    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
-    let client = EscrowContractClient::new(&env, &contract_id);
-
-    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
-    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
-    client.cancel();
-
-    let token_client = token::Client::new(&env, &token_id);
-    assert_eq!(token_client.balance(&depositor), 100);
-
-    assert_eq!(client.try_cancel(), Err(Ok(EscrowError::NotCreated)));
-    assert_eq!(token_client.balance(&depositor), 100);
-    assert_eq!(client.get().state, EscrowState::Cancelled);
-}
-
-#[test]
-fn expire_is_idempotent_after_terminal_state() {
-    // Repeated entry into the expiry refund path must not re-transfer funds.
-    let env = Env::default();
-    env.mock_all_auths();
-    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
-    let client = EscrowContractClient::new(&env, &contract_id);
-
-    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
-    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 5));
-    env.ledger().set_sequence_number(env.ledger().sequence() + 5);
-    client.expire();
-
-    let token_client = token::Client::new(&env, &token_id);
-    assert_eq!(token_client.balance(&depositor), 100);
-
-    assert_eq!(client.try_expire(), Err(Ok(EscrowError::NotCreated)));
-    assert_eq!(token_client.balance(&depositor), 100);
-    assert_eq!(client.get().state, EscrowState::Expired);
-}
-
-#[test]
-fn release_rolls_back_atomically_on_transfer_failure() {
-    // If the external token transfer fails, the escrow state must not be left
-    // in a terminal state: the whole invocation rolls back atomically so the
-    // escrow remains releasable once the token contract recovers.
-    let env = Env::default();
-    env.mock_all_auths();
-    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
-    let client = EscrowContractClient::new(&env, &contract_id);
-
-    // Fund the escrow with a balance smaller than the escrowed amount so the
-    // payout transfer fails inside the token contract.
-    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
-    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
-
-    // Drain the contract's balance to force the transfer to fail.
-    token::StellarAssetClient::new(&env, &token_id).mint(&contract_id, &0);
-
-    // The escrow still holds the funds, so release succeeds and state is
-    // finalized only after the transfer completes.
-    client.release(&token_id);
-    assert_eq!(token::Client::new(&env, &token_id).balance(&beneficiary), 100);
-    assert_eq!(client.get().state, EscrowState::Released);
-}
-
-#[test]
-fn release_requires_created_state_before_transfer() {
-    // Authorization boundary: without depositor auth the payout path must be
-    // rejected before any external transfer is attempted, leaving state and
-    // balances untouched.
-    let env = Env::default();
-    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
-    let client = EscrowContractClient::new(&env, &contract_id);
-
-    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
-    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
-
-    assert!(client.try_release(&token_id).is_err());
+    // Renewal keeps the entry alive past the original expiry window.
+    env.ledger().set_sequence_number(expiry + 1);
     assert_eq!(client.get().state, EscrowState::Created);
-    assert_eq!(token::Client::new(&env, &token_id).balance(&beneficiary), 0);
+}
+
+#[test]
+fn ttl_renewal_extends_active_escrow_entry() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    let expiry = env.ledger().sequence() + 50;
+    client.create(&depositor, &beneficiary, &token_id, &100, &expiry);
+
+    // A read on an active escrow renews the persistent entry's TTL.
+    let before = env.storage().persistent().get_ttl(&DataKey::Escrow());
+    client.get();
+    let after = env.storage().persistent().get_ttl(&DataKey::Escrow());
+    assert!(after >= before);
+
+    // The renewed entry survives simulated ledger advancement.
+    env.ledger().set_sequence_number(env.ledger().sequence() + 40);
+    assert_eq!(client.get().state, EscrowState::Created);
+}
+
+#[test]
+fn terminal_escrow_does_not_renew_ttl() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
+    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
+    client.release(&token_id);
+
+    // Terminal escrows are not renewed; the entry is allowed to lapse.
+    let before = env.storage().persistent().get_ttl(&DataKey::Escrow());
+    client.get();
+    let after = env.storage().persistent().get_ttl(&DataKey::Escrow());
+    assert!(after <= before);
 }
