@@ -26,9 +26,10 @@ pub enum WalletError {
     Unauthorized = 3,
     ZeroAmount = 4,
     ReentrancyDetected = 5,
-    LimitExceeded = 6,
-    NoPendingLimit = 7,
-    LimitDelayNotElapsed = 8,
+    InsufficientBalance = 6,
+    LimitExceeded = 7,
+    NoPendingLimit = 8,
+    LimitDelayNotElapsed = 9,
 }
 
 /// Delay (in ledgers) that must elapse between proposing a new router and
@@ -244,8 +245,11 @@ impl WalletContract {
     ///
     /// Only the configured router or the wallet owner may authorize a
     /// withdrawal. The caller must have authorized this invocation, and the
-    /// amount must be strictly positive. Always uses the currently active
-    /// router, so user withdrawals remain available during a pending rotation.
+    /// amount must be strictly positive. The requested amount must not exceed
+    /// the wallet's current token balance; a withdrawal that exactly equals the
+    /// available balance is allowed. Both checks run before any token transfer
+    /// is invoked. Always uses the currently active router, so user withdrawals
+    /// remain available during a pending rotation.
     ///
     /// If a per-transaction withdrawal limit is configured, any withdrawal
     /// whose `amount` exceeds that limit is rejected with `LimitExceeded`.
@@ -291,13 +295,19 @@ impl WalletContract {
             }
         }
 
+        let token_client = token::Client::new(&env, &token);
+        let balance = token_client.balance(&env.current_contract_address());
+        if amount > balance {
+            return Err(WalletError::InsufficientBalance);
+        }
+        }
+
         let entered_flag = Symbol::new(&env, "entered");
         if env.storage().transient().get::<_, bool>(&entered_flag).unwrap_or(false) {
             return Err(WalletError::ReentrancyDetected);
         }
         env.storage().transient().set(&entered_flag, &true);
 
-        let token_client = token::Client::new(&env, &token);
         token_client.transfer(&env.current_contract_address(), &recipient, &amount);
 
         env.storage().transient().remove(&entered_flag);
