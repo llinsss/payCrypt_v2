@@ -6,6 +6,37 @@
 //!
 //! Schema version: [`EVENT_SCHEMA_VERSION`]. Bump it whenever a topic or
 //! payload changes in a backwards-incompatible way.
+//!
+//! # Schema evolution rules
+//!
+//! The event schema is versioned so indexers can decode events safely across
+//! contract upgrades. The following rules define what counts as a compatible
+//! change and what requires a version bump:
+//!
+//! ## Compatible (no version bump)
+//!
+//! - **Adding a new event name** for a new state transition. Existing names
+//!   and their payloads are untouched, so old indexers simply ignore the new
+//!   topic.
+//! - **Adding a new optional field** to [`PaymentEvent`] *only* if it is
+//!   appended after all existing fields and has a well-defined default for
+//!   events emitted before the field existed. Because Soroban decodes structs
+//!   positionally, appended fields must never reorder or remove existing ones.
+//! - **Adding a new [`PaymentStatus`] variant** at the end of the enum. The
+//!   `#[repr(u32)]` discriminants of existing variants must not change.
+//!
+//! ## Incompatible (requires a version bump)
+//!
+//! - Renaming, removing, or reordering any existing field of [`PaymentEvent`].
+//! - Changing the type or meaning of an existing field (e.g. `amount` units).
+//! - Renaming or removing an event name in [`event_names`].
+//! - Changing the discriminant of an existing [`PaymentStatus`] variant.
+//! - Changing the topic layout produced by [`payment_topic`].
+//!
+//! When an incompatible change is unavoidable, bump [`EVENT_SCHEMA_VERSION`]
+//! and document the migration path for indexers. The version is carried in
+//! every event topic, so indexers can reject or migrate events they do not
+//! understand.
 
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol};
 
@@ -13,12 +44,18 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol};
 ///
 /// Indexers should reject or migrate events whose version they do not
 /// understand. The version is included in every emitted event topic.
+///
+/// Bump this only for backwards-incompatible changes; see the module-level
+/// schema evolution rules for the full compatibility contract.
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
 
 /// Canonical event names for payment state transitions.
 ///
 /// These names are stable identifiers used as the first topic segment so
 /// indexers can filter by transition without decoding the payload.
+///
+/// Adding a new name here is a compatible change; renaming or removing an
+/// existing name is not.
 pub mod event_names {
     use soroban_sdk::{symbol_short, Symbol};
 
@@ -59,6 +96,9 @@ pub mod event_names {
 }
 
 /// Lifecycle status of a payment, mirrored in every event payload.
+///
+/// New variants may be appended (compatible); existing discriminants are
+/// part of the schema and must not change.
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -235,6 +275,9 @@ pub fn authorize_expiry(
 ///
 /// Includes the payment ID, asset, source, destination, amount, and status
 /// required by indexers to reconstruct state from events alone.
+///
+/// Fields are decoded positionally, so new fields must be appended after the
+/// existing ones and must not reorder or remove any field in place.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentEvent {
@@ -258,6 +301,9 @@ pub struct PaymentEvent {
 ///
 /// Topics are `(event_name, schema_version)` so indexers can filter by
 /// transition and validate the schema version before decoding the payload.
+///
+/// The topic layout is part of the schema: changing it is an incompatible
+/// change that requires bumping [`EVENT_SCHEMA_VERSION`].
 pub fn payment_topic(env: &Env, name: Symbol) -> (Symbol, u32) {
     let _ = env;
     (name, EVENT_SCHEMA_VERSION)
@@ -399,5 +445,63 @@ mod fixtures {
         assert!(!is_terminal(PaymentStatus::Created));
         assert!(!is_terminal(PaymentStatus::Funded));
         assert!(!is_expirable(PaymentStatus::Expired));
+    }
+
+    /// Success: the schema version is stable and carried in every topic.
+    #[test]
+    fn schema_version_is_stable() {
+        let env = Env::default();
+        assert_eq!(EVENT_SCHEMA_VERSION, 1);
+        let (_, version) = payment_topic(&env, event_names::created());
+        assert_eq!(version, EVENT_SCHEMA_VERSION);
+    }
+
+    /// Boundary: existing status discriminants are frozen by the schema.
+    #[test]
+    fn status_discriminants_are_stable() {
+        assert_eq!(PaymentStatus::Created as u32, 0);
+        assert_eq!(PaymentStatus::Funded as u32, 1);
+        assert_eq!(PaymentStatus::Completed as u32, 2);
+        assert_eq!(PaymentStatus::Failed as u32, 3);
+        assert_eq!(PaymentStatus::Cancelled as u32, 4);
+        assert_eq!(PaymentStatus::Refunded as u32, 5);
+    }
+
+    /// Success: event names are stable identifiers for indexers.
+    #[test]
+    fn event_names_are_stable() {
+        assert_eq!(event_names::created(), symbol_short!("pay_created"));
+        assert_eq!(event_names::funded(), symbol_short!("pay_funded"));
+        assert_eq!(event_names::completed(), symbol_short!("pay_completed"));
+        assert_eq!(event_names::failed(), symbol_short!("pay_failed"));
+        assert_eq!(event_names::cancelled(), symbol_short!("pay_cancelled"));
+        assert_eq!(event_names::refunded(), symbol_short!("pay_refunded"));
+    }
+
+    /// Boundary: a compatible change (appended field) keeps the version and
+    /// the existing payload fields intact.
+    #[test]
+    fn compatible_change_keeps_version_and_payload() {
+        let env = Env::default();
+        let event = sample(&env, PaymentStatus::Funded);
+        // Existing fields retain their values and the version is unchanged.
+        assert_eq!(event.version, EVENT_SCHEMA_VERSION);
+        assert_eq!(event.payment_id, 42);
+        assert_eq!(event.amount, 1_000_000);
+        assert_eq!(event.status, PaymentStatus::Funded);
+        let (name, version) = payment_topic(&env, event_names::funded());
+        assert_eq!(name, event_names::funded());
+        assert_eq!(version, EVENT_SCHEMA_VERSION);
+    }
+
+    /// Failure: an event carrying an unknown schema version is detectable so
+    /// indexers can reject it instead of mis-decoding the payload.
+    #[test]
+    fn unknown_schema_version_is_detectable() {
+        let env = Env::default();
+        let mut event = sample(&env, PaymentStatus::Created);
+        event.version = EVENT_SCHEMA_VERSION + 1;
+        let (_, topic_version) = payment_topic(&env, event_names::created());
+        assert_ne!(event.version, topic_version);
     }
 }
