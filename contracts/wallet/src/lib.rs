@@ -11,6 +11,9 @@ pub enum DataKey {
     PendingRouter,
     PendingRouterAt,
     Token,
+    WithdrawLimit,
+    PendingWithdrawLimit,
+    PendingWithdrawLimitAt,
 }
 
 /// Errors returned by the wallet contract.
@@ -24,12 +27,20 @@ pub enum WalletError {
     ZeroAmount = 4,
     ReentrancyDetected = 5,
     InsufficientBalance = 6,
+    LimitExceeded = 7,
+    NoPendingLimit = 8,
+    LimitDelayNotElapsed = 9,
 }
 
 /// Delay (in ledgers) that must elapse between proposing a new router and
 /// activating it. Gives users a window to withdraw before a new router takes
 /// effect.
 pub const ROUTER_ROTATION_DELAY: u32 = 17_280; // ~1 day at 5s/ledger
+
+/// Delay (in ledgers) that must elapse between proposing a new per-transaction
+/// withdrawal limit and activating it. Gives users a window to observe and
+/// react to a limit change before it takes effect.
+pub const WITHDRAW_LIMIT_DELAY: u32 = 17_280; // ~1 day at 5s/ledger
 
 #[contract]
 pub struct WalletContract;
@@ -149,6 +160,87 @@ impl WalletContract {
         env.storage().instance().remove(&DataKey::PendingRouterAt);
     }
 
+    /// Return the currently active per-transaction withdrawal limit, if any.
+    /// A `None` value means no upper bound is enforced.
+    pub fn withdraw_limit(env: Env) -> Option<i128> {
+        env.storage().instance().get(&DataKey::WithdrawLimit)
+    }
+
+    /// Pending withdrawal limit (if a limit change is in progress).
+    pub fn pending_withdraw_limit(env: Env) -> Option<i128> {
+        env.storage().instance().get(&DataKey::PendingWithdrawLimit)
+    }
+
+    /// Step 1 of two-step limit change: owner proposes a new per-transaction
+    /// withdrawal limit. The new limit is NOT active until `commit_withdraw_limit`
+    /// is called after the mandatory delay. Only the owner (governance) may
+    /// propose. A limit of `0` disables the bound.
+    pub fn propose_withdraw_limit(env: Env, limit: i128) {
+        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        owner.require_auth();
+
+        if limit < 0 {
+            panic!("limit must be non-negative");
+        }
+
+        let now = env.ledger().sequence();
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingWithdrawLimit, &limit);
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingWithdrawLimitAt, &now);
+
+        env.events().publish(
+            (Symbol::new(&env, "withdraw_limit_proposed"),),
+            (limit, now),
+        );
+    }
+
+    /// Step 2 of two-step limit change: owner activates the proposed limit once
+    /// the mandatory delay has elapsed. The old limit remains in effect until
+    /// this succeeds.
+    pub fn commit_withdraw_limit(env: Env) -> Result<(), WalletError> {
+        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        owner.require_auth();
+
+        let new_limit: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingWithdrawLimit)
+            .ok_or(WalletError::NoPendingLimit)?;
+        let proposed_at: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingWithdrawLimitAt)
+            .unwrap();
+
+        let now = env.ledger().sequence();
+        if now < proposed_at + WITHDRAW_LIMIT_DELAY {
+            return Err(WalletError::LimitDelayNotElapsed);
+        }
+
+        let old_limit: Option<i128> = env.storage().instance().get(&DataKey::WithdrawLimit);
+        env.storage().instance().set(&DataKey::WithdrawLimit, &new_limit);
+        env.storage().instance().remove(&DataKey::PendingWithdrawLimit);
+        env.storage().instance().remove(&DataKey::PendingWithdrawLimitAt);
+
+        env.events().publish(
+            (Symbol::new(&env, "withdraw_limit_committed"),),
+            (old_limit, new_limit),
+        );
+
+        Ok(())
+    }
+
+    /// Owner may cancel a pending limit change before it is committed.
+    pub fn cancel_withdraw_limit(env: Env) {
+        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        owner.require_auth();
+        env.storage().instance().remove(&DataKey::PendingWithdrawLimit);
+        env.storage().instance().remove(&DataKey::PendingWithdrawLimitAt);
+    }
+
     /// Withdraw `amount` of the configured token to `recipient`.
     ///
     /// Only the configured router or the wallet owner may authorize a
@@ -158,6 +250,9 @@ impl WalletContract {
     /// available balance is allowed. Both checks run before any token transfer
     /// is invoked. Always uses the currently active router, so user withdrawals
     /// remain available during a pending rotation.
+    ///
+    /// If a per-transaction withdrawal limit is configured, any withdrawal
+    /// whose `amount` exceeds that limit is rejected with `LimitExceeded`.
     pub fn withdraw(
         env: Env,
         caller: Address,
@@ -190,10 +285,21 @@ impl WalletContract {
             return Err(WalletError::ZeroAmount);
         }
 
+        if let Some(limit) = env
+            .storage()
+            .instance()
+            .get::<_, i128>(&DataKey::WithdrawLimit)
+        {
+            if limit > 0 && amount > limit {
+                return Err(WalletError::LimitExceeded);
+            }
+        }
+
         let token_client = token::Client::new(&env, &token);
         let balance = token_client.balance(&env.current_contract_address());
         if amount > balance {
             return Err(WalletError::InsufficientBalance);
+        }
         }
 
         let entered_flag = Symbol::new(&env, "entered");
