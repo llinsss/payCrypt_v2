@@ -66,6 +66,85 @@ pub enum PaymentStatus {
     Refunded = 5,
 }
 
+/// Actor permitted to drive a given payment transition.
+///
+/// The authorization model binds each transition to exactly one of the
+/// payment's participants so that no unrelated caller can move funds or
+/// mutate lifecycle state:
+///
+/// | Transition | Permitted actor |
+/// |------------|-----------------|
+/// | `fund`     | source          |
+/// | `complete` | destination     |
+/// | `fail`     | destination     |
+/// | `cancel`   | source          |
+/// | `refund`   | source          |
+///
+/// The `operator` role is reserved for future delegated flows and is not
+/// currently accepted by any transition.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum PaymentActor {
+    /// The account that funds the payment.
+    Source = 0,
+    /// The account that receives the payment.
+    Destination = 1,
+    /// A delegated operator (reserved; not yet authorized for any transition).
+    Operator = 2,
+}
+
+/// Error returned when a caller is not authorized for a transition.
+///
+/// Exposed as a stable code so callers and indexers can distinguish an
+/// authorization failure from other contract errors.
+pub const ERR_UNAUTHORIZED_ACTOR: u32 = 935;
+
+/// Return the actor permitted to drive the given transition.
+///
+/// This is the single source of truth for the authorization model; contract
+/// transition handlers must consult it before mutating state.
+pub fn permitted_actor(status: PaymentStatus) -> Option<PaymentActor> {
+    match status {
+        PaymentStatus::Funded => Some(PaymentActor::Source),
+        PaymentStatus::Completed => Some(PaymentActor::Destination),
+        PaymentStatus::Failed => Some(PaymentActor::Destination),
+        PaymentStatus::Cancelled => Some(PaymentActor::Source),
+        PaymentStatus::Refunded => Some(PaymentActor::Source),
+        // `Created` is the initial state and is not a driven transition.
+        PaymentStatus::Created => None,
+    }
+}
+
+/// Resolve the address that corresponds to `actor` for a payment event.
+fn actor_address(event: &PaymentEvent, actor: PaymentActor) -> Option<Address> {
+    match actor {
+        PaymentActor::Source => Some(event.source.clone()),
+        PaymentActor::Destination => Some(event.destination.clone()),
+        // No operator is bound to a payment yet, so it can never be authorized.
+        PaymentActor::Operator => None,
+    }
+}
+
+/// Enforce that `caller` is authorized to drive the transition to `status`.
+///
+/// Returns `Ok(())` when the caller matches the permitted actor for the
+/// transition, and `Err(ERR_UNAUTHORIZED_ACTOR)` otherwise. Transitions with
+/// no permitted actor (e.g. `Created`) are always rejected.
+pub fn authorize_transition(
+    event: &PaymentEvent,
+    status: PaymentStatus,
+    caller: &Address,
+) -> Result<(), u32> {
+    let actor = permitted_actor(status).ok_or(ERR_UNAUTHORIZED_ACTOR)?;
+    let expected = actor_address(event, actor).ok_or(ERR_UNAUTHORIZED_ACTOR)?;
+    if &expected == caller {
+        Ok(())
+    } else {
+        Err(ERR_UNAUTHORIZED_ACTOR)
+    }
+}
+
 /// Common payload carried by every payment state-change event.
 ///
 /// Includes the payment ID, asset, source, destination, amount, and status
@@ -221,5 +300,121 @@ mod fixtures {
         assert_eq!(name, event_names::refunded());
         assert_eq!(version, EVENT_SCHEMA_VERSION);
         assert_eq!(event.status, PaymentStatus::Refunded);
+    }
+
+    /// The authorization model binds each transition to a single actor.
+    #[test]
+    fn permitted_actor_mapping() {
+        assert_eq!(permitted_actor(PaymentStatus::Funded), Some(PaymentActor::Source));
+        assert_eq!(
+            permitted_actor(PaymentStatus::Completed),
+            Some(PaymentActor::Destination)
+        );
+        assert_eq!(
+            permitted_actor(PaymentStatus::Failed),
+            Some(PaymentActor::Destination)
+        );
+        assert_eq!(
+            permitted_actor(PaymentStatus::Cancelled),
+            Some(PaymentActor::Source)
+        );
+        assert_eq!(
+            permitted_actor(PaymentStatus::Refunded),
+            Some(PaymentActor::Source)
+        );
+        // `Created` is not a driven transition.
+        assert_eq!(permitted_actor(PaymentStatus::Created), None);
+    }
+
+    /// Success: the permitted actor is authorized for each transition.
+    #[test]
+    fn authorize_success() {
+        let env = Env::default();
+        let event = sample(&env, PaymentStatus::Funded);
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Funded, &event.source),
+            Ok(())
+        );
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Completed, &event.destination),
+            Ok(())
+        );
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Failed, &event.destination),
+            Ok(())
+        );
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Cancelled, &event.source),
+            Ok(())
+        );
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Refunded, &event.source),
+            Ok(())
+        );
+    }
+
+    /// Authorization failure: the wrong participant is rejected.
+    #[test]
+    fn authorize_wrong_actor_rejected() {
+        let env = Env::default();
+        let event = sample(&env, PaymentStatus::Funded);
+        // Destination cannot fund.
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Funded, &event.destination),
+            Err(ERR_UNAUTHORIZED_ACTOR)
+        );
+        // Source cannot complete or fail.
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Completed, &event.source),
+            Err(ERR_UNAUTHORIZED_ACTOR)
+        );
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Failed, &event.source),
+            Err(ERR_UNAUTHORIZED_ACTOR)
+        );
+        // Destination cannot cancel or refund.
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Cancelled, &event.destination),
+            Err(ERR_UNAUTHORIZED_ACTOR)
+        );
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Refunded, &event.destination),
+            Err(ERR_UNAUTHORIZED_ACTOR)
+        );
+    }
+
+    /// Boundary: an unrelated third party is rejected for every transition.
+    #[test]
+    fn authorize_unrelated_caller_rejected() {
+        let env = Env::default();
+        let event = sample(&env, PaymentStatus::Funded);
+        let stranger = Address::generate(&env);
+        for status in [
+            PaymentStatus::Funded,
+            PaymentStatus::Completed,
+            PaymentStatus::Failed,
+            PaymentStatus::Cancelled,
+            PaymentStatus::Refunded,
+        ] {
+            assert_eq!(
+                authorize_transition(&event, status, &stranger),
+                Err(ERR_UNAUTHORIZED_ACTOR)
+            );
+        }
+    }
+
+    /// Failure: transitions with no permitted actor are always rejected.
+    #[test]
+    fn authorize_created_rejected() {
+        let env = Env::default();
+        let event = sample(&env, PaymentStatus::Created);
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Created, &event.source),
+            Err(ERR_UNAUTHORIZED_ACTOR)
+        );
+        assert_eq!(
+            authorize_transition(&event, PaymentStatus::Created, &event.destination),
+            Err(ERR_UNAUTHORIZED_ACTOR)
+        );
     }
 }
