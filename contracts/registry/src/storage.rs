@@ -8,6 +8,12 @@ use crate::errors::RegistryError;
 /// that [`read_record`] can transparently upgrade older entries.
 pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 
+/// Highest schema version this contract revision can persist.
+///
+/// [`write_record`] refuses to write once the schema version reaches this
+/// value, so the counter can never wrap around to a stale version.
+pub const MAX_SCHEMA_VERSION: u32 = u32::MAX;
+
 /// Persisted registry record.
 ///
 /// `schema_version` is stored alongside the payload so that records written by
@@ -27,7 +33,20 @@ fn record_key(env: &Env, id: u64) -> (soroban_sdk::Symbol, u64) {
 
 /// Persist a registry record, always stamping it with the current schema
 /// version so future revisions can migrate it safely.
-pub fn write_record(env: &Env, id: u64, owner: Address, name: String, metadata: String) {
+///
+/// Returns [`RegistryError::VersionOverflow`] when the schema version counter
+/// has reached [`MAX_SCHEMA_VERSION`], rather than wrapping to a stale version.
+pub fn write_record(
+    env: &Env,
+    id: u64,
+    owner: Address,
+    name: String,
+    metadata: String,
+) -> Result<(), RegistryError> {
+    if CURRENT_SCHEMA_VERSION >= MAX_SCHEMA_VERSION {
+        return Err(RegistryError::VersionOverflow);
+    }
+
     let record = RegistryRecord {
         schema_version: CURRENT_SCHEMA_VERSION,
         owner,
@@ -35,6 +54,7 @@ pub fn write_record(env: &Env, id: u64, owner: Address, name: String, metadata: 
         metadata,
     };
     env.storage().persistent().set(&record_key(env, id), &record);
+    Ok(())
 }
 
 /// Read a registry record, upgrading records written by older schema versions
@@ -63,7 +83,9 @@ pub fn read_record(env: &Env, id: u64) -> Result<RegistryRecord, RegistryError> 
 ///
 /// Records already at the current version are returned unchanged. Records from
 /// a newer, unknown schema version are rejected rather than silently
-/// misinterpreted.
+/// misinterpreted. The version counter is advanced with checked arithmetic so
+/// exhaustion surfaces as [`RegistryError::VersionOverflow`] instead of
+/// wrapping to a stale version.
 fn upgrade_record(env: &Env, mut record: RegistryRecord) -> Result<RegistryRecord, RegistryError> {
     if record.schema_version > CURRENT_SCHEMA_VERSION {
         return Err(RegistryError::UnsupportedSchemaVersion);
@@ -73,7 +95,10 @@ fn upgrade_record(env: &Env, mut record: RegistryRecord) -> Result<RegistryRecor
     // normalised here by stamping the current version. No payload reshaping is
     // required for this migration step.
     while record.schema_version < CURRENT_SCHEMA_VERSION {
-        record.schema_version += 1;
+        record.schema_version = record
+            .schema_version
+            .checked_add(1)
+            .ok_or(RegistryError::VersionOverflow)?;
     }
 
     let _ = env;

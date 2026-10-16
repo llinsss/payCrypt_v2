@@ -12,6 +12,12 @@ use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Symbol};
 /// path can detect and migrate records written by an older schema.
 pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 
+/// Highest schema version the registry can represent.
+///
+/// The version counter is a `u32`; once a record reaches this value the
+/// counter cannot be advanced further without wrapping to a stale version.
+pub const MAX_SCHEMA_VERSION: u32 = u32::MAX;
+
 /// Persisted registry entry.
 ///
 /// `schema_version` is stored alongside the payload so that records created
@@ -75,10 +81,42 @@ impl RegistryContract {
     /// This is the safe read/upgrade path: it detects the stored schema
     /// version, upgrades records created by the current schema, and writes
     /// the migrated record back so subsequent reads are cheap.
+    ///
+    /// Returns [`RegistryError::VersionOverflow`] when the stored record is
+    /// already at [`MAX_SCHEMA_VERSION`] and cannot be advanced further.
     pub fn migrate(env: Env, id: Symbol) -> Result<RegistryRecord, RegistryError> {
         let record = Self::read_and_migrate(&env, &id)?;
         env.storage().persistent().set(&id, &record);
         Ok(record)
+    }
+
+    /// Advance the schema version of the record stored under `id` by one.
+    ///
+    /// Only the `admin` may write. Returns [`RegistryError::VersionOverflow`]
+    /// when the record is already at [`MAX_SCHEMA_VERSION`], rather than
+    /// wrapping the counter to a stale version.
+    pub fn bump_version(
+        env: Env,
+        admin: Address,
+        id: Symbol,
+    ) -> Result<RegistryRecord, RegistryError> {
+        admin.require_auth();
+
+        let mut record = Self::read_and_migrate(&env, &id)?;
+        record.schema_version = Self::next_schema_version(record.schema_version)?;
+        env.storage().persistent().set(&id, &record);
+        Ok(record)
+    }
+
+    /// Compute the next schema version, rejecting exhaustion explicitly.
+    ///
+    /// Returns [`RegistryError::VersionOverflow`] instead of wrapping or
+    /// saturating so callers never observe a stale version.
+    fn next_schema_version(current: u32) -> Result<u32, RegistryError> {
+        if current >= MAX_SCHEMA_VERSION {
+            return Err(RegistryError::VersionOverflow);
+        }
+        Ok(current + 1)
     }
 
     /// Internal read path shared by `get` and `migrate`.
@@ -204,5 +242,70 @@ mod test {
         let (env, client, _admin) = setup();
         let id = Symbol::new(&env, "missing");
         assert_eq!(client.try_migrate(&id), Err(Ok(RegistryError::NotFound)));
+    }
+
+    #[test]
+    fn bump_version_advances_counter() {
+        let (env, client, admin) = setup();
+        let id = Symbol::new(&env, "token");
+        let address = Address::generate(&env);
+
+        client.set(&admin, &id, &address);
+        let bumped = client.bump_version(&admin, &id);
+
+        assert_eq!(bumped.schema_version, CURRENT_SCHEMA_VERSION + 1);
+        assert_eq!(bumped.address, address);
+    }
+
+    #[test]
+    fn bump_version_requires_admin_auth() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, RegistryContract);
+        let client = RegistryContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let id = Symbol::new(&env, "token");
+        let address = Address::generate(&env);
+
+        // No auth mocked: the version bump must fail authorization.
+        assert!(client.try_bump_version(&admin, &id).is_err());
+    }
+
+    #[test]
+    fn bump_version_at_max_returns_overflow() {
+        let (env, client, admin) = setup();
+        let id = Symbol::new(&env, "token");
+        let address = Address::generate(&env);
+
+        // Seed a record already at the maximum representable version.
+        env.as_contract(&client.address, || {
+            env.storage().persistent().set(
+                &id,
+                &RegistryRecord {
+                    schema_version: MAX_SCHEMA_VERSION,
+                    address: address.clone(),
+                },
+            );
+        });
+
+        assert_eq!(
+            client.try_bump_version(&admin, &id),
+            Err(Ok(RegistryError::VersionOverflow))
+        );
+
+        // The stored version must not wrap to a stale value.
+        let stored: RegistryRecord = env.as_contract(&client.address, || {
+            env.storage().persistent().get(&id).unwrap()
+        });
+        assert_eq!(stored.schema_version, MAX_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn next_schema_version_boundary() {
+        assert_eq!(next_schema_version(0), Ok(1));
+        assert_eq!(next_schema_version(MAX_SCHEMA_VERSION - 1), Ok(MAX_SCHEMA_VERSION));
+        assert_eq!(
+            next_schema_version(MAX_SCHEMA_VERSION),
+            Err(RegistryError::VersionOverflow)
+        );
     }
 }
