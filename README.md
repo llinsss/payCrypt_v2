@@ -2,6 +2,8 @@
 
 ## Handsoff notes
 
+<!-- handsoff-issue-954 -->
+- #954: Add differential tests for Rust and client tag normalization
 <!-- handsoff-issue-950 -->
 - #950: Add tag transfer event schema versioning
 <!-- handsoff-issue-970 -->
