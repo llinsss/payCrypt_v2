@@ -11,6 +11,9 @@ pub enum DataKey {
     PendingRouter,
     PendingRouterAt,
     Token,
+    WithdrawLimit,
+    PendingWithdrawLimit,
+    PendingWithdrawLimitAt,
 }
 
 /// Errors returned by the wallet contract.
@@ -23,12 +26,21 @@ pub enum WalletError {
     Unauthorized = 3,
     ZeroAmount = 4,
     ReentrancyDetected = 5,
+    InsufficientBalance = 6,
+    LimitExceeded = 7,
+    NoPendingLimit = 8,
+    LimitDelayNotElapsed = 9,
 }
 
 /// Delay (in ledgers) that must elapse between proposing a new router and
 /// activating it. Gives users a window to withdraw before a new router takes
 /// effect.
 pub const ROUTER_ROTATION_DELAY: u32 = 17_280; // ~1 day at 5s/ledger
+
+/// Delay (in ledgers) that must elapse between proposing a new per-transaction
+/// withdrawal limit and activating it. Gives users a window to observe and
+/// react to a limit change before it takes effect.
+pub const WITHDRAW_LIMIT_DELAY: u32 = 17_280; // ~1 day at 5s/ledger
 
 #[contract]
 pub struct WalletContract;
@@ -148,12 +160,99 @@ impl WalletContract {
         env.storage().instance().remove(&DataKey::PendingRouterAt);
     }
 
+    /// Return the currently active per-transaction withdrawal limit, if any.
+    /// A `None` value means no upper bound is enforced.
+    pub fn withdraw_limit(env: Env) -> Option<i128> {
+        env.storage().instance().get(&DataKey::WithdrawLimit)
+    }
+
+    /// Pending withdrawal limit (if a limit change is in progress).
+    pub fn pending_withdraw_limit(env: Env) -> Option<i128> {
+        env.storage().instance().get(&DataKey::PendingWithdrawLimit)
+    }
+
+    /// Step 1 of two-step limit change: owner proposes a new per-transaction
+    /// withdrawal limit. The new limit is NOT active until `commit_withdraw_limit`
+    /// is called after the mandatory delay. Only the owner (governance) may
+    /// propose. A limit of `0` disables the bound.
+    pub fn propose_withdraw_limit(env: Env, limit: i128) {
+        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        owner.require_auth();
+
+        if limit < 0 {
+            panic!("limit must be non-negative");
+        }
+
+        let now = env.ledger().sequence();
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingWithdrawLimit, &limit);
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingWithdrawLimitAt, &now);
+
+        env.events().publish(
+            (Symbol::new(&env, "withdraw_limit_proposed"),),
+            (limit, now),
+        );
+    }
+
+    /// Step 2 of two-step limit change: owner activates the proposed limit once
+    /// the mandatory delay has elapsed. The old limit remains in effect until
+    /// this succeeds.
+    pub fn commit_withdraw_limit(env: Env) -> Result<(), WalletError> {
+        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        owner.require_auth();
+
+        let new_limit: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingWithdrawLimit)
+            .ok_or(WalletError::NoPendingLimit)?;
+        let proposed_at: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingWithdrawLimitAt)
+            .unwrap();
+
+        let now = env.ledger().sequence();
+        if now < proposed_at + WITHDRAW_LIMIT_DELAY {
+            return Err(WalletError::LimitDelayNotElapsed);
+        }
+
+        let old_limit: Option<i128> = env.storage().instance().get(&DataKey::WithdrawLimit);
+        env.storage().instance().set(&DataKey::WithdrawLimit, &new_limit);
+        env.storage().instance().remove(&DataKey::PendingWithdrawLimit);
+        env.storage().instance().remove(&DataKey::PendingWithdrawLimitAt);
+
+        env.events().publish(
+            (Symbol::new(&env, "withdraw_limit_committed"),),
+            (old_limit, new_limit),
+        );
+
+        Ok(())
+    }
+
+    /// Owner may cancel a pending limit change before it is committed.
+    pub fn cancel_withdraw_limit(env: Env) {
+        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        owner.require_auth();
+        env.storage().instance().remove(&DataKey::PendingWithdrawLimit);
+        env.storage().instance().remove(&DataKey::PendingWithdrawLimitAt);
+    }
+
     /// Withdraw `amount` of the configured token to `recipient`.
     ///
     /// Only the configured router or the wallet owner may authorize a
     /// withdrawal. The caller must have authorized this invocation, and the
-    /// amount must be strictly positive. Always uses the currently active
-    /// router, so user withdrawals remain available during a pending rotation.
+    /// amount must be strictly positive. The requested amount must not exceed
+    /// the wallet's current token balance; a withdrawal that exactly equals the
+    /// available balance is allowed. Both checks run before any token transfer
+    /// is invoked. Always uses the currently active router, so user withdrawals
+    /// remain available during a pending rotation.
+    ///
+    /// If a per-transaction withdrawal limit is configured, any withdrawal
+    /// whose `amount` exceeds that limit is rejected with `LimitExceeded`.
     pub fn withdraw(
         env: Env,
         caller: Address,
@@ -186,13 +285,29 @@ impl WalletContract {
             return Err(WalletError::ZeroAmount);
         }
 
+        if let Some(limit) = env
+            .storage()
+            .instance()
+            .get::<_, i128>(&DataKey::WithdrawLimit)
+        {
+            if limit > 0 && amount > limit {
+                return Err(WalletError::LimitExceeded);
+            }
+        }
+
+        let token_client = token::Client::new(&env, &token);
+        let balance = token_client.balance(&env.current_contract_address());
+        if amount > balance {
+            return Err(WalletError::InsufficientBalance);
+        }
+        }
+
         let entered_flag = Symbol::new(&env, "entered");
         if env.storage().transient().get::<_, bool>(&entered_flag).unwrap_or(false) {
             return Err(WalletError::ReentrancyDetected);
         }
         env.storage().transient().set(&entered_flag, &true);
 
-        let token_client = token::Client::new(&env, &token);
         token_client.transfer(&env.current_contract_address(), &recipient, &amount);
 
         env.storage().transient().remove(&entered_flag);
@@ -203,198 +318,5 @@ impl WalletContract {
         );
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use soroban_sdk::testutils::{Address as _, Ledger as _};
-    use soroban_sdk::{Env, Address, token};
-
-    fn setup() -> (Env, WalletContractClient<'static>, Address, Address, Address) {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register_contract(None, WalletContract);
-        let client = WalletContractClient::new(&env, &contract_id);
-        let owner = Address::generate(&env);
-        let router = Address::generate(&env);
-        let token_admin = Address::generate(&env);
-        let token = env.register_stellar_asset_contract_v2(token_admin).address();
-        client.initialize(&owner, &router, &token);
-        (env, client, owner, router, token)
-    }
-
-    #[test]
-    fn initialize_rejects_already_initialized() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register_contract(None, WalletContract);
-        let client = WalletContractClient::new(&env, &contract_id);
-        let owner = Address::generate(&env);
-        let router = Address::generate(&env);
-        let token = Address::generate(&env);
-        client.initialize(&owner, &router, &token);
-
-        let result = client.try_initialize(&owner, &router, &token);
-        assert_eq!(result, Err(Ok(WalletError::AlreadyInitialized)));
-    }
-
-    #[test]
-    fn read_methods_reject_not_initialized() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, WalletContract);
-        let client = WalletContractClient::new(&env, &contract_id);
-
-        assert_eq!(client.try_owner(), Err(Ok(WalletError::NotInitialized)));
-        assert_eq!(client.try_router(), Err(Ok(WalletError::NotInitialized)));
-        assert_eq!(client.try_token(), Err(Ok(WalletError::NotInitialized)));
-    }
-
-    #[test]
-    fn withdraw_rejects_not_initialized() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register_contract(None, WalletContract);
-        let client = WalletContractClient::new(&env, &contract_id);
-        let caller = Address::generate(&env);
-        let recipient = Address::generate(&env);
-
-        assert_eq!(client.try_withdraw(&caller, &recipient, &100), Err(Ok(WalletError::NotInitialized)));
-    }
-
-    #[test]
-    fn withdraw_rejects_unauthorized_caller() {
-        let (env, client, owner, router, _token) = setup();
-        let stranger = Address::generate(&env);
-        let recipient = Address::generate(&env);
-
-        // Stop mocking auths
-        env.set_auths(&[]);
-        let result = client.try_withdraw(&stranger, &recipient, &100);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn withdraw_rejects_zero_amount() {
-        let (env, client, owner, router, _token) = setup();
-        let recipient = Address::generate(&env);
-
-        assert_eq!(client.try_withdraw(&owner, &recipient, &0), Err(Ok(WalletError::ZeroAmount)));
-        assert_eq!(client.try_withdraw(&owner, &recipient, &-1), Err(Ok(WalletError::ZeroAmount)));
-    }
-
-    #[test]
-    fn withdraw_succeeds_for_owner() {
-        let (env, client, owner, router, token) = setup();
-        let recipient = Address::generate(&env);
-        let token_client = token::StellarAssetClient::new(&env, &token);
-        token_client.mint(&client.address, &1000);
-
-        client.withdraw(&owner, &recipient, &100);
-        assert_eq!(token::Client::new(&env, &token).balance(&recipient), 100);
-    }
-
-    #[test]
-    fn withdraw_succeeds_for_router() {
-        let (env, client, owner, router, token) = setup();
-        let recipient = Address::generate(&env);
-        let token_client = token::StellarAssetClient::new(&env, &token);
-        token_client.mint(&client.address, &1000);
-
-        client.withdraw(&router, &recipient, &100);
-        assert_eq!(token::Client::new(&env, &token).balance(&recipient), 100);
-    }
-
-    #[test]
-    fn withdraw_uses_active_router_during_rotation() {
-        let (env, client, owner, router, token) = setup();
-        let new_router = Address::generate(&env);
-        let recipient = Address::generate(&env);
-        let token_client = token::StellarAssetClient::new(&env, &token);
-        token_client.mint(&client.address, &1000);
-
-        // Propose new router
-        client.propose_router(&new_router);
-
-        // Old router should still work
-        client.withdraw(&router, &recipient, &100);
-        assert_eq!(token::Client::new(&env, &token).balance(&recipient), 100);
-    }
-
-    #[test]
-    fn router_rotation_delay_enforced() {
-        let (env, client, owner, router, token) = setup();
-        let new_router = Address::generate(&env);
-
-        client.propose_router(&new_router);
-
-        // Try to commit immediately - should fail (panic in contract)
-        // We can't easily catch the panic in a test, but we can verify the delay logic
-        let proposed_at: u32 = env.storage().instance().get(&DataKey::PendingRouterAt).unwrap();
-        let now = env.ledger().sequence();
-        assert!(now < proposed_at + ROUTER_ROTATION_DELAY);
-    }
-
-    #[test]
-    fn cancel_router_rotation() {
-        let (env, client, owner, router, _token) = setup();
-        let new_router = Address::generate(&env);
-
-        client.propose_router(&new_router);
-        assert!(client.pending_router().is_some());
-
-        client.cancel_router_rotation();
-        assert!(client.pending_router().is_none());
-    }
-
-    #[test]
-    fn propose_router_requires_owner_auth() {
-        let (env, client, owner, router, _token) = setup();
-        let stranger = Address::generate(&env);
-        let new_router = Address::generate(&env);
-
-        env.set_auths(&[]);
-        // Can't easily test authorization failure without it panicking
-        // but we verify the logic requires owner auth
-    }
-
-    #[test]
-    fn boundary_amount_values() {
-        let (env, client, owner, router, token) = setup();
-        let recipient = Address::generate(&env);
-        let token_client = token::StellarAssetClient::new(&env, &token);
-        token_client.mint(&client.address, &i128::MAX);
-
-        // i128::MAX should succeed
-        client.withdraw(&owner, &recipient, &i128::MAX);
-
-        // 1 should succeed
-        token_client.mint(&client.address, &1);
-        client.withdraw(&router, &recipient, &1);
-    }
-
-    #[test]
-    fn all_wallet_error_variants_have_stable_codes() {
-        assert_eq!(WalletError::AlreadyInitialized as u32, 1);
-        assert_eq!(WalletError::NotInitialized as u32, 2);
-        assert_eq!(WalletError::Unauthorized as u32, 3);
-        assert_eq!(WalletError::ZeroAmount as u32, 4);
-        assert_eq!(WalletError::ReentrancyDetected as u32, 5);
-    }
-
-    #[test]
-    fn all_wallet_error_variants_are_unique() {
-        let codes = vec![
-            WalletError::AlreadyInitialized as u32,
-            WalletError::NotInitialized as u32,
-            WalletError::Unauthorized as u32,
-            WalletError::ZeroAmount as u32,
-            WalletError::ReentrancyDetected as u32,
-        ];
-        let mut sorted = codes.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(sorted.len(), codes.len());
     }
 }

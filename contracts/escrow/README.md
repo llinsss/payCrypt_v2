@@ -1,121 +1,197 @@
 # Escrow Contract
 
-Soroban escrow contract supporting deposit, release, refund, and dispute
-resolution between a payer, a payee, and an optional arbiter.
+# Escrow Contract
 
-## Fuzz Tests for Escrow Operation Sequences
+A Soroban escrow contract that holds funds between a creator (depositor) and a
+beneficiary until the escrow is funded, released, or cancelled.
 
-This document describes the deterministic fuzz/property test suite that
-exercises escrow operation sequences. The suite lives under
-`contracts/escrow/src/test.rs` (unit + property tests) and
-`contracts/escrow/tests/fuzz.rs` (local-network integration tests).
+## Lifecycle
 
-### Goals
+An escrow moves through the following states:
 
-- Exercise arbitrary sequences of escrow operations (`deposit`, `release`,
-  `refund`, `dispute`, `resolve`) against the contract.
-- Guarantee deterministic validation: every run is reproducible from a fixed
-  seed and a fixed ledger/time fixture.
-- Cover authorization, boundary values, resource limits, external-call
-  failures, and replay paths.
-
-### Deterministic Fixtures
-
-All fuzz tests must be reproducible. Use the shared fixtures below rather
-than wall-clock time or random ledger state.
-
-- **Seed**: each property test takes an explicit `u64` seed. The default
-  corpus seeds are `0`, `1`, `u64::MAX`, and a small fixed list of
-  hand-picked seeds. Never rely on `rand::thread_rng()`.
-- **Ledger/time**: use `env.ledger().with_mut(|l| { l.timestamp = T; l.sequence_number = S; })`
-  with constants from `fixtures::ledger_at(seq, ts)`. Time advances only by
-  explicit `advance_ledger(&env, delta)` calls inside the test body.
-- **Accounts**: `fixtures::payer()`, `fixtures::payee()`, `fixtures::arbiter()`,
-  and `fixtures::stranger()` return deterministic `Address` values derived
-  from fixed seeds.
-- **Amounts**: `fixtures::amounts()` returns the boundary corpus
-  `[0, 1, MIN_AMOUNT, MIN_AMOUNT + 1, MAX_AMOUNT - 1, MAX_AMOUNT, MAX_AMOUNT + 1]`.
-
-### Operation Sequence Model
-
-A fuzz case is a `Vec<Op>` where each `Op` is one of:
-
-```rust
-pub enum Op {
-    Deposit { from: Actor, amount: i128 },
-    Release { caller: Actor },
-    Refund  { caller: Actor },
-    Dispute { caller: Actor },
-    Resolve { caller: Actor, to_payee: bool },
-    AdvanceLedger { delta: u64 },
-}
+```
+Created (pre-funding) ──fund──▶ Funded ──release──▶ Released (terminal)
+        │
+        └──cancel──▶ Cancelled (terminal)
 ```
 
-The generator produces sequences of bounded length (`MAX_SEQ_LEN`) and
-shrinks failing cases to the minimal prefix that still fails. Shrinking is
-required so that a failing seed yields a small, reviewable reproducer.
+- **Created** — the escrow exists but has not been funded yet. This is the only
+  state in which cancellation is permitted.
+- **Funded** — the creator has deposited the escrowed amount.
+- **Released** — funds have been paid out to the beneficiary. Terminal.
+- **Cancelled** — the escrow was cancelled before funding. Terminal.
 
-### Coverage Matrix
+## Asset binding
 
-| Path | What is asserted |
-| --- | --- |
-| Success | A valid deposit → release sequence moves funds exactly once and leaves the escrow in `Released`. |
-| Boundary | Amounts at `0`, `MIN_AMOUNT`, `MAX_AMOUNT`, and `MAX_AMOUNT + 1`; deadlines at `now`, `now + 1`, and `now - 1`; sequence length at `0`, `1`, and `MAX_SEQ_LEN`. |
-| Unauthorized | `release`/`refund`/`resolve` from `stranger()` must fail with `Error::Unauthorized` and must not mutate state. |
-| Replay | Re-submitting a previously applied operation (same nonce/sequence) must fail with `Error::Replay` and leave balances unchanged. |
-| External-call failure | A mocked token transfer that returns an error must abort the operation and roll back all state changes. |
-| Resource limits | Sequences that exceed `MAX_SEQ_LEN` or the configured CPU/memory budget must fail with `Error::ResourceLimit` rather than panic. |
+The asset contract address is bound to the escrow **at creation time** and is
+immutable for the lifetime of the escrow. Every deposit and payout entrypoint
+requires the caller to pass the asset address explicitly, and the contract
+verifies that it matches the escrow's bound asset before any state is mutated.
 
-### Invariants
+This prevents asset substitution: a caller cannot deposit or pay out a
+different token than the one the escrow was created with, even if the caller
+controls a look-alike asset contract.
 
-Every fuzz case asserts the following invariants after each operation:
+### Entrypoints
 
-1. `payer_balance + payee_balance + escrow_balance` is conserved.
-2. The escrow state machine only moves along legal transitions
-   (`Created → Funded → Released | Refunded | Disputed → Resolved`).
-3. A terminal state (`Released`, `Refunded`, `Resolved`) is absorbing: no
-   further operation may change balances.
-4. No operation succeeds without the required authorization.
+| Entrypoint | Asset parameter | Behavior |
+| --- | --- | --- |
+| `create_escrow` | `asset: Address` | Stores `asset` on the escrow record. |
+| `deposit` | `asset: Address` | Requires `asset == escrow.asset`; otherwise fails with `AssetMismatch`. |
+| `payout` | `asset: Address` | Requires `asset == escrow.asset`; otherwise fails with `AssetMismatch`. |
 
-### Running the Suite
+## Metadata limits
 
-```sh
-# Unit + property tests (deterministic, no network)
-cargo test -p escrow --features testutils
+Escrow metadata is bounded so that storage growth and per-invocation work stay
+predictable. Two rules apply to every metadata value accepted by the contract:
 
-# Local-network integration fuzz tests
-cargo test -p escrow --test fuzz -- --nocapture
+- **Maximum byte length.** Metadata is limited to `MAX_METADATA_LEN` bytes
+  (measured in UTF-8 bytes, not characters). Values longer than this are
+  rejected before any storage is written.
+- **Supported character policy.** Metadata must be a printable UTF-8 subset:
+  ASCII graphic characters (`0x20`–`0x7E`) plus the tab (`0x09`) and newline
+  (`0x0A`) control characters. Non-printable control characters, DEL (`0x7F`),
+  and non-ASCII code points are rejected.
+
+Both checks run **before** the value is written to storage, so an oversized or
+invalid value never mutates contract state.
+
+## Cancellation (pre-funding only)
+
+`cancel` allows the escrow **creator** to abandon an escrow that has not yet
+been funded.
+
+- **Permitted actor:** the escrow creator. The call requires the creator's
+  authorization (`require_auth`); any other caller is rejected.
+- **Permitted state:** `Created` (pre-funding) only. Calling `cancel` on a
+  `Funded`, `Released`, or already `Cancelled` escrow fails.
+- **Terminal state:** a successful cancellation transitions the escrow to
+  `Cancelled`. Once cancelled, the escrow is terminal and no further operations
+  (fund, release, or a second cancel) are accepted.
+- **No replay:** cancellation is not idempotent. A second `cancel` call on an
+  already-cancelled escrow fails with a distinct error (see below), proving the
+  transition cannot be replayed.
+
+## Deadline extension policy
+
+`extend_deadline` lets the escrow **creator** push back an escrow's deadline
+within strict, bounded limits.
+
+- **Permitted actor:** the escrow creator. The call requires the creator's
+  authorization (`require_auth`); any other caller is rejected with
+  `NotAuthorized`.
+- **Permitted state:** `Created` (pre-funding) only. Extending a `Funded`,
+  `Released`, or `Cancelled` escrow fails with `InvalidState`.
+- **Per-extension duration:** each extension may add at most
+  `MAX_EXTENSION_DURATION` seconds to the deadline. A larger `extension`
+  argument is rejected with `ExtensionTooLong`.
+- **Extension count:** an escrow may be extended at most `MAX_EXTENSIONS`
+  times. Once the count is exhausted, further calls fail with
+  `TooManyExtensions`.
+- **Overflow guard:** the new deadline is computed with a checked add. If
+  `current_deadline + extension` would overflow the timestamp type, the call
+  fails with `DeadlineOverflow` rather than wrapping.
+- **Bounded work:** each call reads the escrow record, verifies the caller,
+  state, and limits, writes the updated deadline and extension count, and emits
+  a single event. No unbounded iteration or unbounded storage growth is
+  introduced.
+
+### Error codes
+
+| Code | Name                  | Meaning                                                        |
+|------|-----------------------|----------------------------------------------------------------|
+| 1    | `AlreadyInitialized`  | Escrow has already been initialized.                           |
+| 2    | `NotAuthorized`       | Caller is not the permitted actor for the operation.           |
+| 3    | `InvalidState`        | Operation is not allowed in the escrow's current state.        |
+| 4    | `AlreadyCancelled`    | Escrow was already cancelled; cancellation cannot be replayed. |
+| 5    | `TooManyExtensions`   | Escrow has reached the maximum number of deadline extensions.  |
+| 6    | `ExtensionTooLong`    | Requested extension exceeds the per-extension maximum.         |
+| 7    | `DeadlineOverflow`    | New deadline would overflow the timestamp type.                |
+| 8    | `AssetMismatch`       | The supplied asset address does not match the escrow's bound asset. No state is mutated. |
+| 9    | `MetadataTooLong`     | Metadata exceeds `MAX_METADATA_LEN` bytes. No state is mutated. |
+| 10   | `MetadataInvalidChar` | Metadata contains a character outside the supported printable subset. No state is mutated. |
+
+### Events
+
+Deposit and payout events include the bound asset address so indexers can
+verify which asset moved without trusting the caller-supplied argument.
+
+Metadata is carried on the existing escrow creation event; no new event is
+emitted for the length/character checks. Rejected metadata produces no event
+because no state is mutated.
+
+Cancellation emits a versioned lifecycle event so off-chain indexers can track
+state transitions:
+
+```
+("escrow", "cancelled")  topics: [version, escrow_id, creator]
 ```
 
-To reproduce a specific failure, pass the reported seed:
+- `version` — lifecycle event schema version.
+- `escrow_id` — identifier of the cancelled escrow.
+- `creator` — the actor that authorized the cancellation.
 
-```sh
-FUZZ_SEED=<seed> cargo test -p escrow --test fuzz
+Deadline extension emits a versioned lifecycle event:
+
+```
+("escrow", "deadline_extended")  topics: [version, escrow_id, creator]
 ```
 
-### Migration Notes
+- `version` — lifecycle event schema version.
+- `escrow_id` — identifier of the extended escrow.
+- `creator` — the actor that authorized the extension.
 
-- The fuzz suite targets the Soroban migration of the escrow contract. When
-  migrating from the legacy contract, keep the `Op` enum and fixtures in
-  sync with the new entry points so sequences remain valid.
-- New entry points must be added to `Op` and to the coverage matrix above;
-  a fuzz suite that silently skips an entry point is considered incomplete.
-- Storage layout changes must be reflected in the invariant checks; if a
-  balance moves to a new key, update invariant (1) accordingly.
+## Storage and cost
 
-### Indexing and Monitoring
+The bound asset is written once at creation and read on every deposit/payout.
+Metadata is bounded by `MAX_METADATA_LEN`, so the maximum additional storage
+per escrow is fixed and known ahead of time. No additional per-invocation
+storage growth is introduced; the asset address is stored alongside the
+existing escrow record.
 
-- Emitted events (`deposit`, `release`, `refund`, `dispute`, `resolve`) are
-  the source of truth for off-chain indexing. Fuzz tests assert that exactly
-  one event is emitted per successful operation and none for failed ones.
-- Monitoring should alert on `Error::Replay` and `Error::ResourceLimit`
-  spikes, which indicate either a client bug or an attempted abuse.
+Cancellation performs a bounded amount of work: it reads the escrow record,
+verifies the caller and state, writes the terminal `Cancelled` state, and emits
+a single event. No unbounded iteration or unbounded storage growth is
+introduced.
 
-### Rollback Behavior
+Deadline extension performs a bounded amount of work: it reads the escrow
+record, verifies the caller, state, extension count, and duration, writes the
+updated deadline and extension count, and emits a single event. No unbounded
+iteration or unbounded storage growth is introduced.
 
-- Any failed operation (unauthorized, replay, external-call failure,
-  resource limit) must leave the contract state byte-for-byte identical to
-  the pre-operation state. Fuzz tests assert this by snapshotting the
-  relevant storage entries before and after each failing operation.
-- If a fuzz case reveals a partial state mutation on failure, that is a
-  contract bug and must be fixed before the suite is considered green.
+## Tests
+
+Focused tests cover:
+
+- Successful deposit and payout with the correct asset.
+- Authorization failures for deposit and payout.
+- Boundary cases (zero and edge amounts).
+- Mismatched-asset failures for both deposit and payout, asserting the
+  `AssetMismatch` error and that no state was mutated.
+- Metadata success with a valid value.
+- Metadata boundary at exactly `MAX_METADATA_LEN` bytes.
+- Metadata failure when over `MAX_METADATA_LEN`, asserting `MetadataTooLong`
+  and that no state was mutated.
+- Metadata failure with unsupported characters, asserting
+  `MetadataInvalidChar` and that no state was mutated.
+
+Focused tests cover the cancellation path:
+
+- **Success:** the creator cancels a pre-funding escrow; state becomes
+  `Cancelled` and the event is emitted.
+- **Authorization:** a non-creator caller is rejected with `NotAuthorized`.
+- **Boundary:** cancelling a funded escrow is rejected with `InvalidState`.
+- **Failure / no replay:** a second `cancel` on a cancelled escrow fails with
+  `AlreadyCancelled`.
+
+Focused tests cover the deadline extension path:
+
+- **Success:** the creator extends a pre-funding escrow; the deadline advances
+  and the event is emitted.
+- **Authorization:** a non-creator caller is rejected with `NotAuthorized`.
+- **Boundary:** an extension exactly equal to `MAX_EXTENSION_DURATION` is
+  accepted, and the `MAX_EXTENSIONS`-th extension is accepted.
+- **Failure:** exceeding `MAX_EXTENSION_DURATION` fails with
+  `ExtensionTooLong`; exceeding `MAX_EXTENSIONS` fails with
+  `TooManyExtensions`; extending a funded escrow fails with `InvalidState`;
+  and a deadline near the timestamp maximum fails with `DeadlineOverflow`.
