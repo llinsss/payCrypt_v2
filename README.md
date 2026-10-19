@@ -15,3 +15,8 @@
 
 <!-- handsoff-issue-920 -->
 - #920: Add escrow refund after expiry
+<!-- handsoff-issue-922 -->
+- #922: Add escrow dispute and resolution transitions
+
+<!-- handsoff-issue-973 -->
+- #973: Add wallet router rotation event schema

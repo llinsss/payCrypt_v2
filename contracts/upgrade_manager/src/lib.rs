@@ -421,4 +421,260 @@ mod test {
             Err(Ok(UpgradeError::InvalidRollbackTarget))
         );
     }
+
+    #[test]
+    fn initialize_rejects_already_initialized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, UpgradeManager);
+        let client = UpgradeManagerClient::new(env, &contract_id);
+        let governance = Address::generate(&env);
+        client.initialize(&governance);
+
+        let result = client.try_initialize(&governance);
+        assert_eq!(result, Err(Ok(UpgradeError::AlreadyInitialized)));
+    }
+
+    #[test]
+    fn operations_reject_when_not_initialized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, UpgradeManager);
+        let client = UpgradeManagerClient::new(env, &contract_id);
+        let governance = Address::generate(&env);
+        let impl_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+        assert_eq!(
+            client.try_authorize_implementation(&governance, &impl_hash),
+            Err(Ok(UpgradeError::NotInitialized))
+        );
+        assert_eq!(
+            client.try_propose_upgrade(&governance, &1, &impl_hash),
+            Err(Ok(UpgradeError::NotInitialized))
+        );
+        assert_eq!(
+            client.try_approve_upgrade(&governance, &1),
+            Err(Ok(UpgradeError::NotInitialized))
+        );
+        assert_eq!(
+            client.try_execute_upgrade(&governance, &1),
+            Err(Ok(UpgradeError::NotInitialized))
+        );
+        assert_eq!(
+            client.try_cancel_upgrade(&governance, &1),
+            Err(Ok(UpgradeError::NotInitialized))
+        );
+        assert_eq!(
+            client.try_rollback_upgrade(&governance, &1),
+            Err(Ok(UpgradeError::NotInitialized))
+        );
+        assert_eq!(
+            client.try_get_version(&1),
+            Err(Ok(UpgradeError::NotInitialized))
+        );
+    }
+
+    #[test]
+    fn unauthorized_operations_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, UpgradeManager);
+        let client = UpgradeManagerClient::new(env, &contract_id);
+        let governance = Address::generate(&env);
+        client.initialize(&governance);
+        let impl_hash = BytesN::from_array(&env, &[7u8; 32]);
+        client.authorize_implementation(&governance, &impl_hash);
+
+        let attacker = Address::generate(&env);
+        assert_eq!(
+            client.try_authorize_implementation(&attacker, &impl_hash),
+            Err(Ok(UpgradeError::Unauthorized))
+        );
+        assert_eq!(
+            client.try_propose_upgrade(&attacker, &1, &impl_hash),
+            Err(Ok(UpgradeError::Unauthorized))
+        );
+        assert_eq!(
+            client.try_approve_upgrade(&attacker, &1),
+            Err(Ok(UpgradeError::Unauthorized))
+        );
+        assert_eq!(
+            client.try_execute_upgrade(&attacker, &1),
+            Err(Ok(UpgradeError::Unauthorized))
+        );
+        assert_eq!(
+            client.try_cancel_upgrade(&attacker, &1),
+            Err(Ok(UpgradeError::Unauthorized))
+        );
+        assert_eq!(
+            client.try_rollback_upgrade(&attacker, &1),
+            Err(Ok(UpgradeError::Unauthorized))
+        );
+    }
+
+    #[test]
+    fn unknown_version_rejected() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+
+        assert_eq!(client.try_approve_upgrade(&gov, &999), Err(Ok(UpgradeError::UnknownVersion)));
+        assert_eq!(client.try_execute_upgrade(&gov, &999), Err(Ok(UpgradeError::UnknownVersion)));
+        assert_eq!(client.try_cancel_upgrade(&gov, &999), Err(Ok(UpgradeError::UnknownVersion)));
+        assert_eq!(client.try_get_version(&999), Err(Ok(UpgradeError::UnknownVersion)));
+        assert_eq!(client.try_rollback_upgrade(&gov, &999), Err(Ok(UpgradeError::NoRollbackTarget)));
+    }
+
+    #[test]
+    fn invalid_state_transitions_rejected() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+
+        // Cannot approve non-proposed version
+        client.propose_upgrade(&gov, &1, &hash);
+        client.approve_upgrade(&gov, &1);
+        client.execute_upgrade(&gov, &1);
+
+        // Cannot approve again
+        assert_eq!(client.try_approve_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidState)));
+
+        // Cannot cancel executed version
+        assert_eq!(client.try_cancel_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidState)));
+
+        // Cannot propose same version
+        assert_eq!(client.try_propose_upgrade(&gov, &1, &hash), Err(Ok(UpgradeError::DuplicateVersion)));
+    }
+
+    #[test]
+    fn cancel_rejects_invalid_states() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+
+        client.propose_upgrade(&gov, &1, &hash);
+        client.approve_upgrade(&gov, &1);
+        client.execute_upgrade(&gov, &1);
+
+        // Cannot cancel executed
+        assert_eq!(client.try_cancel_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidState)));
+
+        // Cancel proposed works
+        client.propose_upgrade(&gov, &2, &hash);
+        client.cancel_upgrade(&gov, &2);
+        assert_eq!(client.get_version(&2).state, UpgradeState::Cancelled);
+
+        // Cannot cancel again
+        assert_eq!(client.try_cancel_upgrade(&gov, &2), Err(Ok(UpgradeError::InvalidState)));
+
+        // Cancel approved works
+        client.propose_upgrade(&gov, &3, &hash);
+        client.approve_upgrade(&gov, &3);
+        client.cancel_upgrade(&gov, &3);
+        assert_eq!(client.get_version(&3).state, UpgradeState::Cancelled);
+    }
+
+    #[test]
+    fn rollback_rejects_no_target() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+
+        // No version proposed
+        assert_eq!(client.try_rollback_upgrade(&gov, &1), Err(Ok(UpgradeError::NoRollbackTarget)));
+
+        // Proposed but not approved/executed
+        client.propose_upgrade(&gov, &1, &hash);
+        assert_eq!(client.try_rollback_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidRollbackTarget)));
+    }
+
+    #[test]
+    fn rollback_rejects_invalid_targets() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+
+        client.propose_upgrade(&gov, &1, &hash);
+        client.approve_upgrade(&gov, &1);
+        client.execute_upgrade(&gov, &1);
+
+        // Cannot rollback to same version
+        assert_eq!(client.try_rollback_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidRollbackTarget)));
+
+        // Cannot rollback to cancelled
+        client.propose_upgrade(&gov, &2, &hash);
+        client.cancel_upgrade(&gov, &2);
+        assert_eq!(client.try_rollback_upgrade(&gov, &2), Err(Ok(UpgradeError::InvalidRollbackTarget)));
+
+        // Cannot rollback to proposed only
+        client.propose_upgrade(&gov, &3, &hash);
+        assert_eq!(client.try_rollback_upgrade(&gov, &3), Err(Ok(UpgradeError::InvalidRollbackTarget)));
+    }
+
+    #[test]
+    fn rollback_requires_authorized_implementation() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+
+        client.propose_upgrade(&gov, &1, &hash);
+        client.approve_upgrade(&gov, &1);
+        client.execute_upgrade(&gov, &1);
+
+        // Change authorized implementation
+        let new_hash = BytesN::from_array(&env, &[8u8; 32]);
+        client.authorize_implementation(&gov, &new_hash);
+
+        // Rollback should fail because v1's implementation is no longer authorized
+        assert_eq!(client.try_rollback_upgrade(&gov, &1), Err(Ok(UpgradeError::UnauthorizedImplementation)));
+    }
+
+    #[test]
+    fn authorize_implementation_idempotent() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+
+        // Re-authorizing same hash should succeed
+        client.authorize_implementation(&gov, &hash);
+    }
+
+    #[test]
+    fn version_boundary_values() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+
+        // Version 0 is valid
+        client.propose_upgrade(&gov, &0, &hash);
+        assert_eq!(client.get_version(&0).version, 0);
+
+        // Max u32 version
+        client.propose_upgrade(&gov, &u32::MAX, &hash);
+        assert_eq!(client.get_version(&u32::MAX).version, u32::MAX);
+    }
+
+    #[test]
+    fn all_upgrade_error_variants_have_stable_codes() {
+        assert_eq!(UpgradeError::NotInitialized as u32, 1);
+        assert_eq!(UpgradeError::AlreadyInitialized as u32, 2);
+        assert_eq!(UpgradeError::Unauthorized as u32, 3);
+        assert_eq!(UpgradeError::UnknownVersion as u32, 4);
+        assert_eq!(UpgradeError::InvalidState as u32, 5);
+        assert_eq!(UpgradeError::UnauthorizedImplementation as u32, 6);
+        assert_eq!(UpgradeError::DuplicateVersion as u32, 7);
+        assert_eq!(UpgradeError::NoRollbackTarget as u32, 8);
+        assert_eq!(UpgradeError::InvalidRollbackTarget as u32, 9);
+    }
+
+    #[test]
+    fn all_upgrade_error_variants_are_unique() {
+        let codes = vec![
+            UpgradeError::NotInitialized as u32,
+            UpgradeError::AlreadyInitialized as u32,
+            UpgradeError::Unauthorized as u32,
+            UpgradeError::UnknownVersion as u32,
+            UpgradeError::InvalidState as u32,
+            UpgradeError::UnauthorizedImplementation as u32,
+            UpgradeError::DuplicateVersion as u32,
+            UpgradeError::NoRollbackTarget as u32,
+            UpgradeError::InvalidRollbackTarget as u32,
+        ];
+        let mut sorted = codes.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), codes.len());
+    }
 }
