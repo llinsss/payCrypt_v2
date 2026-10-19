@@ -29,4 +29,8 @@ pub enum Error {
     /// The supplied metadata contains characters outside the supported policy
     /// (printable ASCII only). No state is mutated when this is returned.
     MetadataInvalidChars = 9,
+    /// The escrow has already been released to the beneficiary. Release is
+    /// exactly-once; repeated attempts return this error and no transfer is
+    /// performed.
+    AlreadyReleased = 10,
 }

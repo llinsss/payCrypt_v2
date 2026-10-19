@@ -13,6 +13,8 @@
 <!-- handsoff-issue-940 -->
 - #940: Add payment archival with queryable summaries
 
+<!-- handsoff-issue-920 -->
+- #920: Add escrow refund after expiry
 <!-- handsoff-issue-922 -->
 - #922: Add escrow dispute and resolution transitions
 

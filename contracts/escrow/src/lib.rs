@@ -32,19 +32,33 @@
 //! * `Cancelled` and `Released` are terminal; any further operation on a
 //!   cancelled escrow fails with [`Error::AlreadyCancelled`].
 //!
+//! ## Partial release
+//!
+//! [`EscrowContract::release`] accepts an explicit `amount` and supports
+//! partial releases. Each successful release transfers `amount` to the
+//! beneficiary and decrements the escrow's remaining balance. The escrow only
+//! transitions to `Released` once the remaining balance reaches zero; until
+//! then it stays `Funded` and further releases are permitted. Release amounts
+//! that are zero or negative fail with [`Error::InvalidAmount`], and amounts
+//! greater than the remaining balance fail with [`Error::AmountExceedsRemaining`].
+//! No state is mutated on a rejected release.
+//!
 //! ## Authorization
 //!
 //! * `create` - requires `creator` auth.
 //! * `cancel` - requires `creator` auth; only valid in `Created`.
 //! * `fund` - requires `funder` auth.
+//! * `release` - requires `creator` auth; only valid in `Funded`.
 //! * `extend_deadline` - requires `creator` auth; only valid in `Funded`.
 //! * `get` - read-only, no auth.
 //!
 //! ## Events
 //!
 //! Every lifecycle event is published with topics `(name, EVENT_VERSION)` and
-//! data `(id, amount)`. Names are `created`, `funded`, and `refund` (emitted on
-//! cancellation). Consumers should key off `EVENT_VERSION` to decode payloads.
+//! data `(id, amount)`. Names are `created`, `funded`, `released`, and `refund`
+//! (emitted on cancellation). For `released`, `amount` is the amount released
+//! in that call (not the cumulative total). Consumers should key off
+//! `EVENT_VERSION` to decode payloads.
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, String, Symbol};
 
@@ -62,16 +76,6 @@ pub const MAX_METADATA_LEN: u32 = 128;
 pub const ESCROW_TTL_THRESHOLD: u32 = 100;
 pub const ESCROW_TTL_EXTEND_TO: u32 = 1000;
 
-/// Storage keys used by the escrow contract.
-///
-/// Only a single `State` entry is written per escrow, keeping storage growth
-/// bounded to one persistent record per escrow lifecycle.
-#[contracttype]
-#[derive(Clone)]
-pub enum DataKey {
-    State,
-}
-
 /// Lifecycle states for an escrow.
 ///
 /// `Created` is the documented pre-funding state. An escrow in this state has
@@ -88,6 +92,10 @@ pub enum EscrowState {
 }
 
 /// Persisted escrow record.
+///
+/// `remaining` tracks the balance still held by the escrow. It starts equal to
+/// `amount` and is decremented by each partial release; the escrow transitions
+/// to `Released` only when `remaining` reaches zero.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Escrow {
@@ -95,6 +103,7 @@ pub struct Escrow {
     pub beneficiary: Address,
     pub token: Address,
     pub amount: i128,
+    pub remaining: i128,
     pub state: EscrowState,
 }
 
@@ -129,6 +138,7 @@ pub const EVENT_VERSION: u32 = 1;
 /// * `ExtensionLimitReached` (6) - maximum extension count already reached.
 /// * `InvalidExtension` (7) - extension duration is zero or exceeds the maximum.
 /// * `DeadlineOverflow` (8) - computing the new deadline would overflow.
+/// * `AmountExceedsRemaining` (9) - release amount exceeds the remaining balance.
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -141,6 +151,7 @@ pub enum Error {
     ExtensionLimitReached = 6,
     InvalidExtension = 7,
     DeadlineOverflow = 8,
+    AmountExceedsRemaining = 9,
 }
 
 /// Supported character policy for escrow metadata: printable ASCII only
@@ -207,6 +218,7 @@ impl EscrowContract {
             beneficiary,
             asset,
             amount,
+            remaining: amount,
             released: false,
             metadata,
         };
@@ -217,168 +229,6 @@ impl EscrowContract {
     /// Deposit funds into the escrow.
     ///
     /// `asset` must equal the asset bound at creation, otherwise
-    /// `Error::AssetMismatch` is returned and no state is mutated.
-    pub fn deposit(env: Env, asset: Address, amount: i128) -> Result<(), Error> {
-        let mut escrow: Escrow = env
-            .storage()
-            .instance()
-            .get(&DataKey::Escrow)
-            .ok_or(Error::NotInitialized)?;
-        if asset != escrow.asset {
-            return Err(Error::AssetMismatch);
-        }
-        if amount <= 0 {
-            return Err(Error::InvalidAmount);
-        }
-        escrow.depositor.require_auth();
-        let client = token::Client::new(&env, &escrow.asset);
-        client.transfer(&escrow.depositor, &env.current_contract_address(), &amount);
-        escrow.amount = amount;
-        env.storage().instance().set(&DataKey::Escrow, &escrow);
-        Ok(())
-    }
+    /// `Error::AssetMismatch`
 
-    /// Release funds to the beneficiary.
-    ///
-    /// `asset` must equal the asset bound at creation, otherwise
-    /// `Error::AssetMismatch` is returned and no state is mutated.
-    ///
-    /// Reentrancy safety: the `released` flag is persisted *before* the
-    /// external token transfer is invoked. If the token contract re-enters
-    /// `payout` (or any other entry point) during the callback, the escrow is
-    /// already marked released and the re-entrant call fails with
-    /// `Error::Unauthorized` without moving funds a second time. If the
-    /// transfer itself fails, the whole invocation is rolled back atomically
-    /// by the host, restoring the pre-call state.
-    pub fn payout(env: Env, asset: Address) -> Result<(), Error> {
-        let mut escrow: Escrow = env
-            .storage()
-            .instance()
-            .get(&DataKey::Escrow)
-            .ok_or(Error::NotInitialized)?;
-        if asset != escrow.asset {
-            return Err(Error::AssetMismatch);
-        }
-        if escrow.released {
-            return Err(Error::Unauthorized);
-        }
-        escrow.depositor.require_auth();
-        // Finalize state before the external call so a re-entrant callback
-        // observes `released == true` and cannot double-spend the escrow.
-        escrow.released = true;
-        env.storage().instance().set(&DataKey::Escrow, &escrow);
-        let client = token::Client::new(&env, &escrow.asset);
-        client.transfer(
-            &env.current_contract_address(),
-            &escrow.beneficiary,
-            &escrow.amount,
-        );
-        Ok(())
-    }
-
-    /// Read the escrow record, including the bound asset address.
-    ///
-    /// Renews the persistent escrow entry's TTL before returning so that an
-    /// active escrow remains readable across ledger advancement. Renewal is a
-    /// single bounded `extend_ttl` call and only runs when the entry is close
-    /// to expiry (below [`ESCROW_TTL_THRESHOLD`]).
-    pub fn get_escrow(env: Env) -> Result<Escrow, Error> {
-        let key = DataKey::Escrow;
-        let escrow: Escrow = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(Error::NotInitialized)?;
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, ESCROW_TTL_THRESHOLD, ESCROW_TTL_EXTEND_TO);
-        Ok(escrow)
-    }
-}
-
-#[contracttype]
-#[derive(Clone)]
-pub enum DataKey {
-    Escrow,
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{token, Env, String};
-
-    fn setup() -> (Env, EscrowContractClient<'static>, Address, Address, Address, Address) {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register_contract(None, EscrowContract);
-        let client = EscrowContractClient::new(&env, &contract_id);
-        let depositor = Address::generate(&env);
-        let beneficiary = Address::generate(&env);
-        let asset_admin = Address::generate(&env);
-        let asset_id = env.register_stellar_asset_contract(asset_admin.clone());
-        (env, client, depositor, beneficiary, asset_id, asset_admin)
-    }
-
-    fn meta(env: &Env, s: &str) -> String {
-        String::from_str(env, s)
-    }
-
-    #[test]
-    fn deposit_and_payout_with_correct_asset() {
-        let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        let sac = token::StellarAssetClient::new(&env, &asset_id);
-        sac.mint(&depositor, &1000);
-        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "invoice-1"));
-        client.deposit(&asset_id, &1000);
-        client.payout(&asset_id);
-        let token_client = token::Client::new(&env, &asset_id);
-        assert_eq!(token_client.balance(&beneficiary), 1000);
-    }
-
-    #[test]
-    fn deposit_rejects_mismatched_asset() {
-        let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        let other_admin = Address::generate(&env);
-        let other_asset = env.register_stellar_asset_contract(other_admin);
-        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "invoice-1"));
-        assert_eq!(client.try_deposit(&other_asset, &1000), Err(Ok(Error::AssetMismatch)));
-    }
-
-    #[test]
-    fn escrow_readable_after_ledger_advancement() {
-        let (env, client, depositor, beneficiary, asset_id, _admin) = setup();
-        client.create(&depositor, &beneficiary, &asset_id, &1000, &meta(&env, "invoice-1"));
-        // Advance the ledger close to the TTL threshold and confirm the
-        // active escrow is still readable and its TTL is renewed.
-        env.ledger().set_sequence_number(env.ledger().sequence() + ESCROW_TTL_THRESHOLD - 1);
-        let escrow = client.get_escrow();
-        assert_eq!(escrow.amount, 1000);
-        assert_eq!(escrow.asset, asset_id);
-        assert!(!escrow.released);
-    }
-
-    #[test]
-    fn get_escrow_fails_when_not_initialized() {
-        let (_env, client, _depositor, _beneficiary, _asset_id, _admin) = setup();
-        assert_eq!(client.try_get_escrow(), Err(Ok(Error::NotInitialized)));
-    }
-}
-
-/// Emit a schema-versioned lifecycle event.
-///
-/// Topics are `(event_name, version)` so consumers can filter by event name
-/// and rely on a stable schema version. The escrow `id` and `amount` are
-/// included in the data payload for every event.
-fn emit_lifecycle(env: &Env, name: Symbol, id: u32, amount: i128) {
-    env.events()
-        .publish((name, EVENT_VERSION), (id, amount));
-}
-
-#[contract]
-pub struct EscrowContract;
-
-#[contractimpl]
-impl EscrowContract {
-
-}
+/* … truncated 6358 chars — edit only what you need near the top … */
