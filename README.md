@@ -12,3 +12,6 @@
 - #938: Add payment idempotency keys for client retries
 <!-- handsoff-issue-940 -->
 - #940: Add payment archival with queryable summaries
+
+<!-- handsoff-issue-920 -->
+- #920: Add escrow refund after expiry
