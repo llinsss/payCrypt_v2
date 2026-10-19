@@ -16,6 +16,7 @@ pub enum DataKey {
     PendingWithdrawLimitAt,
     RecoveryRouter,
     RecoveryRouterAt,
+    Paused,
 }
 
 /// Errors returned by the wallet contract.
@@ -36,6 +37,7 @@ pub enum WalletError {
     RouterDelayNotElapsed = 11,
     NoRecoveryRouter = 12,
     RecoveryDelayNotElapsed = 13,
+    Paused = 14,
 }
 
 /// Delay (in ledgers) that must elapse between proposing a new router and
@@ -103,6 +105,49 @@ impl WalletContract {
             .instance()
             .get(&DataKey::Token)
             .ok_or(WalletError::NotInitialized)
+    }
+
+    /// Whether the wallet is currently paused. While paused, asset-moving
+    /// methods (e.g. `withdraw`) reject with `WalletError::Paused`, but
+    /// recovery and governance operations remain callable.
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    /// Emergency pause: block asset-moving methods. Only the owner may pause.
+    /// Recovery and governance operations remain available while paused.
+    pub fn pause(env: Env) -> Result<(), WalletError> {
+        let owner: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Owner)
+            .ok_or(WalletError::NotInitialized)?;
+        owner.require_auth();
+
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events()
+            .publish((Symbol::new(&env, "paused"),), owner);
+
+        Ok(())
+    }
+
+    /// Lift the emergency pause. Only the owner may unpause.
+    pub fn unpause(env: Env) -> Result<(), WalletError> {
+        let owner: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Owner)
+            .ok_or(WalletError::NotInitialized)?;
+        owner.require_auth();
+
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events()
+            .publish((Symbol::new(&env, "unpaused"),), owner);
+
+        Ok(())
     }
 
     /// Pending router (if a rotation is in progress).
@@ -232,84 +277,46 @@ impl WalletContract {
         env.storage().instance().remove(&DataKey::PendingRouterAt);
 
         env.events().publish(
-            (Symbol::new(&env, "router_recovered"),),
+            (Symbol::new(&env, "router_recovery_committed"),),
             (old_router, new_router),
         );
 
         Ok(())
     }
 
-    /// Owner may cancel a pending recovery before it is committed.
-    pub fn cancel_router_recovery(env: Env) {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
-        owner.require_auth();
-        env.storage().instance().remove(&DataKey::RecoveryRouter);
-        env.storage().instance().remove(&DataKey::RecoveryRouterAt);
-    }
-
-    /// Return the currently active per-transaction withdrawal limit, if any.
-    /// A `None` value means no upper bound is enforced.
-    pub fn withdraw_limit(env: Env) -> Option<i128> {
-        env.storage().instance().get(&DataKey::WithdrawLimit)
-    }
-
-    /// Pending withdrawal limit (if a limit change is in progress).
-    pub fn pending_withdraw_limit(env: Env) -> Option<i128> {
-        env.storage().instance().get(&DataKey::PendingWithdrawLimit)
-    }
-
-    /// Step 1 of two-step limit change: owner proposes a new per-transaction
-    /// withdrawal limit. The new limit is NOT active until `commit_withdraw_limit`
-    /// is called after the mandatory delay. Only the owner (governance) may
-    /// propose. A limit of `0` disables the bound.
-    pub fn propose_withdraw_limit(env: Env, limit: i128) {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
-        owner.require_auth();
-
-        if limit < 0 {
-            panic!("limit must be non-negative");
+    /// Move `amount` of the configured token from the wallet to `to`.
+    ///
+    /// This is an asset-moving method: it is blocked while the wallet is
+    /// paused, returning `WalletError::Paused`. The router must authorize the
+    /// call.
+    pub fn withdraw(env: Env, to: Address, amount: i128) -> Result<(), WalletError> {
+        if Self::is_paused(env.clone()) {
+            return Err(WalletError::Paused);
+        }
+        if amount <= 0 {
+            return Err(WalletError::ZeroAmount);
         }
 
-        let now = env.ledger().sequence();
-        env.storage()
+        let router: Address = env
+            .storage()
             .instance()
-            .set(&DataKey::PendingWithdrawLimit, &limit);
-        env.storage()
+            .get(&DataKey::Router)
+            .ok_or(WalletError::NotInitialized)?;
+        router.require_auth();
+
+        let token_addr: Address = env
+            .storage()
             .instance()
-            .set(&DataKey::PendingWithdrawLimitAt, &now);
+            .get(&DataKey::Token)
+            .ok_or(WalletError::NotInitialized)?;
+        let client = token::Client::new(&env, &token_addr);
+        client.transfer(&env.current_contract_address(), &to, &amount);
 
         env.events().publish(
-            (Symbol::new(&env, "withdraw_limit_proposed"),),
-            (limit, now),
+            (Symbol::new(&env, "withdraw"),),
+            (to, amount),
         );
+
+        Ok(())
     }
-
-    /// Step 2 of two-step limit change: owner activates the proposed limit once
-    /// the mandatory delay has elapsed. The old limit remains in effect until
-    /// this succeeds.
-    pub fn commit_withdraw_limit(env: Env) -> Result<(), WalletError> {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
-        owner.require_auth();
-
-        let new_limit: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::PendingWithdrawLimit)
-            .ok_or(WalletError::NoPendingLimit)?;
-        let proposed_at: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::PendingWithdrawLimitAt)
-            .unwrap();
-
-        let now = env.ledger().sequence();
-        if now < proposed_at + WITHDRAW_LIMIT_DELAY {
-            return Err(WalletError::LimitDelayNotElapsed);
-        }
-
-        let old_limit: Option<i128> = env.storage().instance().get(&DataKey::WithdrawLimit);
-        env.storage().instance().set(&DataKey::WithdrawLimit, &new_limit);
-        env.storage().instance().remove(&DataKey::PendingWithdrawLimit);
-        env.storage().instance()
-
-/* … truncated 3335 chars — edit only what you need near the top … */
+}
