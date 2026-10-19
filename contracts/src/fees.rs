@@ -293,4 +293,88 @@ mod tests {
         assert_eq!(breakdown.network_fee, 10);
         assert_eq!(breakdown.total_debit().unwrap(), 1_060);
     }
+
+    #[test]
+    fn fee_error_variants_are_distinct() {
+        assert_eq!(FeeError::ProtocolFeeOutOfBounds as u32, FeeError::ProtocolFeeOutOfBounds as u32);
+        assert_eq!(FeeError::NetworkFeeOutOfBounds as u32, FeeError::NetworkFeeOutOfBounds as u32);
+        assert_eq!(FeeError::Overflow as u32, FeeError::Overflow as u32);
+    }
+
+    #[test]
+    fn fee_payer_variants() {
+        assert!(!FeePayer::Sender.is_sponsored());
+        assert!(FeePayer::Sponsor.is_sponsored());
+        assert!(FeePayer::Relayer.is_sponsored());
+    }
+
+    #[test]
+    fn boundary_fee_config_values() {
+        // Zero fees
+        let config = FeeConfig::new(0, 0, FeePayer::Sender).unwrap();
+        assert_eq!(config.protocol_fee_bps(), 0);
+        assert_eq!(config.network_fee_bps(), 0);
+
+        // Maximum fees
+        let config = FeeConfig::new(MAX_PROTOCOL_FEE_BPS, MAX_NETWORK_FEE_BPS, FeePayer::Sender).unwrap();
+        assert_eq!(config.protocol_fee_bps(), MAX_PROTOCOL_FEE_BPS);
+        assert_eq!(config.network_fee_bps(), MAX_NETWORK_FEE_BPS);
+
+        // Just over maximum
+        assert!(FeeConfig::new(MAX_PROTOCOL_FEE_BPS + 1, 0, FeePayer::Sender).is_err());
+        assert!(FeeConfig::new(0, MAX_NETWORK_FEE_BPS + 1, FeePayer::Sender).is_err());
+    }
+
+    #[test]
+    fn compute_fees_with_all_payers() {
+        let config = FeeConfig::new(1000, 500, FeePayer::Sender).unwrap(); // 10% + 5%
+        let principal = 10_000u64;
+
+        // Sender pays
+        let breakdown = compute_fees(principal, &config, None).unwrap();
+        assert_eq!(breakdown.payer, FeePayer::Sender);
+        assert_eq!(breakdown.total_debit().unwrap(), 11_500);
+
+        // Sponsor pays
+        let breakdown = compute_fees(principal, &config, Some(FeePayer::Sponsor)).unwrap();
+        assert_eq!(breakdown.payer, FeePayer::Sponsor);
+        assert_eq!(breakdown.total_debit().unwrap(), 11_500);
+
+        // Relayer pays
+        let breakdown = compute_fees(principal, &config, Some(FeePayer::Relayer)).unwrap();
+        assert_eq!(breakdown.payer, FeePayer::Relayer);
+        assert_eq!(breakdown.total_debit().unwrap(), 11_500);
+    }
+
+    #[test]
+    fn fee_breakdown_total_debit_and_fees() {
+        let config = FeeConfig::new(1000, 500, FeePayer::Sender).unwrap();
+        let principal = 10_000u64;
+        let breakdown = compute_fees(principal, &config, None).unwrap();
+
+        assert_eq!(breakdown.total_fees().unwrap(), 1_500);
+        assert_eq!(breakdown.total_debit().unwrap(), 11_500);
+    }
+
+    #[test]
+    fn fee_overflow_protection() {
+        let config = FeeConfig::new(MAX_PROTOCOL_FEE_BPS, MAX_NETWORK_FEE_BPS, FeePayer::Sender).unwrap();
+        
+        // Very large principal that would overflow on multiplication
+        let result = compute_fees(u64::MAX, &config, None);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), FeeError::Overflow);
+    }
+
+    #[test]
+    fn deterministic_fee_computation() {
+        let config = FeeConfig::new(333, 667, FeePayer::Sender).unwrap();
+        
+        // Same inputs should always produce same outputs
+        for _ in 0..10 {
+            let breakdown = compute_fees(1_000_000, &config, None).unwrap();
+            assert_eq!(breakdown.protocol_fee, 33_300);
+            assert_eq!(breakdown.network_fee, 66_700);
+        }
+    }
 }

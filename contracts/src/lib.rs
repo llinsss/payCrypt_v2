@@ -443,4 +443,96 @@ mod tests {
         assert_eq!(StorageKey::ProtocolFees.version(), SCHEMA_VERSION);
         assert_eq!(StorageKey::NetworkFees.version(), SCHEMA_VERSION);
     }
+
+    #[test]
+    fn migration_error_unsupported_version_code() {
+        let err = MigrationError::UnsupportedVersion { found: 5, supported: 3 };
+        assert_eq!(err.found, 5);
+        assert_eq!(err.supported, 3);
+    }
+
+    #[test]
+    fn migration_error_missing_migration_code() {
+        let err = MigrationError::MissingMigration { from: 1, to: 3 };
+        assert_eq!(err.from, 1);
+        assert_eq!(err.to, 3);
+    }
+
+    #[test]
+    fn fee_error_variants() {
+        let err = FeeError::FeeOutOfBounds { requested_bps: 2000, max_bps: 1000 };
+        assert_eq!(err.requested_bps, 2000);
+        assert_eq!(err.max_bps, 1000);
+
+        assert_eq!(FeeError::CombinedFeeTooHigh as u32, FeeError::CombinedFeeTooHigh as u32);
+        assert_eq!(FeeError::Overflow as u32, FeeError::Overflow as u32);
+    }
+
+    #[test]
+    fn fee_config_boundary_values() {
+        // At boundary
+        let config = FeeConfig::new(MAX_FEE_BPS, 0).unwrap();
+        assert_eq!(config.protocol_fee_bps(), MAX_FEE_BPS);
+
+        let config = FeeConfig::new(0, MAX_FEE_BPS).unwrap();
+        assert_eq!(config.network_fee_bps(), MAX_FEE_BPS);
+
+        // Over boundary
+        assert!(FeeConfig::new(MAX_FEE_BPS + 1, 0).is_err());
+        assert!(FeeConfig::new(0, MAX_FEE_BPS + 1).is_err());
+
+        // Combined over 100%
+        assert!(FeeConfig::new(6000, 5000).is_err());
+        assert!(FeeConfig::new(10000, 1).is_err());
+    }
+
+    #[test]
+    fn fee_accounting_boundary_values() {
+        let config = FeeConfig::new(1000, 500, FeePayer::Sender).unwrap(); // 10% + 5%
+
+        // Small amount where fees floor to 0
+        let accounting = FeeAccounting::compute(9999, &config, FeePayer::Sender).unwrap();
+        assert_eq!(accounting.protocol_fee, 999); // floor(9999 * 1000 / 10000)
+        assert_eq!(accounting.network_fee, 499); // floor(9999 * 500 / 10000)
+
+        // Large amount
+        let accounting = FeeAccounting::compute(1_000_000, &config, FeePayer::Sponsor).unwrap();
+        assert_eq!(accounting.protocol_fee, 100_000);
+        assert_eq!(accounting.network_fee, 50_000);
+        assert_eq!(accounting.total_charged, 1_150_000);
+        assert_eq!(accounting.recipient_amount().unwrap(), 1_000_000);
+
+        // Recipient pays
+        let accounting = FeeAccounting::compute(1_000_000, &config, FeePayer::Recipient).unwrap();
+        assert_eq!(accounting.recipient_amount().unwrap(), 850_000);
+    }
+
+    #[test]
+    fn fee_overflow_protection() {
+        let config = FeeConfig::new(MAX_FEE_BPS, MAX_FEE_BPS, FeePayer::Sender).unwrap();
+        // Amount that would overflow on multiplication
+        let result = FeeAccounting::compute(u64::MAX, &config, FeePayer::Sender);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), FeeError::Overflow);
+    }
+
+    #[test]
+    fn ledger_settle_overflow_protection() {
+        let mut ledger = Ledger::new();
+        let config = FeeConfig::new(1000, 500, FeePayer::Sender).unwrap();
+        let accounting = FeeAccounting::compute(1000, &config, FeePayer::Sender).unwrap();
+
+        // Set balance to near max
+        let payer = [1u8; 32];
+        let recipient = [2u8; 32];
+        ledger.balances.insert(payer, u64::MAX - 1000);
+
+        // This should work
+        ledger.settle(&payer, &recipient, &accounting).unwrap();
+
+        // But if we try with overflow
+        ledger.balances.insert(payer, u64::MAX);
+        let big_accounting = FeeAccounting::compute(u64::MAX, &config, FeePayer::Sender);
+        assert!(big_accounting.is_err());
+    }
 }
