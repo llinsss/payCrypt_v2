@@ -21,31 +21,33 @@
 //! - **Cancelled**— funds returned to creator. Terminal.
 //! - **Expired**  — deadline passed; funds returned to creator. Terminal.
 //!
+//! ## Partial release
+//!
+//! [`EscrowContract::release`] accepts an explicit `amount` and supports
+//! partial releases. Each successful release transfers `amount` to the
+//! beneficiary and decrements the escrow's remaining balance. The escrow only
+//! transitions to `Released` once the remaining balance reaches zero; until
+//! then it stays `Funded` and further releases are permitted. Release amounts
+//! that are zero or negative fail with [`Error::InvalidAmount`], and amounts
+//! greater than the remaining balance fail with [`Error::AmountExceedsRemaining`].
+//! No state is mutated on a rejected release.
+//!
 //! ## Authorization
 //!
-//! | Entrypoint        | Authorized actor |
-//! |-------------------|------------------|
-//! | `create`          | creator          |
-//! | `deposit`         | creator          |
-//! | `release`         | creator          |
-//! | `cancel`          | creator          |
-//! | `extend_deadline` | creator          |
-//! | `expire`          | anyone (public)  |
-//! | `get`             | anyone (public)  |
+//! * `create` - requires `creator` auth.
+//! * `cancel` - requires `creator` auth; only valid in `Created`.
+//! * `fund` - requires `funder` auth.
+//! * `release` - requires `creator` auth; only valid in `Funded`.
+//! * `extend_deadline` - requires `creator` auth; only valid in `Funded`.
+//! * `get` - read-only, no auth.
 //!
 //! ## Events
 //!
-//! Every state transition emits a versioned event:
-//!
-//! | Transition | Event name   | Actor (topic[2]) | State emitted |
-//! |------------|--------------|-------------------|---------------|
-//! | create     | `"created"`  | creator           | `Created`     |
-//! | release    | `"released"` | beneficiary       | `Released`    |
-//! | cancel     | `"refunded"` | creator           | `Cancelled`   |
-//! | expire     | `"refunded"` | creator           | `Expired`     |
-//!
-//! Topics: `(EVENT_VERSION, event_name, actor_address)`.
-//! Data:   `(amount, state)`.
+//! Every lifecycle event is published with topics `(name, EVENT_VERSION)` and
+//! data `(id, amount)`. Names are `created`, `funded`, `released`, and `refund`
+//! (emitted on cancellation). For `released`, `amount` is the amount released
+//! in that call (not the cumulative total). Consumers should key off
+//! `EVENT_VERSION` to decode payloads.
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env, String, Symbol};
 
@@ -100,6 +102,10 @@ pub enum EscrowState {
 }
 
 /// Persisted escrow record.
+///
+/// `remaining` tracks the balance still held by the escrow. It starts equal to
+/// `amount` and is decremented by each partial release; the escrow transitions
+/// to `Released` only when `remaining` reaches zero.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Escrow {
@@ -107,6 +113,7 @@ pub struct Escrow {
     pub beneficiary: Address,
     pub asset: Address,
     pub amount: i128,
+    pub remaining: i128,
     pub state: EscrowState,
     pub deadline: u32,
     pub extension_count: u32,
@@ -119,15 +126,6 @@ pub struct Escrow {
 
 /// Error codes returned by the escrow contract.
 ///
-/// Stable error codes that should not be renumbered after deployment.
-#[contracterror]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u32)]
-pub enum EscrowError {
-    NotInitialized = 1,
-    Unauthorized = 2,
-    EscrowNotFound = 3,
-    InvalidState = 4,
     InvalidAmount = 5,
     AssetMismatch = 6,
     MetadataTooLong = 7,
@@ -137,6 +135,22 @@ pub enum EscrowError {
     TooManyExtensions = 11,
     DeadlineOverflow = 12,
     NotExpired = 13,
+    AlreadyCancelled = 14,
+    ExtensionLimitReached = 15,
+    InvalidExtension = 16,
+#[contracterror]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum EscrowError {
+    NotInitialized = 1,
+    Unauthorized = 2,
+    EscrowNotFound = 3,
+    InvalidState = 4,
+    AlreadyCancelled = 5,
+    ExtensionLimitReached = 6,
+    InvalidExtension = 7,
+    DeadlineOverflow = 8,
+    AmountExceedsRemaining = 9,
 }
 
 // ---------------------------------------------------------------------------
@@ -249,10 +263,9 @@ impl EscrowContract {
             beneficiary,
             asset,
             amount,
-            state: EscrowState::Created,
-            deadline,
-            extension_count: 0,
-            metadata: String::new(&env),
+            remaining: amount,
+            released: false,
+            metadata,
         };
         save_escrow(&env, &escrow);
 
