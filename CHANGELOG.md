@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Upgrade proposal expiry: every upgrade proposal now carries a fixed, bounded
+  validity window (`PROPOSAL_EXPIRY_SECS`, 30 days). Once the window elapses
+  (`ledger.timestamp() >= expires_at`) the proposal can no longer be approved
+  or executed, returning the new `UpgradeError::ProposalExpired` (12) with no
+  state mutation; previously executed versions and cancelled proposals are
+  unaffected, and an approved-but-never-executed proposal cannot be revived
+  via rollback once expired. The window is recorded on each proposal in
+  `UpgradeRecord::expires_at` and exposed via `proposal_expiry_secs()`, keeping
+  storage growth per proposal constant (one `u64` field) and per-invocation
+  work bounded. Includes focused tests for success, authorization, exact-boundary
+  (one second before/at/after expiry), and failure cases, plus documentation of
+  the new error code and expiry semantics. No event schema changes; the rollback
+  event payload is unchanged (#979).
+- Upgrade manager implementation validation: `authorize_implementation` now rejects empty (all-zero) or malformed WASM hashes before adding them to the allowlist, returning the new `UpgradeError::InvalidImplementation` (11) error code with no state mutation. Includes focused tests for success, authorization, boundary (single non-zero byte), and failure cases, plus documentation of the new error code and behavior in doc comments (#976).
 - Wallet destination allowlist enforcement: every withdrawal route now checks
   the recipient against an admin-managed allowlist before funds move, so no
   route can bypass the restriction. Allowlist entries are added/removed only by

@@ -2,35 +2,24 @@
 
 //! # Escrow Contract
 //!
-//! A minimal single-escrow Soroban contract that holds funds for a
-//! `creator`/`beneficiary` pair until they are released or the escrow is
-//! cancelled.
-//!
-//! ## Deployment & initialization
-//!
-//! The contract has no constructor: deploying the WASM and invoking `create`
-//! is the initialization step. `create` takes the escrow `id` (a `u32` chosen
-//! by the caller and used as the storage key), the `creator`, `beneficiary`,
-//! and `token` addresses, and a strictly positive `amount` (`i128`). The
-//! `creator` must authorize the call (`creator.require_auth()`). A second
-//! `create` for the same `id` fails with [`Error::AlreadyInitialized`].
+//! A Soroban escrow contract that holds funds between a creator (depositor) and a
+//! beneficiary until the escrow is released, cancelled, or expired.
 //!
 //! ## State machine
 //!
 //! ```text
-//!            create                fund
-//!   (none) ---------> Created -----------> Funded
-//!                       |                    |
-//!                  cancel|                    | (release)
-//!                       v                    v
-//!                   Cancelled            Released
+//!   (none) --create--> Created --release--> Released (terminal)
+//!                           |
+//!                       cancel|--- expire (after deadline)
+//!                           |         |
+//!                        Cancelled  Expired
+//!                            (terminal)  (terminal)
 //! ```
 //!
-//! * `Created` -> `Funded` via [`EscrowContract::fund`].
-//! * `Created` -> `Cancelled` via [`EscrowContract::cancel`].
-//! * `Funded` -> `Released` (release path).
-//! * `Cancelled` and `Released` are terminal; any further operation on a
-//!   cancelled escrow fails with [`Error::AlreadyCancelled`].
+//! - **Created**  — funds held in contract, waiting for release.
+//! - **Released** — funds paid out to beneficiary. Terminal.
+//! - **Cancelled**— funds returned to creator. Terminal.
+//! - **Expired**  — deadline passed; funds returned to creator. Terminal.
 //!
 //! ## Partial release
 //!
@@ -60,28 +49,48 @@
 //! in that call (not the cumulative total). Consumers should key off
 //! `EVENT_VERSION` to decode payloads.
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, String, Symbol};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env, String, Symbol};
 
-/// Maximum byte length of escrow metadata accepted by [`EscrowContract::create`].
-///
-/// Metadata is stored in instance storage, so its size is bounded to keep
-/// storage growth and per-invocation work predictable. Values longer than this
-/// (in bytes) are rejected with [`Error::MetadataTooLong`] before any storage
-/// write occurs.
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/// Maximum byte length of escrow metadata. Metadata longer than this is
+/// rejected with [`EscrowError::MetadataTooLong`] before any storage write.
 pub const MAX_METADATA_LEN: u32 = 128;
 
-/// Number of ledgers by which persistent escrow entries are extended on every
-/// state-changing call. Renewal is bounded (a single `extend_ttl` per call) so
-/// per-invocation work stays constant regardless of escrow count.
+/// Maximum number of times a single escrow deadline may be extended.
+pub const MAX_EXTENSIONS: u32 = 3;
+
+/// Maximum duration (in ledger seconds) of a single deadline extension.
+pub const MAX_EXTENSION_DURATION: u64 = 30 * 24 * 60 * 60; // 30 days
+
+/// Schema version emitted with every lifecycle event.
+pub const EVENT_VERSION: u32 = 1;
+
+/// TTL threshold (ledgers) below which a persistent entry is renewed on read.
 pub const ESCROW_TTL_THRESHOLD: u32 = 100;
+
+/// TTL extension (ledgers) applied on renewal.
 pub const ESCROW_TTL_EXTEND_TO: u32 = 1000;
 
+// ---------------------------------------------------------------------------
+// Storage keys
+// ---------------------------------------------------------------------------
+
+/// Deterministic storage keys for the escrow contract.
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    /// Single escrow record stored in persistent storage.
+    Escrow(),
+}
+
+// ---------------------------------------------------------------------------
+// Escrow state and record types
+// ---------------------------------------------------------------------------
+
 /// Lifecycle states for an escrow.
-///
-/// `Created` is the documented pre-funding state. An escrow in this state has
-/// not received any funds yet, so it can be cancelled by its creator.
-/// `Released` and `Cancelled` are terminal: once reached, no further state
-/// transitions are permitted and the escrowed balance is always zero.
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EscrowState {
@@ -89,6 +98,7 @@ pub enum EscrowState {
     Funded,
     Released,
     Cancelled,
+    Expired,
 }
 
 /// Persisted escrow record.
@@ -101,51 +111,40 @@ pub enum EscrowState {
 pub struct Escrow {
     pub creator: Address,
     pub beneficiary: Address,
-    pub token: Address,
+    pub asset: Address,
     pub amount: i128,
     pub remaining: i128,
     pub state: EscrowState,
+    pub deadline: u32,
+    pub extension_count: u32,
+    pub metadata: String,
 }
 
-/// Maximum number of times a single escrow deadline may be extended.
-pub const MAX_EXTENSIONS: u32 = 3;
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
 
-/// Maximum duration (in seconds) of a single extension.
-pub const MAX_EXTENSION_DURATION: u64 = 30 * 24 * 60 * 60;
-
-/// Schema version emitted with every lifecycle event.
+/// Error codes returned by the escrow contract.
 ///
-/// Consumers should key off this version to decode event payloads. Bump it
-/// only when the event schema changes in a backwards-incompatible way.
-pub const EVENT_VERSION: u32 = 1;
-
-/// Errors returned by the escrow contract.
-///
-/// `AssetMismatch` (code 4) is returned when a deposit or payout is attempted
-/// with an asset contract address that does not match the asset bound to the
-/// escrow at creation time. No state is mutated in that case.
-///
-/// `MetadataTooLong` (code 6) is returned when the supplied metadata exceeds
-/// [`MAX_METADATA_LEN`] bytes. `MetadataInvalidChar` (code 7) is returned when
-/// the metadata contains a byte outside the supported character policy (see
-/// [`is_supported_metadata`]). Neither case mutates state.
-///
-/// * `AlreadyInitialized` (1) - escrow already exists for this id.
-/// * `NotFound` (2) - no escrow exists for this id.
-/// * `InvalidAmount` (3) - amount must be strictly positive.
-/// * `InvalidState` (4) - operation not allowed in the current state.
-/// * `AlreadyCancelled` (5) - escrow was already cancelled (replay rejected).
-/// * `ExtensionLimitReached` (6) - maximum extension count already reached.
-/// * `InvalidExtension` (7) - extension duration is zero or exceeds the maximum.
-/// * `DeadlineOverflow` (8) - computing the new deadline would overflow.
-/// * `AmountExceedsRemaining` (9) - release amount exceeds the remaining balance.
+    InvalidAmount = 5,
+    AssetMismatch = 6,
+    MetadataTooLong = 7,
+    InvalidMetadata = 8,
+    NotCreated = 9,
+    ExtensionTooLong = 10,
+    TooManyExtensions = 11,
+    DeadlineOverflow = 12,
+    NotExpired = 13,
+    AlreadyCancelled = 14,
+    ExtensionLimitReached = 15,
+    InvalidExtension = 16,
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
-pub enum Error {
-    AlreadyInitialized = 1,
-    NotFound = 2,
-    InvalidAmount = 3,
+pub enum EscrowError {
+    NotInitialized = 1,
+    Unauthorized = 2,
+    EscrowNotFound = 3,
     InvalidState = 4,
     AlreadyCancelled = 5,
     ExtensionLimitReached = 6,
@@ -154,67 +153,113 @@ pub enum Error {
     AmountExceedsRemaining = 9,
 }
 
-/// Supported character policy for escrow metadata: printable ASCII only
-/// (bytes `0x20..=0x7E`). This keeps metadata human-readable and avoids
-/// ambiguous or control characters in stored records.
+// ---------------------------------------------------------------------------
+// Metadata character policy
+// ---------------------------------------------------------------------------
+
+/// Returns `true` when every byte in `metadata` is a printable ASCII character
+/// (`0x20`–`0x7E`). Empty metadata is always accepted.
 fn is_supported_metadata(metadata: &String) -> bool {
     let len = metadata.len();
-    let mut buf = [0u8; MAX_METADATA_LEN as usize];
+    if len == 0 {
+        return true;
+    }
+    let mut buf: [u8; 128] = [0u8; 128];
     metadata.copy_into_slice(&mut buf[..len as usize]);
     buf[..len as usize]
         .iter()
         .all(|b| (0x20..=0x7E).contains(b))
 }
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DataKey {
-    Escrow(u32),
+// ---------------------------------------------------------------------------
+// Event emission
+// ---------------------------------------------------------------------------
+
+/// Emit a versioned lifecycle event.
+///
+/// Topics: `(EVENT_VERSION, event_name, actor_address)`.
+/// Data:   `(amount, state)`.
+fn emit_lifecycle_event(
+    env: &Env,
+    name: Symbol,
+    actor: &Address,
+    amount: i128,
+    state: EscrowState,
+) {
+    env.events().publish(
+        (EVENT_VERSION, name, actor.clone()),
+        (amount, state),
+    );
 }
 
-/// Emit a schema-versioned lifecycle event.
-///
-/// Topics are `(event_name, version)` so consumers can filter by event name
-/// and rely on a stable schema version. The escrow `id` and `amount` are
-/// included in the data payload for every event.
-fn emit_lifecycle(env: &Env, name: Symbol, id: u32, amount: i128) {
-    env.events()
-        .publish((name, EVENT_VERSION), (id, amount));
+// ---------------------------------------------------------------------------
+// Storage helpers
+// ---------------------------------------------------------------------------
+
+/// Read the escrow record from persistent storage, renewing its TTL.
+fn load_escrow(env: &Env) -> Option<Escrow> {
+    let key = DataKey::Escrow();
+    match env.storage().persistent().get(&key) {
+        Some(escrow) => {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, ESCROW_TTL_THRESHOLD, ESCROW_TTL_EXTEND_TO);
+            Some(escrow)
+        }
+        None => None,
+    }
 }
+
+/// Persist the escrow record and (re)arm its TTL.
+fn save_escrow(env: &Env, escrow: &Escrow) {
+    let key = DataKey::Escrow();
+    env.storage().persistent().set(&key, escrow);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, ESCROW_TTL_THRESHOLD, ESCROW_TTL_EXTEND_TO);
+}
+
+// ---------------------------------------------------------------------------
+// Contract
+// ---------------------------------------------------------------------------
 
 #[contract]
 pub struct EscrowContract;
 
 #[contractimpl]
 impl EscrowContract {
-    /// Create an escrow, binding the asset contract address for its lifetime.
+    /// Create an escrow and transfer the escrowed amount from the creator to
+    /// this contract.
     ///
-    /// `metadata` must be at most [`MAX_METADATA_LEN`] bytes and contain only
-    /// printable ASCII characters; otherwise `Error::MetadataTooLong` or
-    /// `Error::MetadataInvalidChar` is returned and no state is written.
+    /// Only the `creator` may call this. The `amount` must be strictly positive.
+    /// The `deadline` is the ledger sequence number after which `expire` becomes
+    /// available.
+    ///
+    /// The token transfer happens atomically inside this entrypoint, so the
+    /// creator only authorises a single invocation.
     pub fn create(
         env: Env,
-        depositor: Address,
+        creator: Address,
         beneficiary: Address,
         asset: Address,
         amount: i128,
-        metadata: String,
-    ) -> Result<(), Error> {
-        depositor.require_auth();
+        deadline: u32,
+    ) -> Result<(), EscrowError> {
+        creator.require_auth();
+
         if amount <= 0 {
-            return Err(Error::InvalidAmount);
+            return Err(EscrowError::InvalidAmount);
         }
-        if metadata.len() > MAX_METADATA_LEN {
-            return Err(Error::MetadataTooLong);
+        if env.storage().persistent().has(&DataKey::Escrow()) {
+            return Err(EscrowError::NotInitialized);
         }
-        if !is_supported_metadata(&metadata) {
-            return Err(Error::MetadataInvalidChar);
-        }
-        if env.storage().instance().has(&DataKey::Escrow) {
-            return Err(Error::AlreadyInitialized);
-        }
+
+        // Transfer the escrowed amount from creator to this contract.
+        let token_client = token::Client::new(&env, &asset);
+        token_client.transfer(&creator, &env.current_contract_address(), &amount);
+
         let escrow = Escrow {
-            depositor,
+            creator,
             beneficiary,
             asset,
             amount,
@@ -222,13 +267,279 @@ impl EscrowContract {
             released: false,
             metadata,
         };
-        env.storage().instance().set(&DataKey::Escrow, &escrow);
+        save_escrow(&env, &escrow);
+
+        emit_lifecycle_event(
+            &env,
+            Symbol::new(&env, "created"),
+            &escrow.creator,
+            amount,
+            EscrowState::Created,
+        );
         Ok(())
     }
 
-    /// Deposit funds into the escrow.
+    /// Create an escrow with a metadata string.
     ///
-    /// `asset` must equal the asset bound at creation, otherwise
-    /// `Error::AssetMismatch`
+    /// Like [`create`], but accepts a `metadata` string that is stored with the
+    /// escrow record. Metadata must be at most [`MAX_METADATA_LEN`] bytes and
+    /// contain only printable ASCII characters; otherwise [`MetadataTooLong`] or
+    /// [`InvalidMetadata`] is returned and no state is written.
+    pub fn create_with_metadata(
+        env: Env,
+        creator: Address,
+        beneficiary: Address,
+        asset: Address,
+        amount: i128,
+        deadline: u32,
+        metadata: String,
+    ) -> Result<(), EscrowError> {
+        creator.require_auth();
 
-/* … truncated 6358 chars — edit only what you need near the top … */
+        if amount <= 0 {
+            return Err(EscrowError::InvalidAmount);
+        }
+        if metadata.len() > MAX_METADATA_LEN {
+            return Err(EscrowError::MetadataTooLong);
+        }
+        if !is_supported_metadata(&metadata) {
+            return Err(EscrowError::InvalidMetadata);
+        }
+        if env.storage().persistent().has(&DataKey::Escrow()) {
+            return Err(EscrowError::NotInitialized);
+        }
+
+        let token_client = token::Client::new(&env, &asset);
+        token_client.transfer(&creator, &env.current_contract_address(), &amount);
+
+        let escrow = Escrow {
+            creator,
+            beneficiary,
+            asset,
+            amount,
+            state: EscrowState::Created,
+            deadline,
+            extension_count: 0,
+            metadata,
+        };
+        save_escrow(&env, &escrow);
+
+        emit_lifecycle_event(
+            &env,
+            Symbol::new(&env, "created"),
+            &escrow.creator,
+            amount,
+            EscrowState::Created,
+        );
+        Ok(())
+    }
+
+    /// Deposit additional funds into the escrow.
+    ///
+    /// Only the `creator` may call this. The `asset` must match the asset bound
+    /// at creation, otherwise [`AssetMismatch`] is returned and no state is
+    /// mutated. The `amount` is transferred from the creator to this contract.
+    /// This function does **not** alter the escrow state.
+    pub fn deposit(
+        env: Env,
+        asset: Address,
+        amount: i128,
+    ) -> Result<(), EscrowError> {
+        let escrow: Escrow = load_escrow(&env)
+            .ok_or(EscrowError::NotInitialized)?;
+        escrow.creator.require_auth();
+
+        if asset != escrow.asset {
+            return Err(EscrowError::AssetMismatch);
+        }
+        if amount <= 0 {
+            return Err(EscrowError::InvalidAmount);
+        }
+
+        let client = token::Client::new(&env, &escrow.asset);
+        client.transfer(&escrow.creator, &env.current_contract_address(), &amount);
+
+        Ok(())
+    }
+
+    /// Release funds to the beneficiary.
+    ///
+    /// Only the `creator` may call this. The `asset` must match the asset bound
+    /// at creation. The escrow must be in [`Created`] state.
+    ///
+    /// Reentrancy safety: the state is updated to [`Released`] **before** the
+    /// external token transfer is invoked. If the token contract re-enters this
+    /// contract during the callback, the escrow is already marked `Released` and
+    /// the re-entrant call fails.
+    pub fn release(
+        env: Env,
+        asset: Address,
+    ) -> Result<(), EscrowError> {
+        let escrow: Escrow = load_escrow(&env)
+            .ok_or(EscrowError::NotInitialized)?;
+        escrow.creator.require_auth();
+
+        if asset != escrow.asset {
+            return Err(EscrowError::AssetMismatch);
+        }
+        if escrow.state != EscrowState::Created {
+            return Err(EscrowError::NotCreated);
+        }
+
+        // Finalize the state before the external call so a re-entrant callback
+        // observes `Released` and cannot double-spend.
+        let mut updated = escrow.clone();
+        updated.state = EscrowState::Released;
+        save_escrow(&env, &updated);
+
+        let client = token::Client::new(&env, &escrow.asset);
+        client.transfer(
+            &env.current_contract_address(),
+            &escrow.beneficiary,
+            &escrow.amount,
+        );
+
+        emit_lifecycle_event(
+            &env,
+            Symbol::new(&env, "released"),
+            &escrow.beneficiary,
+            escrow.amount,
+            EscrowState::Released,
+        );
+        Ok(())
+    }
+
+    /// Cancel the escrow and return the funds to the creator.
+    ///
+    /// Only the `creator` may call this. The escrow must be in [`Created`]
+    /// state. On success the escrow transitions to [`Cancelled`] (terminal) and
+    /// the escrowed tokens are transferred back to the creator.
+    pub fn cancel(
+        env: Env,
+    ) -> Result<(), EscrowError> {
+        let escrow: Escrow = load_escrow(&env)
+            .ok_or(EscrowError::NotInitialized)?;
+        escrow.creator.require_auth();
+
+        if escrow.state != EscrowState::Created {
+            return Err(EscrowError::NotCreated);
+        }
+
+        let mut updated = escrow.clone();
+        updated.state = EscrowState::Cancelled;
+        save_escrow(&env, &updated);
+
+        let client = token::Client::new(&env, &escrow.asset);
+        client.transfer(
+            &env.current_contract_address(),
+            &escrow.creator,
+            &escrow.amount,
+        );
+
+        emit_lifecycle_event(
+            &env,
+            Symbol::new(&env, "refunded"),
+            &escrow.creator,
+            escrow.amount,
+            EscrowState::Cancelled,
+        );
+        Ok(())
+    }
+
+    /// Expire the escrow after its deadline has passed and return the funds to
+    /// the creator.
+    ///
+    /// Anyone may call this. The escrow must be in [`Created`] state and the
+    /// current ledger sequence must be at or past `deadline`. On success the
+    /// escrow transitions to [`Expired`] (terminal) and the escrowed tokens are
+    /// transferred back to the creator.
+    pub fn expire(
+        env: Env,
+    ) -> Result<(), EscrowError> {
+        let escrow: Escrow = load_escrow(&env)
+            .ok_or(EscrowError::NotInitialized)?;
+
+        if escrow.state != EscrowState::Created {
+            return Err(EscrowError::NotCreated);
+        }
+        if env.ledger().sequence() < escrow.deadline {
+            return Err(EscrowError::NotExpired);
+        }
+
+        let mut updated = escrow.clone();
+        updated.state = EscrowState::Expired;
+        save_escrow(&env, &updated);
+
+        let client = token::Client::new(&env, &escrow.asset);
+        client.transfer(
+            &env.current_contract_address(),
+            &escrow.creator,
+            &escrow.amount,
+        );
+
+        emit_lifecycle_event(
+            &env,
+            Symbol::new(&env, "refunded"),
+            &escrow.creator,
+            escrow.amount,
+            EscrowState::Expired,
+        );
+        Ok(())
+    }
+
+    /// Extend the escrow deadline by `extension` ledger sequences.
+    ///
+    /// Only the `creator` may call this. The escrow must be in [`Created`]
+    /// state.
+    ///
+    /// Bounded by:
+    /// - `extension` must be positive and at most [`MAX_EXTENSION_DURATION`];
+    /// - the total number of extensions must be strictly below
+    ///   [`MAX_EXTENSIONS`];
+    /// - the new deadline must not overflow the `u32` type.
+    ///
+    /// Returns the new deadline on success.
+    pub fn extend_deadline(
+        env: Env,
+        actor: Address,
+        extension: u64,
+    ) -> Result<u32, EscrowError> {
+        let escrow: Escrow = load_escrow(&env)
+            .ok_or(EscrowError::NotInitialized)?;
+        actor.require_auth();
+        if actor != escrow.creator {
+            return Err(EscrowError::Unauthorized);
+        }
+
+        if escrow.state != EscrowState::Created {
+            return Err(EscrowError::NotCreated);
+        }
+        if extension > MAX_EXTENSION_DURATION || extension == 0 {
+            return Err(EscrowError::ExtensionTooLong);
+        }
+        if escrow.extension_count >= MAX_EXTENSIONS {
+            return Err(EscrowError::TooManyExtensions);
+        }
+
+        let new_deadline = escrow.deadline as u64 + extension;
+        if new_deadline > 0xFFFF_FFFFu64 {
+            return Err(EscrowError::DeadlineOverflow);
+        }
+
+        let mut updated = escrow.clone();
+        updated.deadline = new_deadline as u32;
+        updated.extension_count += 1;
+        save_escrow(&env, &updated);
+
+        Ok(updated.deadline)
+    }
+
+    /// Read the current escrow record.
+    ///
+    /// Fails with [`EscrowError::NotInitialized`] if no escrow exists.
+    pub fn get(
+        env: Env,
+    ) -> Result<Escrow, EscrowError> {
+        load_escrow(&env).ok_or(EscrowError::NotInitialized)
+    }
+}

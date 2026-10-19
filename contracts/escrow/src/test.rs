@@ -222,7 +222,7 @@ fn create_accepts_metadata_at_max_length() {
 
     token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
     let metadata = String::from_str(&env, &"a".repeat(MAX_METADATA_LEN as usize));
-    client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata);
+    client.create_with_metadata(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata);
 
     assert_eq!(client.get().metadata, metadata);
 }
@@ -238,7 +238,7 @@ fn create_rejects_metadata_over_max_length() {
     let metadata = String::from_str(&env, &"a".repeat(MAX_METADATA_LEN as usize + 1));
 
     assert_eq!(
-        client.try_create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata),
+        client.try_create_with_metadata(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata),
         Err(Ok(EscrowError::MetadataTooLong))
     );
 }
@@ -254,7 +254,7 @@ fn create_rejects_metadata_with_unsupported_chars() {
     let metadata = String::from_str(&env, "bad\nmetadata");
 
     assert_eq!(
-        client.try_create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata),
+        client.try_create_with_metadata(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10), &metadata),
         Err(Ok(EscrowError::InvalidMetadata))
     );
 }
@@ -373,25 +373,10 @@ fn run_sequence(seed: u64, amount: i128, expiry_delta: u32, actions: &[Action]) 
         &(env.ledger().sequence() + expiry_delta),
     );
 
-    //
-    let env = Env::default();
-    env.mock_all_auths();
-    let (contract_id, depositor, beneficiary, token_id) = setup(&env);
-    let client = EscrowContractClient::new(&env, &contract_id);
-    let token = token::Client::new(&env, &token_id);
-
-    token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &amount);
-    client.create(
-        &depositor,
-        &beneficiary,
-        &token_id,
-        &amount,
-        &(env.ledger().sequence() + expiry_delta),
-    );
-
-    // Conservation baseline: total supply held by the two parties is fixed.
-    let total = token.balance(&depositor) + token.balance(&beneficiary);
-    assert_eq!(total, amount, "seed {seed}: funds not fully escrowed on create");
+    // After `create`, the full amount has been deposited into the contract.
+    // The sum of the two parties' external balances is therefore zero.
+    assert_eq!(token.balance(&depositor), 0, "seed {seed}: depositor should have transferred");
+    assert_eq!(token.balance(&beneficiary), 0, "seed {seed}: beneficiary should not yet hold funds");
     assert_eq!(token.balance(&contract_id), amount, "seed {seed}: escrow balance mismatch");
 
     let mut rng = Lcg::new(seed);
@@ -403,7 +388,7 @@ fn run_sequence(seed: u64, amount: i128, expiry_delta: u32, actions: &[Action]) 
         env.ledger().set_sequence_number(env.ledger().sequence() + jump);
 
         let result = match action {
-            Action::Release => client.try_release(),
+            Action::Release => client.try_release(&token_id),
             Action::Cancel => client.try_cancel(),
             Action::Expire => client.try_expire(),
         };
@@ -423,13 +408,15 @@ fn run_sequence(seed: u64, amount: i128, expiry_delta: u32, actions: &[Action]) 
             assert!(is_terminal, "seed {seed} step {i}: successful transition left non-terminal state");
         }
 
-        // Conservation of escrowed funds across release and refund.
+        // Conservation of escrowed funds across release and refund:
+        // the total supply (depositor + beneficiary + contract) stays = amount.
         let depositor_balance = token.balance(&depositor);
         let beneficiary_balance = token.balance(&beneficiary);
+        let contract_balance = token.balance(&contract_id);
         assert_eq!(
-            depositor_balance + beneficiary_balance,
-            total,
-            "seed {seed} step {i}: funds not conserved"
+            depositor_balance + beneficiary_balance + contract_balance,
+            amount,
+            "seed {seed} step {i}: total supply not conserved"
         );
 
         if is_terminal {
@@ -495,7 +482,7 @@ fn property_unauthorized_transitions_are_rejected() {
     token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
     client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
 
-    assert!(client.try_release().is_err());
+    assert!(client.try_release(&token_id).is_err());
     assert!(client.try_cancel().is_err());
     assert_eq!(token.balance(&contract_id), 100);
     assert_eq!(client.get().state, EscrowState::Created);
@@ -636,7 +623,7 @@ fn release_emits_versioned_lifecycle_event() {
 
     token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &100);
     client.create(&depositor, &beneficiary, &token_id, &100, &(env.ledger().sequence() + 10));
-    client.release();
+    client.release(&token_id);
 
     let events = env.events().all();
     let (_, topics, data) = events.last().unwrap();
