@@ -159,7 +159,7 @@ impl WalletContract {
     /// The new router is NOT active until `commit_router` is called after the
     /// mandatory delay. Only the owner may propose.
     pub fn propose_router(env: Env, new_router: Address) {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        let owner = load_owner(&env);
         owner.require_auth();
 
         let now = env.ledger().sequence();
@@ -178,7 +178,7 @@ impl WalletContract {
     /// the mandatory delay has elapsed. The old router remains active until
     /// this succeeds, so withdrawals keep working throughout the window.
     pub fn commit_router(env: Env) -> Result<(), WalletError> {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        let owner = load_owner(&env);
         owner.require_auth();
 
         let new_router: Address = env
@@ -212,7 +212,7 @@ impl WalletContract {
 
     /// Owner may cancel a pending rotation before it is committed.
     pub fn cancel_router_rotation(env: Env) {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        let owner = load_owner(&env);
         owner.require_auth();
         env.storage().instance().remove(&DataKey::PendingRouter);
         env.storage().instance().remove(&DataKey::PendingRouterAt);
@@ -228,7 +228,7 @@ impl WalletContract {
     /// slot so it does not clobber an in-flight rotation, and it is subject to
     /// the same mandatory delay before activation. Only the owner may propose.
     pub fn propose_router_recovery(env: Env, new_router: Address) {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        let owner = load_owner(&env);
         owner.require_auth();
 
         let now = env.ledger().sequence();
@@ -250,7 +250,7 @@ impl WalletContract {
     /// until this succeeds, preserving the delay protection. Any in-flight
     /// rotation is cleared so the recovered router is authoritative.
     pub fn commit_router_recovery(env: Env) -> Result<(), WalletError> {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        let owner = load_owner(&env);
         owner.require_auth();
 
         let new_router: Address = env
@@ -319,4 +319,12 @@ impl WalletContract {
 
         Ok(())
     }
+}
+
+/// Load the owner, failing with `WalletError::NotInitialized` before `initialize`.
+fn load_owner(env: &Env) -> Address {
+    env.storage()
+        .instance()
+        .get(&DataKey::Owner)
+        .unwrap_or_else(|| env.panic_with_error(WalletError::NotInitialized))
 }

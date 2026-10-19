@@ -173,6 +173,7 @@ impl WalletContract {
     }
 
     pub fn execute_admin_rotation(env: Env, caller: Address) {
+        require_initialized(&env);
         caller.require_auth();
         let pending_admin: Address = env.storage().instance().get(&DataKey::PendingAdmin).unwrap_or_else(|| fail(&env, WalletError::InvalidRotation));
         if caller != pending_admin {
@@ -450,7 +451,14 @@ fn require_admin(env: &Env, caller: &Address) {
     }
 }
 
+fn require_initialized(env: &Env) {
+    if !env.storage().instance().has(&DataKey::Admin) {
+        fail(env, WalletError::NotInitialized);
+    }
+}
+
 fn require_signer(env: &Env, signer: &Address) {
+    require_initialized(env);
     signer.require_auth();
     if !get_signers(env).contains_key(signer.clone()) {
         fail(env, WalletError::UnknownSigner);
