@@ -44,8 +44,14 @@ path = "src/bin/release_validate.rs"
 # `cargo test --features escrow-isolation` runs the deterministic
 # success/boundary/unauthorized/replay/failure tests for the typed
 # per-asset isolated escrow model in `src/escrow_isolation.rs`.
+#
+# Payment intent lifecycle states (issue #780).
+# `cargo test --features payment-intent-lifecycle` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# payment intent lifecycle state machine in `src/payment_intent_lifecycle.rs`.
 [features]
 default = []
 footprint-limits = []
 payment-metadata = []
 escrow-isolation = []
+payment-intent-lifecycle = []
