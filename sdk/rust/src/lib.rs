@@ -20,8 +20,8 @@ pub enum SorobanError {
     InvalidTransaction,
     /// The transaction was rejected by the network (e.g. bad sequence).
     TransactionFailed,
-    /// The operation was rejected by the contract.
-    ContractError,
+    /// The operation was rejected by the contract with the decoded error code.
+    ContractError(ContractErrorCode),
     /// The account does not have enough funds.
     InsufficientFunds,
     /// Any other, non-retryable error.
@@ -35,7 +35,7 @@ impl fmt::Display for SorobanError {
             SorobanError::Unavailable => write!(f, "node unavailable"),
             SorobanError::InvalidTransaction => write!(f, "invalid transaction"),
             SorobanError::TransactionFailed => write!(f, "transaction failed"),
-            SorobanError::ContractError => write!(f, "contract error"),
+            SorobanError::ContractError(code) => write!(f, "contract error: {code}"),
             SorobanError::InsufficientFunds => write!(f, "insufficient funds"),
             SorobanError::Other(msg) => write!(f, "{msg}"),
         }
@@ -43,6 +43,96 @@ impl fmt::Display for SorobanError {
 }
 
 impl std::error::Error for SorobanError {}
+
+/// Typed view of the numeric error codes returned by the payment contract
+/// (see `contracts/payment/src/error.rs`).
+///
+/// Codes are decoded with [`ContractErrorCode::from_code`]. A code this client
+/// does not know yet decodes to [`ContractErrorCode::Unknown`] and keeps its raw
+/// value, so newer contracts can add codes without breaking existing clients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractErrorCode {
+    /// Code 1: the contract has already been initialized.
+    AlreadyInitialized,
+    /// Code 2: the contract has not been initialized yet.
+    NotInitialized,
+    /// Code 3: the caller is not authorized to perform this action.
+    Unauthorized,
+    /// Code 4: the referenced payment does not exist.
+    PaymentNotFound,
+    /// Code 5: the payment is not in a state that allows this operation.
+    InvalidStatus,
+    /// Code 6: the supplied amount is not valid.
+    InvalidAmount,
+    /// Code 7: the payment has expired.
+    PaymentExpired,
+    /// Code 8: the payment has already been cancelled.
+    AlreadyCancelled,
+    /// Code 9: the payment has already been refunded.
+    AlreadyRefunded,
+    /// Code 10: the requested refund exceeds the funds received.
+    RefundExceedsFunds,
+    /// Code 11: the operation was already performed with the same parameters.
+    DuplicateOperation,
+    /// Code 12: the supplied expiry is not in the future.
+    InvalidExpiry,
+    /// Code 13: the payment has not yet expired.
+    PaymentNotExpired,
+    /// A code unknown to this client version. The raw value is preserved.
+    Unknown(u32),
+}
+
+impl ContractErrorCode {
+    /// Decode a raw contract error code. Never fails: unrecognised codes map to
+    /// [`ContractErrorCode::Unknown`].
+    pub const fn from_code(code: u32) -> Self {
+        match code {
+            1 => ContractErrorCode::AlreadyInitialized,
+            2 => ContractErrorCode::NotInitialized,
+            3 => ContractErrorCode::Unauthorized,
+            4 => ContractErrorCode::PaymentNotFound,
+            5 => ContractErrorCode::InvalidStatus,
+            6 => ContractErrorCode::InvalidAmount,
+            7 => ContractErrorCode::PaymentExpired,
+            8 => ContractErrorCode::AlreadyCancelled,
+            9 => ContractErrorCode::AlreadyRefunded,
+            10 => ContractErrorCode::RefundExceedsFunds,
+            11 => ContractErrorCode::DuplicateOperation,
+            12 => ContractErrorCode::InvalidExpiry,
+            13 => ContractErrorCode::PaymentNotExpired,
+            other => ContractErrorCode::Unknown(other),
+        }
+    }
+
+    /// The raw numeric code as emitted by the contract.
+    pub const fn code(self) -> u32 {
+        match self {
+            ContractErrorCode::AlreadyInitialized => 1,
+            ContractErrorCode::NotInitialized => 2,
+            ContractErrorCode::Unauthorized => 3,
+            ContractErrorCode::PaymentNotFound => 4,
+            ContractErrorCode::InvalidStatus => 5,
+            ContractErrorCode::InvalidAmount => 6,
+            ContractErrorCode::PaymentExpired => 7,
+            ContractErrorCode::AlreadyCancelled => 8,
+            ContractErrorCode::AlreadyRefunded => 9,
+            ContractErrorCode::RefundExceedsFunds => 10,
+            ContractErrorCode::DuplicateOperation => 11,
+            ContractErrorCode::InvalidExpiry => 12,
+            ContractErrorCode::PaymentNotExpired => 13,
+            ContractErrorCode::Unknown(code) => code,
+        }
+    }
+}
+
+impl fmt::Display for ContractErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ContractErrorCode::Unknown(code) => write!(f, "unknown code {code}"),
+            known => write!(f, "{known:?} ({})", known.code()),
+        }
+    }
+}
 
 /// Status of a submitted transaction as reported by the network.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,7 +494,9 @@ mod tests {
     fn retryability_is_derived_from_category_and_status() {
         assert!(RetryPolicy::is_error_retryable(&SorobanError::Timeout));
         assert!(RetryPolicy::is_error_retryable(&SorobanError::Unavailable));
-        assert!(!RetryPolicy::is_error_retryable(&SorobanError::ContractError));
+        assert!(!RetryPolicy::is_error_retryable(&SorobanError::ContractError(
+            ContractErrorCode::Unknown(0)
+        )));
         assert!(!RetryPolicy::is_error_retryable(&SorobanError::InsufficientFunds));
 
         assert!(RetryPolicy::is_status_retryable(TxStatus::Pending));
