@@ -97,6 +97,16 @@ All notable changes to this project are documented in this file.
 - Documented tag normalization security assumptions (#955): the accepted Unicode
   subset, the normalization form applied, the confusable/skeleton policy, and
   the compatibility implications for clients.
+- Explicit checked arithmetic policy for version counters and amount
+  accounting (#1007). State version bumps in the `tag` contract and event
+  version bumps in `tag_registry` now use checked addition: at `u32::MAX` the
+  operation fails with the new `TagError::VersionOverflow` (6) or
+  `RegistryError::VersionOverflow` (7) instead of saturating or wrapping, so a
+  version is never reused or silently stalled. Payment cancellation computes the
+  remaining refundable amount with checked subtraction and returns
+  `PaymentError::RefundExceedsFunded` if refunded exceeds funded. Existing error
+  codes are unchanged; no event payloads change. Storage growth and
+  per-invocation work are unchanged.
 
 ### Documentation
 - Contract pause and recovery operational runbook (#1003).
