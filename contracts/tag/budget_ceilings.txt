@@ -1,0 +1,11 @@
+# Recorded resource budget ceilings for the tag registry benchmark.
+#
+# Format: <operation> <max_cpu_insns> <max_mem_bytes>
+#
+# Each value is the measured host budget for one invocation of the operation,
+# as reported by `BUDGET_RECORD=1 cargo bench --bench resource_budget`. A
+# measurement above its ceiling fails the benchmark. Re-record only when a
+# change is intentional, and commit the new values with the change that moved
+# them.
+#
+# Recorded values:
