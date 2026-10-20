@@ -17,14 +17,48 @@
 //! * **Emergency cancellation** — the admin (or a configured guardian) can
 //!   cancel a pending proposal at any time before execution. Cancellation is
 //!   terminal: a cancelled proposal can never be executed.
+//! * **Signer rotation** — signers are added or removed through the same
+//!   proposal, approval, delay and execution flow as an upgrade. The signer
+//!   set is capped at [`MAX_SIGNERS`], a change may never leave fewer signers
+//!   than the threshold, and the final signer can never be removed.
 //!
 //! The module is intentionally storage-agnostic: it operates on a
 //! `GovernanceStorage` trait so it can be wired into the payment contract's
 //! existing persistent storage without changing its layout.
 
-use soroban_sdk::{contracttype, Address, BytesN, Env};
+use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec};
 
-/// A pending contract replacement proposal.
+/// Upper bound on the number of signers. Bounds the signer list storage and
+/// the per-invocation scans over it.
+pub const MAX_SIGNERS: u32 = 20;
+
+/// Topic for signer-set events: `(GOVERNANCE_EVENT_TOPIC, SIGNER_EVENT)`.
+pub const GOVERNANCE_EVENT_TOPIC: Symbol = symbol_short!("gov");
+
+/// Event name emitted when a signer is added or removed.
+pub const SIGNER_EVENT: Symbol = symbol_short!("signer");
+
+/// A change to the signer set.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SignerChange {
+    /// Add an address to the signer set.
+    Add(Address),
+    /// Remove an address from the signer set.
+    Remove(Address),
+}
+
+/// The effect a proposal has when it is executed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProposalAction {
+    /// Replace the payment contract with the given wasm hash.
+    Upgrade(BytesN<32>),
+    /// Rotate the signer set.
+    SignerChange(SignerChange),
+}
+
+/// A pending contract replacement or signer-set change proposal.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpgradeProposal {
@@ -32,13 +66,14 @@ pub struct UpgradeProposal {
     pub id: u64,
     /// Account that created the proposal.
     pub proposer: Address,
-    /// New contract wasm hash to be installed on execution.
-    pub wasm_hash: BytesN<32>,
+    /// Effect applied on execution.
+    pub action: ProposalAction,
     /// Ledger timestamp (seconds) at which the proposal was created.
     pub created_at: u64,
     /// Delay (seconds) that must elapse before execution is allowed.
     pub delay: u64,
-    /// Number of distinct approvals collected so far.
+    /// Number of distinct approvals recorded so far. Execution counts only
+    /// approvals from current signers.
     pub approvals: u32,
     /// Whether the proposal has already been executed (replay protection).
     pub executed: bool,
@@ -70,7 +105,18 @@ pub enum GovernanceError {
     Cancelled = 6,
     DelayNotElapsed = 7,
     ThresholdNotMet = 8,
+    /// Threshold is zero or exceeds the number of signers.
     InvalidThreshold = 9,
+    /// The address is already a signer (on add, or duplicated in the initial set).
+    SignerAlreadyExists = 10,
+    /// The address to remove is not a signer.
+    SignerNotFound = 11,
+    /// Adding a signer would exceed [`MAX_SIGNERS`].
+    TooManySigners = 12,
+    /// The final remaining signer cannot be removed.
+    LastSigner = 13,
+    /// Removing the signer would leave fewer signers than the threshold.
+    RemovalBreaksThreshold = 14,
 }
 
 /// Storage abstraction so the governance module can be embedded in the
@@ -81,21 +127,26 @@ pub trait GovernanceStorage {
     fn next_proposal_id(env: &Env) -> u64;
     fn get_proposal(env: &Env, id: u64) -> Option<UpgradeProposal>;
     fn set_proposal(env: &Env, proposal: &UpgradeProposal);
-    fn is_approver(env: &Env, who: &Address) -> bool;
+    /// The current signer set. Its length is bounded by [`MAX_SIGNERS`].
+    fn get_signers(env: &Env) -> Vec<Address>;
+    fn set_signers(env: &Env, signers: &Vec<Address>);
+    fn is_approver(env: &Env, who: &Address) -> bool {
+        Self::get_signers(env).iter().any(|signer| &signer == who)
+    }
     fn has_approved(env: &Env, id: u64, who: &Address) -> bool;
     fn record_approval(env: &Env, id: u64, who: &Address);
 }
 
-/// Initialize governance with an admin, approval threshold and default delay.
+/// Initialize governance with an admin, the initial signer set, approval
+/// threshold and default delay.
 pub fn initialize<S: GovernanceStorage>(
     env: &Env,
     admin: Address,
+    signers: Vec<Address>,
     threshold: u32,
     default_delay: u64,
 ) -> Result<(), GovernanceError> {
-    if threshold == 0 {
-        return Err(GovernanceError::InvalidThreshold);
-    }
+    validate_signer_set(&signers, threshold)?;
     admin.require_auth();
     S::set_config(
         env,
@@ -105,6 +156,7 @@ pub fn initialize<S: GovernanceStorage>(
             default_delay,
         },
     );
+    S::set_signers(env, &signers);
     Ok(())
 }
 
@@ -121,19 +173,126 @@ pub fn propose<S: GovernanceStorage>(
         return Err(GovernanceError::Unauthorized);
     }
 
+    Ok(new_proposal::<S>(
+        env,
+        proposer,
+        ProposalAction::Upgrade(wasm_hash),
+        delay.unwrap_or(config.default_delay),
+    ))
+}
+
+/// Create a new signer-set change proposal. The proposer must be a current
+/// signer, and the change must be valid against the current signer set.
+///
+/// Signer changes always use the configured default delay; a proposal cannot
+/// shorten it. The change is validated again on execution, because the
+/// signer set may have changed while the proposal was pending.
+pub fn propose_signer_change<S: GovernanceStorage>(
+    env: &Env,
+    proposer: Address,
+    change: SignerChange,
+) -> Result<u64, GovernanceError> {
+    let config = S::get_config(env).ok_or(GovernanceError::NotInitialized)?;
+    proposer.require_auth();
+    if !S::is_approver(env, &proposer) {
+        return Err(GovernanceError::Unauthorized);
+    }
+    validate_signer_change(&S::get_signers(env), config.threshold, &change)?;
+
+    Ok(new_proposal::<S>(
+        env,
+        proposer,
+        ProposalAction::SignerChange(change),
+        config.default_delay,
+    ))
+}
+
+fn new_proposal<S: GovernanceStorage>(
+    env: &Env,
+    proposer: Address,
+    action: ProposalAction,
+    delay: u64,
+) -> u64 {
     let id = S::next_proposal_id(env);
     let proposal = UpgradeProposal {
         id,
         proposer,
-        wasm_hash,
+        action,
         created_at: env.ledger().timestamp(),
-        delay: delay.unwrap_or(config.default_delay),
+        delay,
         approvals: 0,
         executed: false,
         cancelled: false,
     };
     S::set_proposal(env, &proposal);
-    Ok(id)
+    id
+}
+
+/// The initial signer set must be within [`MAX_SIGNERS`], free of duplicates,
+/// and the threshold must be in `1..=signers.len()`.
+fn validate_signer_set(signers: &Vec<Address>, threshold: u32) -> Result<(), GovernanceError> {
+    if signers.len() > MAX_SIGNERS {
+        return Err(GovernanceError::TooManySigners);
+    }
+    if threshold == 0 || threshold > signers.len() {
+        return Err(GovernanceError::InvalidThreshold);
+    }
+    for (i, signer) in signers.iter().enumerate() {
+        if signers.iter().skip(i + 1).any(|other| other == signer) {
+            return Err(GovernanceError::SignerAlreadyExists);
+        }
+    }
+    Ok(())
+}
+
+/// Check a signer change against the current signer set and threshold.
+fn validate_signer_change(
+    signers: &Vec<Address>,
+    threshold: u32,
+    change: &SignerChange,
+) -> Result<(), GovernanceError> {
+    match change {
+        SignerChange::Add(who) => {
+            if signers.len() >= MAX_SIGNERS {
+                return Err(GovernanceError::TooManySigners);
+            }
+            if signers.iter().any(|signer| &signer == who) {
+                return Err(GovernanceError::SignerAlreadyExists);
+            }
+        }
+        SignerChange::Remove(who) => {
+            if !signers.iter().any(|signer| &signer == who) {
+                return Err(GovernanceError::SignerNotFound);
+            }
+            if signers.len() == 1 {
+                return Err(GovernanceError::LastSigner);
+            }
+            if signers.len() - 1 < threshold {
+                return Err(GovernanceError::RemovalBreaksThreshold);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Apply a validated signer change, returning the resulting signer set.
+fn apply_signer_change(env: &Env, signers: &Vec<Address>, change: &SignerChange) -> Vec<Address> {
+    match change {
+        SignerChange::Add(who) => {
+            let mut next = signers.clone();
+            next.push_back(who.clone());
+            next
+        }
+        SignerChange::Remove(who) => {
+            let mut next = Vec::new(env);
+            for signer in signers.iter() {
+                if &signer != who {
+                    next.push_back(signer);
+                }
+            }
+            next
+        }
+    }
 }
 
 /// Approve a pending proposal. Each approver may approve at most once.
@@ -167,13 +326,14 @@ pub fn approve<S: GovernanceStorage>(
 
 /// Execute a proposal once the delay has elapsed and the threshold is met.
 ///
-/// Returns the wasm hash to install. Replay attempts (executing twice) and
-/// unauthorized executions are rejected.
+/// Returns the action to apply: the wasm hash to install, or the signer change
+/// that has already been applied to the signer set. Replay attempts (executing
+/// twice) and unauthorized executions are rejected.
 pub fn execute<S: GovernanceStorage>(
     env: &Env,
     executor: Address,
     id: u64,
-) -> Result<BytesN<32>, GovernanceError> {
+) -> Result<ProposalAction, GovernanceError> {
     let config = S::get_config(env).ok_or(GovernanceError::NotInitialized)?;
     executor.require_auth();
     if !S::is_approver(env, &executor) {
@@ -187,7 +347,15 @@ pub fn execute<S: GovernanceStorage>(
     if proposal.executed {
         return Err(GovernanceError::AlreadyExecuted);
     }
-    if proposal.approvals < config.threshold {
+
+    // Count only approvals from current signers, so a signer removed after
+    // approving no longer contributes toward the threshold.
+    let signers = S::get_signers(env);
+    let live_approvals = signers
+        .iter()
+        .filter(|signer| S::has_approved(env, id, signer))
+        .count() as u32;
+    if live_approvals < config.threshold {
         return Err(GovernanceError::ThresholdNotMet);
     }
 
@@ -196,10 +364,26 @@ pub fn execute<S: GovernanceStorage>(
         return Err(GovernanceError::DelayNotElapsed);
     }
 
-    // Mark executed before returning so a re-entrant call cannot replay.
+    if let ProposalAction::SignerChange(change) = &proposal.action {
+        validate_signer_change(&signers, config.threshold, change)?;
+    }
+
+    // Mark executed before applying effects so a re-entrant call cannot replay.
     proposal.executed = true;
     S::set_proposal(env, &proposal);
-    Ok(proposal.wasm_hash)
+    if let ProposalAction::SignerChange(change) = &proposal.action {
+        let next = apply_signer_change(env, &signers, change);
+        S::set_signers(env, &next);
+        let (added, who) = match change {
+            SignerChange::Add(who) => (true, who),
+            SignerChange::Remove(who) => (false, who),
+        };
+        env.events().publish(
+            (GOVERNANCE_EVENT_TOPIC, SIGNER_EVENT),
+            (proposal.id, added, who.clone(), next.len()),
+        );
+    }
+    Ok(proposal.action)
 }
 
 /// Emergency cancellation. Only the admin/guardian may cancel, and only
@@ -247,8 +431,11 @@ mod tests {
         fn set_proposal(env: &Env, proposal: &UpgradeProposal) {
             env.storage().instance().set(&(symbol_short!("prop"), proposal.id), proposal);
         }
-        fn is_approver(env: &Env, who: &Address) -> bool {
-            env.storage().instance().get(&(symbol_short!("approver"), who.clone())).unwrap_or(false)
+        fn get_signers(env: &Env) -> Vec<Address> {
+            env.storage().instance().get(&symbol_short!("signers")).unwrap_or_else(|| Vec::new(env))
+        }
+        fn set_signers(env: &Env, signers: &Vec<Address>) {
+            env.storage().instance().set(&symbol_short!("signers"), signers);
         }
         fn has_approved(env: &Env, id: u64, who: &Address) -> bool {
             env.storage().instance().get(&(symbol_short!("approval"), id, who.clone())).unwrap_or(false)
@@ -265,10 +452,8 @@ mod tests {
         let approver = Address::generate(&env);
         let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
 
-        env.storage().instance().set(&(symbol_short!("approver"), admin.clone()), &true);
-        env.storage().instance().set(&(symbol_short!("approver"), approver.clone()), &true);
-
-        initialize::<TestStorage>(&env, admin.clone(), 2, 100).unwrap();
+        let signers = soroban_sdk::vec![&env, admin.clone(), approver.clone()];
+        initialize::<TestStorage>(&env, admin.clone(), signers, 2, 100).unwrap();
         (env, admin, approver, wasm_hash)
     }
 
@@ -276,7 +461,8 @@ mod tests {
     fn initialize_rejects_zero_threshold() {
         let env = Env::default();
         let admin = Address::generate(&env);
-        let result = initialize::<TestStorage>(&env, admin, 0, 100);
+        let signers = soroban_sdk::vec![&env, admin.clone()];
+        let result = initialize::<TestStorage>(&env, admin, signers, 0, 100);
         assert_eq!(result, Err(GovernanceError::InvalidThreshold));
     }
 
@@ -284,7 +470,8 @@ mod tests {
     fn initialize_sets_config() {
         let env = Env::default();
         let admin = Address::generate(&env);
-        initialize::<TestStorage>(&env, admin.clone(), 2, 100).unwrap();
+        let signers = soroban_sdk::vec![&env, admin.clone(), Address::generate(&env)];
+        initialize::<TestStorage>(&env, admin.clone(), signers, 2, 100).unwrap();
         let config = TestStorage::get_config(&env).unwrap();
         assert_eq!(config.admin, admin);
         assert_eq!(config.threshold, 2);
@@ -462,7 +649,7 @@ mod tests {
         approve::<TestStorage>(&env, admin.clone(), id).unwrap();
         approve::<TestStorage>(&env, approver, id).unwrap();
         let result = execute::<TestStorage>(&env, admin, id);
-        assert_eq!(result.unwrap(), wasm_hash);
+        assert_eq!(result.unwrap(), ProposalAction::Upgrade(wasm_hash));
         let proposal = TestStorage::get_proposal(&env, id).unwrap();
         assert!(proposal.executed);
     }
@@ -559,10 +746,12 @@ mod tests {
         let admin = Address::generate(&env);
 
         // Threshold 0 rejected
-        assert_eq!(initialize::<TestStorage>(&env, admin.clone(), 0, 100), Err(GovernanceError::InvalidThreshold));
+        let signers = soroban_sdk::vec![&env, admin.clone()];
+        assert_eq!(initialize::<TestStorage>(&env, admin.clone(), signers, 0, 100), Err(GovernanceError::InvalidThreshold));
 
         // Threshold 1 works
-        initialize::<TestStorage>(&env, admin, 1, 100).unwrap();
+        let signers = soroban_sdk::vec![&env, admin.clone()];
+        initialize::<TestStorage>(&env, admin, signers, 1, 100).unwrap();
     }
 
     #[test]
