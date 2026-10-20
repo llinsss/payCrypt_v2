@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Configurable minimum and maximum payment amounts: the contract stores an
+  admin-managed `(min_amount, max_amount)` bound pair in instance storage and
+  validates every payment amount against it deterministically before any funds
+  move. Amounts below the configured minimum or above the configured maximum
+  are rejected with the new `PaymentError::AmountBelowMinimum` (13) /
+  `PaymentError::AmountAboveMaximum` (14) errors and no state mutation; the
+  exact boundary values (amount == min, amount == max) are accepted. Bounds are
+  updated only by the authorized admin via `set_payment_bounds`, which rejects
+  inverted ranges (`min > max`) with `PaymentError::InvalidBounds` (15) and
+  emits a `payment_bounds_updated` event carrying the previous and new bounds
+  for indexing. Storage growth is constant (two `i128` fields in instance
+  storage) and per-invocation validation work is O(1). Defaults are
+  `min = 0` and `max = i128::MAX`, so existing behavior is preserved on
+  upgrade; rollback restores the prior bounds by re-invoking
+  `set_payment_bounds` with the values from the last event. Includes focused
+  tests for success, boundary (exact min/max), unauthorized, replay, and
+  failure paths (#801).
 - Upgrade proposal expiry: every upgrade proposal now carries a fixed, bounded
   validity window (`PROPOSAL_EXPIRY_SECS`, 30 days). Once the window elapses
   (`ledger.timestamp() >= expires_at`) the proposal can no longer be approved
@@ -121,20 +138,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signals, and rollback behavior for the local-network integration tests (#829).
 - Documented the registry contract's externally visible contracts (#965):
   - Canonical tag keys: tags are stored under a deterministic, normalized key
-    derived from the tag name (lowercased, trimmed, and length-bounded) so that
-    equivalent tags resolve to a single storage entry and indexers can key
-    events and state by the same canonical form.
-  - Version semantics: each tag carries a monotonically increasing version that
-    is assigned on write, compared numerically for ordering, and only ever
-    advanced (never reused or decremented) so upgrades remain backward
-    compatible and replay-safe.
-  - Event topics: registry mutations emit events with stable, canonical topics
-    (tag key + action) so consumers can filter deterministically without
-    inspecting payload internals.
-  - Indexer reconstruction: an indexer can rebuild registry state from the event
-    stream alone by replaying canonical tag keys and versions in ledger order,
-    requiring only the topic schema and version ordering guarantees documented
-    here.
-  - Storage growth and per-invocation work remain bounded: one canonical entry
-    per tag key, constant-size version metadata, and no unbounded scans on the
-    write path.
+    derived from the tag name 
