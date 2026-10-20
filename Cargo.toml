@@ -22,3 +22,11 @@ opt-level = "z"
 overflow-checks = true
 lto = true
 codegen-units = 1
+
+# Release validation for all Rust contract WASM files (issue #1010).
+# `cargo run --bin release-validate` checks that every expected contract
+# artifact exists, validates its contract spec, and fails with actionable
+# messages when a crate or WASM artifact is missing.
+[[bin]]
+name = "release-validate"
+path = "src/bin/release_validate.rs"
