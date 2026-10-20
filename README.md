@@ -25,3 +25,6 @@
 - #799: Define Rust contract backward-compatibility guarantees
 <!-- handsoff-issue-1000 -->
 - #1000: Add property tests for arithmetic and fee calculations
+
+<!-- handsoff-issue-776 -->
+- #776: Separate user state from protocol configuration in Rust storage
