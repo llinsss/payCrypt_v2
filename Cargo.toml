@@ -34,6 +34,12 @@ path = "src/bin/release_validate.rs"
 # `cargo test --features footprint-limits` runs the deterministic
 # success/boundary/unauthorized/replay/failure tests for the typed
 # footprint limit validation in `src/footprint_limits.rs`.
+#
+# Bounded payment metadata model (issue #778).
+# `cargo test --features payment-metadata` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# bounded metadata validation in `src/payment_metadata.rs`.
 [features]
 default = []
 footprint-limits = []
+payment-metadata = []
