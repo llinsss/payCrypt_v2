@@ -12,7 +12,6 @@ on:
     paths:
       - "backend/**"
       - "contracts/**"
-      - "contracts/**"
       - "indexer/**"
       - ".github/workflows/backend-tests.yml"
   pull_request:
@@ -42,10 +41,8 @@ jobs:
         working-directory: .
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
-            contracts:
-              - "contracts/**"
-            indexer:
-              - "indexer/**"
+      contracts: ${{ steps.filter.outputs.contracts }}
+      indexer: ${{ steps.filter.outputs.indexer }}
     steps:
       - uses: actions/checkout@v4
 
@@ -207,46 +204,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: rustfmt, clippy, llvm-tools-preview
-
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry and build
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
           components: rustfmt, clippy, llvm-tools-preview
 
       - name: Cache cargo registry and build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry and build
         uses: actions/cache@v4
         with:
           path: |
@@ -263,6 +223,11 @@ jobs:
       - name: Build reviewed WASM artifacts
         working-directory: indexer
         run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Run tag-squatting unit and property tests
+        working-directory: indexer
+        run: cargo test --release tag_registry
+        continue-on-error: false
 
       - name: Start deterministic local Stellar/Soroban network
         run: |
@@ -299,14 +264,9 @@ jobs:
             --rpc-url "$SOROBAN_RPC_URL" \
             --network-passphrase "$STELLAR_NETWORK_PASSPHRASE"
 
-      - name: Run Soroban integration tests
+      - name: Run local-network tag-squatting authorization tests
         working-directory: indexer
-        run: cargo test --test integration -- --nocapture
-
-      - name: Dump local network logs on failure
-        if: failure()
-        run: docker logs soroban-local || true
-
-      - name: Stop local network
-        if: always()
-        run: docker rm -f soroban-local || true
+        env:
+          RUN_LOCAL_NETWORK_TESTS: "1"
+        run: cargo test --release --test tag_squatting_local_network -- --nocapture
+        continue-on-error: false

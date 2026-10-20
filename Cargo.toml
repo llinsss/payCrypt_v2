@@ -29,3 +29,13 @@ codegen-units = 1
 [[bin]]
 name = "release-validate"
 path = "src/bin/release_validate.rs"
+
+# Tag-squatting prevention (issue #810).
+# The `tag-registry` binary hosts the deterministic tag registration
+# validation logic (trust boundary, privileged roles, replay handling,
+# and failure-safe state transitions) used to prevent tag squatting in
+# the Rust/Soroban registry. Run its unit/property tests with
+# `cargo test --bin tag-registry`.
+[[bin]]
+name = "tag-registry"
+path = "src/bin/tag_registry.rs"
