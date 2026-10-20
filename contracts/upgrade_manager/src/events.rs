@@ -13,12 +13,19 @@
 //!   topic[3] = target_version: u32            (version being rolled back to)
 //!
 //! Data payload:
-//!   reason: soroban_sdk::String               (bounded reason for the rollback)
+//!   reason_hash: BytesN<32>                   (sha256 of the rollback reason)
+//!
+//! The reason is free-form operator input and may contain secrets, so the
+//! event carries only its digest. The full reason stays off-chain and can be
+//! checked against the hash by anyone who holds it.
 
-use soroban_sdk::{symbol_short, Env, String, Symbol};
+use soroban_sdk::{symbol_short, Bytes, BytesN, Env, String, Symbol};
 
 /// Schema version tag emitted as the first topic of every upgrade event.
-pub const EVENT_SCHEMA_VERSION: Symbol = symbol_short!("upgrade_v1");
+///
+/// Bumped from `upgrade_v1` because the rollback payload changed from the raw
+/// reason string to its digest.
+pub const EVENT_SCHEMA_VERSION: Symbol = symbol_short!("upgrade_v2");
 
 /// Event name for a rollback transition.
 pub const EVENT_ROLLBACK: Symbol = symbol_short!("rollback");
@@ -29,19 +36,28 @@ pub const EVENT_ROLLBACK: Symbol = symbol_short!("rollback");
 /// prevents unbounded memory allocation from user-supplied input.
 pub const MAX_ROLLBACK_REASON_LEN: u32 = 256;
 
-/// Emit a rollback event with source version, target version, and reason.
+/// Emit a rollback event with source version, target version, and the
+/// sha256 digest of the reason.
 ///
 /// The reason is a bounded UTF-8 string whose byte length must not exceed
 /// [`MAX_ROLLBACK_REASON_LEN`]. Callers should validate the length before
 /// calling this function.
 pub fn emit_rollback(env: &Env, source_version: u32, target_version: u32, reason: &String) {
+    let mut buf = [0u8; MAX_ROLLBACK_REASON_LEN as usize];
+    let len = reason.len() as usize;
+    reason.copy_into_slice(&mut buf[..len]);
+    let reason_hash: BytesN<32> = env
+        .crypto()
+        .sha256(&Bytes::from_slice(env, &buf[..len]))
+        .into();
+
     let topics = (
         EVENT_SCHEMA_VERSION,
         EVENT_ROLLBACK,
         source_version,
         target_version,
     );
-    env.events().publish(topics, reason.clone());
+    env.events().publish(topics, reason_hash);
 }
 
 #[cfg(test)]
@@ -52,7 +68,7 @@ mod tests {
     /// The schema version and event name symbols are stable identifiers.
     #[test]
     fn event_symbols_are_stable() {
-        assert_eq!(EVENT_SCHEMA_VERSION, symbol_short!("upgrade_v1"));
+        assert_eq!(EVENT_SCHEMA_VERSION, symbol_short!("upgrade_v2"));
         assert_eq!(EVENT_ROLLBACK, symbol_short!("rollback"));
     }
 
