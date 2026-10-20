@@ -210,6 +210,8 @@ impl WalletContract {
         .publish(&env);
     }
 
+    /// Add an active signer. The stored threshold is re-validated against the
+    /// post-update signer count, so every signer update enforces the same rule.
     pub fn add_signer(env: Env, caller: Address, signer: Address) {
         require_admin(&env, &caller);
         let mut signers = get_signers(&env);
@@ -217,9 +219,17 @@ impl WalletContract {
             fail(&env, WalletError::DuplicateSigner);
         }
         signers.set(signer, true);
+        let threshold: u32 = env.storage().instance().get(&DataKey::Threshold).unwrap();
+        validate_threshold(&env, signers.len(), threshold);
         env.storage().instance().set(&DataKey::Signers, &signers);
     }
 
+    /// Remove an active signer.
+    ///
+    /// Recovery rule: the removal fails with `InvalidThreshold` if the remaining
+    /// signer count would fall below the current threshold. To remove a lost or
+    /// compromised signer, the admin first lowers the threshold with
+    /// `set_threshold`, then calls `remove_signer`.
     pub fn remove_signer(env: Env, caller: Address, signer: Address) {
         require_admin(&env, &caller);
         let mut signers = get_signers(&env);
@@ -229,14 +239,13 @@ impl WalletContract {
         if signers.len() <= 1 {
             fail(&env, WalletError::LastSigner);
         }
-        let threshold: u32 = env.storage().instance().get(&DataKey::Threshold).unwrap();
-        if threshold > signers.len() - 1 {
-            fail(&env, WalletError::InvalidThreshold);
-        }
         signers.remove(signer);
+        let threshold: u32 = env.storage().instance().get(&DataKey::Threshold).unwrap();
+        validate_threshold(&env, signers.len(), threshold);
         env.storage().instance().set(&DataKey::Signers, &signers);
     }
 
+    /// Set the approval threshold. Must satisfy `1 <= threshold <= active signers`.
     pub fn set_threshold(env: Env, caller: Address, threshold: u32) {
         require_admin(&env, &caller);
         validate_threshold(&env, get_signers(&env).len(), threshold);
