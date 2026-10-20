@@ -37,6 +37,13 @@ path = "src/bin/release_validate.rs"
 # another. It is enabled by default for production builds and can be turned
 # off only for local-network test harnesses that need to exercise the
 # unbound path.
+#
+# Relayer submission rate limiting (issue #808).
+# The `relayer-rate-limit` feature gates the typed per-submitter/per-window
+# rate-limit module that guards relayer submission. It is enabled by default
+# for production builds and can be disabled only for local-network harnesses
+# that need to exercise the unlimited path.
 [features]
-default = ["network-binding"]
+default = ["network-binding", "relayer-rate-limit"]
 network-binding = []
+relayer-rate-limit = []
