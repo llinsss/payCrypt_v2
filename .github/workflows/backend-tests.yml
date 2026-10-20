@@ -300,7 +300,9 @@ jobs:
             --network-passphrase "$STELLAR_NETWORK_PASSPHRASE"
 
       - name: Run Soroban integration tests
-        working-directory: indexer
+        working-directory: contracts/tests
+        env:
+          CONTRACT_WASM: ${{ github.workspace }}/indexer/target/wasm32-unknown-unknown/release/paycrypt_contract.wasm
         run: cargo test --test integration -- --nocapture
 
       - name: Dump local network logs on failure

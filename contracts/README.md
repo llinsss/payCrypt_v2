@@ -54,3 +54,44 @@ cargo test
 
 Tests cover success paths, authorization, boundary conditions, and failure
 cases for each contract.
+
+### Local network integration suite
+
+`contracts/tests/integration.rs` runs representative contract flows
+(registration, deposit, transfer, withdrawal) against a local Stellar/Soroban
+network and checks invocation results, authorization, and rejection of
+over-withdrawals and negative amounts. It is a separate package so that the
+plain `cargo test` above does not need a running network.
+
+Start a local network (for example `stellar/quickstart --local --enable-soroban-rpc`),
+then run:
+
+```sh
+cd contracts/tests
+SOROBAN_SECRET_KEY=<funded secret> \
+CONTRACT_WASM=/path/to/reviewed.wasm \
+cargo test --test integration -- --nocapture
+```
+
+Environment variables:
+
+| Variable | Default |
+| --- | --- |
+| `SOROBAN_RPC_URL` | `http://localhost:8000/soroban/rpc` |
+| `SOROBAN_NETWORK_PASSPHRASE` | `Standalone Network ; February 2017` |
+| `SOROBAN_SECRET_KEY` | required, no default |
+| `CONTRACT_WASM` | `target/wasm32-unknown-unknown/release/contract.wasm` |
+
+If the RPC endpoint is unreachable the tests print a skip message and pass
+without exercising anything. Check the output for `skipping:` before treating a
+green run as coverage.
+
+Failure cases asserted by the suite:
+
+- Withdrawal by an unregistered account is rejected (authorization).
+- Withdrawal above the deposited balance is rejected (balance boundary).
+- A negative deposit is rejected (invalid input).
+
+The suite does not assert specific contract error codes or event payloads.
+Rollback behavior of a failed invocation is covered only indirectly: the
+over-withdrawal case checks that the call errors.
