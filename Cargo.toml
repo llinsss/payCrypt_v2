@@ -39,7 +39,13 @@ path = "src/bin/release_validate.rs"
 # `cargo test --features payment-metadata` runs the deterministic
 # success/boundary/unauthorized/replay/failure tests for the typed
 # bounded metadata validation in `src/payment_metadata.rs`.
+#
+# Multi-asset escrow isolation (issue #779).
+# `cargo test --features escrow-isolation` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# per-asset isolated escrow model in `src/escrow_isolation.rs`.
 [features]
 default = []
 footprint-limits = []
 payment-metadata = []
+escrow-isolation = []
