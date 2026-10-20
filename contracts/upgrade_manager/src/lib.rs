@@ -14,7 +14,10 @@
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, String, Vec};
 
-use crate::events::{emit_rollback, MAX_ROLLBACK_REASON_LEN};
+use crate::events::{
+    emit_approval_revoked, emit_execution, emit_migration_completed, emit_rollback,
+    MAX_ROLLBACK_REASON_LEN,
+};
 
 /// Lifecycle state of a proposed upgrade version.
 #[contracttype]
@@ -45,6 +48,16 @@ pub struct UpgradeRecord {
     pub expires_at: u64,
 }
 
+/// Current on-disk representation of an upgrade record.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VersionedUpgradeRecord {
+    pub schema_version: u32,
+    pub expected_current_version: u32,
+    pub expected_current_revision: u64,
+    pub record: UpgradeRecord,
+}
+
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -70,6 +83,22 @@ pub enum UpgradeError {
     /// or executed. No state is mutated when this is returned. The proposal
     /// may still be queried or cancelled.
     ProposalExpired = 12,
+    /// Another upgrade or rollback changed the current version after this
+    /// proposal was created. The record remains approved and can be reviewed.
+    ExecutionConflict = 13,
+    /// Mutating upgrade calls are disabled until legacy records are migrated.
+    StorageMigrationRequired = 14,
+    /// A storage migration batch must be between 1 and
+    /// [`MAX_MIGRATION_BATCH_SIZE`] records.
+    InvalidMigrationLimit = 15,
+    /// The stored schema version is newer than this contract supports.
+    UnsupportedStorageSchema = 16,
+    /// A legacy version listed for migration has no corresponding record.
+    MigrationRecordMissing = 17,
+    /// The monotonic execution revision cannot be incremented further.
+    ExecutionRevisionOverflow = 18,
+    /// The bounded version history has reached its configured maximum.
+    VersionHistoryFull = 19,
 }
 
 /// Validity window (in ledger seconds) granted to every upgrade proposal.
@@ -82,17 +111,32 @@ pub enum UpgradeError {
 /// of a proposal.
 pub const PROPOSAL_EXPIRY_SECS: u64 = 30 * 24 * 60 * 60;
 
-#[contracttype]
-#[derive(Clone)]
-pub struct UpgradeManagerKey;
+/// Current schema for versioned upgrade records.
+pub const STORAGE_SCHEMA_VERSION: u32 = 2;
+
+/// Maximum number of legacy version records migrated by one invocation.
+pub const MAX_MIGRATION_BATCH_SIZE: u32 = 50;
+
+/// Maximum number of upgrade versions retained in instance storage.
+pub const MAX_RECORDED_VERSIONS: u32 = 1_000;
 
 #[contracttype]
 #[derive(Clone)]
-pub struct GovernanceKey;
+pub enum UpgradeManagerKey {
+    Key,
+}
 
 #[contracttype]
 #[derive(Clone)]
-pub struct AuthorizedImplKey;
+pub enum GovernanceKey {
+    Key,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum AuthorizedImplKey {
+    Key,
+}
 
 #[contracttype]
 #[derive(Clone)]
@@ -102,11 +146,39 @@ pub struct VersionKey {
 
 #[contracttype]
 #[derive(Clone)]
-pub struct CurrentVersionKey;
+pub struct VersionedRecordKey {
+    pub version: u32,
+}
 
 #[contracttype]
 #[derive(Clone)]
-pub struct VersionListKey;
+pub enum CurrentVersionKey {
+    Key,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum CurrentVersionRevisionKey {
+    Key,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum VersionListKey {
+    Key,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum StorageSchemaVersionKey {
+    Key,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum MigrationCursorKey {
+    Key,
+}
 
 #[contract]
 pub struct UpgradeManager;
@@ -117,12 +189,20 @@ pub mod events;
 impl UpgradeManager {
     /// Initialize the manager with the authorized governance address.
     pub fn initialize(env: Env, governance: Address) -> Result<(), UpgradeError> {
-        if env.storage().instance().has(&GovernanceKey) {
+        if env.storage().instance().has(&GovernanceKey::Key) {
             return Err(UpgradeError::AlreadyInitialized);
         }
-        env.storage().instance().set(&GovernanceKey, &governance);
-        env.storage().instance().set(&CurrentVersionKey, &0u32);
-        env.storage().instance().set(&VersionListKey, &Vec::<u32>::new(&env));
+        env.storage().instance().set(&GovernanceKey::Key, &governance);
+        env.storage().instance().set(&CurrentVersionKey::Key, &0u32);
+        env.storage()
+            .instance()
+            .set(&CurrentVersionRevisionKey::Key, &0u64);
+        env.storage()
+            .instance()
+            .set(&VersionListKey::Key, &Vec::<u32>::new(&env));
+        env.storage()
+            .instance()
+            .set(&StorageSchemaVersionKey::Key, &STORAGE_SCHEMA_VERSION);
         Ok(())
     }
 
@@ -137,12 +217,13 @@ impl UpgradeManager {
         implementation: BytesN<32>,
     ) -> Result<(), UpgradeError> {
         Self::require_governance(&env, &governance)?;
+        Self::require_current_schema(&env)?;
         if implementation == BytesN::from_array(&env, &[0u8; 32]) {
             return Err(UpgradeError::InvalidImplementation);
         }
         env.storage()
             .persistent()
-            .set(&AuthorizedImplKey, &implementation);
+            .set(&AuthorizedImplKey::Key, &implementation);
         Ok(())
     }
 
@@ -164,33 +245,47 @@ impl UpgradeManager {
         implementation: BytesN<32>,
     ) -> Result<(), UpgradeError> {
         Self::require_governance(&env, &governance)?;
+        Self::require_current_schema(&env)?;
 
-        let key = VersionKey { version };
-        if env.storage().persistent().has(&key) {
+        let mut versions: Vec<u32> = env
+            .storage()
+            .instance()
+            .get(&VersionListKey::Key)
+            .unwrap_or_else(|| Vec::new(&env));
+        if versions.len() >= MAX_RECORDED_VERSIONS {
+            return Err(UpgradeError::VersionHistoryFull);
+        }
+
+        let key = VersionedRecordKey { version };
+        if env.storage().persistent().has(&key)
+            || env.storage().persistent().has(&VersionKey { version })
+        {
             return Err(UpgradeError::DuplicateVersion);
         }
         Self::require_authorized_impl(&env, &implementation)?;
 
         let expires_at = env.ledger().timestamp() + PROPOSAL_EXPIRY_SECS;
-        let record = UpgradeRecord {
-            version,
-            implementation,
-            state: UpgradeState::Proposed,
-            proposed_by: governance.clone(),
-            approved_by: None,
-            executed_by: None,
-            cancelled_by: None,
-            expires_at,
+        let current_version = Self::current_version_value(env.clone());
+        let current_revision = Self::current_version_revision(env.clone());
+        let stored = VersionedUpgradeRecord {
+            schema_version: STORAGE_SCHEMA_VERSION,
+            expected_current_version: current_version,
+            expected_current_revision: current_revision,
+            record: UpgradeRecord {
+                version,
+                implementation,
+                state: UpgradeState::Proposed,
+                proposed_by: governance.clone(),
+                approved_by: None,
+                executed_by: None,
+                cancelled_by: None,
+                expires_at,
+            },
         };
-        env.storage().persistent().set(&key, &record);
+        env.storage().persistent().set(&key, &stored);
 
-        let mut versions: Vec<u32> = env
-            .storage()
-            .instance()
-            .get(&VersionListKey)
-            .unwrap_or_else(|| Vec::new(&env));
         versions.push_back(version);
-        env.storage().instance().set(&VersionListKey, &versions);
+        env.storage().instance().set(&VersionListKey::Key, &versions);
         Ok(())
     }
 
@@ -205,12 +300,10 @@ impl UpgradeManager {
         version: u32,
     ) -> Result<(), UpgradeError> {
         Self::require_governance(&env, &governance)?;
-        let key = VersionKey { version };
-        let mut record: UpgradeRecord = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(UpgradeError::UnknownVersion)?;
+        Self::require_current_schema(&env)?;
+        let key = VersionedRecordKey { version };
+        let mut stored = Self::read_current_record(&env, version)?;
+        let record = &mut stored.record;
 
         if record.state != UpgradeState::Proposed {
             return Err(UpgradeError::InvalidState);
@@ -220,7 +313,34 @@ impl UpgradeManager {
 
         record.state = UpgradeState::Approved;
         record.approved_by = Some(governance);
-        env.storage().persistent().set(&key, &record);
+        env.storage().persistent().set(&key, &stored);
+        Ok(())
+    }
+
+    /// Revoke the single governance approval before execution.
+    ///
+    /// The approval threshold in this manager is one governance approval.
+    /// Revocation clears the approver and returns the record to Proposed in a
+    /// single storage write, so the approval decision cannot be partially
+    /// updated.
+    pub fn revoke_approval(
+        env: Env,
+        governance: Address,
+        version: u32,
+    ) -> Result<(), UpgradeError> {
+        Self::require_governance(&env, &governance)?;
+        Self::require_current_schema(&env)?;
+        let mut stored = Self::read_current_record(&env, version)?;
+        if stored.record.state != UpgradeState::Approved {
+            return Err(UpgradeError::InvalidState);
+        }
+
+        stored.record.state = UpgradeState::Proposed;
+        stored.record.approved_by = None;
+        env.storage()
+            .persistent()
+            .set(&VersionedRecordKey { version }, &stored);
+        emit_approval_revoked(&env, version, &governance);
         Ok(())
     }
 
@@ -239,24 +359,145 @@ impl UpgradeManager {
         version: u32,
     ) -> Result<(), UpgradeError> {
         Self::require_governance(&env, &governance)?;
-        let key = VersionKey { version };
-        let mut record: UpgradeRecord = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(UpgradeError::UnknownVersion)?;
+        Self::require_current_schema(&env)?;
+        let mut stored = Self::read_current_record(&env, version)?;
+        let record = &mut stored.record;
 
         if record.state != UpgradeState::Approved {
             return Err(UpgradeError::InvalidState);
         }
         Self::require_not_expired(&env, record.expires_at)?;
         Self::require_authorized_impl(&env, &record.implementation)?;
+        let current_version = Self::current_version_value(env.clone());
+        let current_revision = Self::current_version_revision(env.clone());
+        if current_version != stored.expected_current_version
+            || current_revision != stored.expected_current_revision
+        {
+            return Err(UpgradeError::ExecutionConflict);
+        }
+        let next_revision = current_revision
+            .checked_add(1)
+            .ok_or(UpgradeError::ExecutionRevisionOverflow)?;
 
         record.state = UpgradeState::Executed;
         record.executed_by = Some(governance);
-        env.storage().persistent().set(&key, &record);
-        env.storage().instance().set(&CurrentVersionKey, &version);
+        env.storage()
+            .persistent()
+            .set(&VersionedRecordKey { version }, &stored);
+        env.storage().instance().set(&CurrentVersionKey::Key, &version);
+        env.storage()
+            .instance()
+            .set(&CurrentVersionRevisionKey::Key, &next_revision);
+        emit_execution(&env, current_version, version);
         Ok(())
+    }
+
+    /// Migrate at most `limit` legacy records to the current storage schema.
+    ///
+    /// The operation is resumable: each successful batch advances a cursor,
+    /// and mutating upgrade calls remain disabled until all listed records
+    /// have migrated. Each batch is checked in full before any record is
+    /// written, and Soroban transaction rollback protects failed invocations.
+    pub fn migrate_storage(
+        env: Env,
+        governance: Address,
+        limit: u32,
+    ) -> Result<u32, UpgradeError> {
+        Self::require_governance(&env, &governance)?;
+        if limit == 0 || limit > MAX_MIGRATION_BATCH_SIZE {
+            return Err(UpgradeError::InvalidMigrationLimit);
+        }
+
+        let schema = Self::storage_schema_version(env.clone());
+        if schema == STORAGE_SCHEMA_VERSION {
+            return Ok(0);
+        }
+        if schema != 1 {
+            return Err(UpgradeError::UnsupportedStorageSchema);
+        }
+
+        let versions: Vec<u32> = env
+            .storage()
+            .instance()
+            .get(&VersionListKey::Key)
+            .unwrap_or_else(|| Vec::new(&env));
+        if versions.len() > MAX_RECORDED_VERSIONS {
+            return Err(UpgradeError::VersionHistoryFull);
+        }
+        let cursor: u32 = env
+            .storage()
+            .instance()
+            .get(&MigrationCursorKey::Key)
+            .unwrap_or(0);
+        if cursor > versions.len() {
+            return Err(UpgradeError::UnsupportedStorageSchema);
+        }
+        let end = cursor.saturating_add(limit).min(versions.len());
+        let current_version = Self::current_version_value(env.clone());
+
+        // Validate every entry first so domain errors never leave a partial batch.
+        for index in cursor..end {
+            let version = versions
+                .get(index)
+                .ok_or(UpgradeError::MigrationRecordMissing)?;
+            let versioned_key = VersionedRecordKey { version };
+            if env.storage().persistent().has(&versioned_key) {
+                let stored: VersionedUpgradeRecord = env
+                    .storage()
+                    .persistent()
+                    .get(&versioned_key)
+                    .ok_or(UpgradeError::MigrationRecordMissing)?;
+                if stored.schema_version != STORAGE_SCHEMA_VERSION {
+                    return Err(UpgradeError::UnsupportedStorageSchema);
+                }
+            } else if !env
+                .storage()
+                .persistent()
+                .has(&VersionKey { version })
+            {
+                return Err(UpgradeError::MigrationRecordMissing);
+            }
+        }
+
+        for index in cursor..end {
+            let version = versions
+                .get(index)
+                .ok_or(UpgradeError::MigrationRecordMissing)?;
+            let versioned_key = VersionedRecordKey { version };
+            if env.storage().persistent().has(&versioned_key) {
+                continue;
+            }
+            let mut legacy: UpgradeRecord = env
+                .storage()
+                .persistent()
+                .get(&VersionKey { version })
+                .ok_or(UpgradeError::MigrationRecordMissing)?;
+            if legacy.state == UpgradeState::Approved {
+                legacy.state = UpgradeState::Proposed;
+                legacy.approved_by = None;
+            }
+            let stored = VersionedUpgradeRecord {
+                schema_version: STORAGE_SCHEMA_VERSION,
+                expected_current_version: current_version,
+                expected_current_revision: Self::current_version_revision(env.clone()),
+                record: legacy,
+            };
+            env.storage().persistent().set(&versioned_key, &stored);
+            env.storage()
+                .persistent()
+                .remove(&VersionKey { version });
+        }
+
+        env.storage().instance().set(&MigrationCursorKey::Key, &end);
+        let processed = end - cursor;
+        if end == versions.len() {
+            env.storage()
+                .instance()
+                .set(&StorageSchemaVersionKey::Key, &STORAGE_SCHEMA_VERSION);
+            env.storage().instance().remove(&MigrationCursorKey::Key);
+            emit_migration_completed(&env, STORAGE_SCHEMA_VERSION, versions.len());
+        }
+        Ok(processed)
     }
 
     /// Cancel a proposed or approved version. Executed versions cannot be cancelled.
@@ -266,12 +507,9 @@ impl UpgradeManager {
         version: u32,
     ) -> Result<(), UpgradeError> {
         Self::require_governance(&env, &governance)?;
-        let key = VersionKey { version };
-        let mut record: UpgradeRecord = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(UpgradeError::UnknownVersion)?;
+        Self::require_current_schema(&env)?;
+        let mut stored = Self::read_current_record(&env, version)?;
+        let record = &mut stored.record;
 
         match record.state {
             UpgradeState::Proposed | UpgradeState::Approved => {}
@@ -280,7 +518,9 @@ impl UpgradeManager {
 
         record.state = UpgradeState::Cancelled;
         record.cancelled_by = Some(governance);
-        env.storage().persistent().set(&key, &record);
+        env.storage()
+            .persistent()
+            .set(&VersionedRecordKey { version }, &stored);
         Ok(())
     }
 
@@ -307,6 +547,7 @@ impl UpgradeManager {
         reason: String,
     ) -> Result<(), UpgradeError> {
         Self::require_governance(&env, &governance)?;
+        Self::require_current_schema(&env)?;
 
         if reason.len() > MAX_ROLLBACK_REASON_LEN {
             return Err(UpgradeError::RollbackReasonTooLong);
@@ -315,20 +556,22 @@ impl UpgradeManager {
         let current: u32 = env
             .storage()
             .instance()
-            .get(&CurrentVersionKey)
+            .get(&CurrentVersionKey::Key)
             .unwrap_or(0);
         if target_version == current {
             return Err(UpgradeError::InvalidRollbackTarget);
         }
+        let current_revision = Self::current_version_revision(env.clone());
+        let next_revision = current_revision
+            .checked_add(1)
+            .ok_or(UpgradeError::ExecutionRevisionOverflow)?;
 
-        let key = VersionKey {
-            version: target_version,
-        };
-        let record: UpgradeRecord = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(UpgradeError::NoRollbackTarget)?;
+        let stored = Self::read_current_record(&env, target_version)
+            .map_err(|error| match error {
+                UpgradeError::UnknownVersion => UpgradeError::NoRollbackTarget,
+                other => other,
+            })?;
+        let record = stored.record;
 
         match record.state {
             UpgradeState::Approved | UpgradeState::Executed => {}
@@ -345,7 +588,10 @@ impl UpgradeManager {
 
         env.storage()
             .instance()
-            .set(&CurrentVersionKey, &target_version);
+            .set(&CurrentVersionKey::Key, &target_version);
+        env.storage()
+            .instance()
+            .set(&CurrentVersionRevisionKey::Key, &next_revision);
 
         emit_rollback(&env, current, target_version, &reason);
         Ok(())
@@ -353,17 +599,14 @@ impl UpgradeManager {
 
     /// Read a recorded version.
     pub fn get_version(env: Env, version: u32) -> Result<UpgradeRecord, UpgradeError> {
-        env.storage()
-            .persistent()
-            .get(&VersionKey { version })
-            .ok_or(UpgradeError::UnknownVersion)
+        Ok(Self::read_record(&env, version)?.record)
     }
 
     /// Current active version.
     pub fn current_version(env: Env) -> u32 {
         env.storage()
             .instance()
-            .get(&CurrentVersionKey)
+            .get(&CurrentVersionKey::Key)
             .unwrap_or(0)
     }
 
@@ -371,7 +614,7 @@ impl UpgradeManager {
     pub fn versions(env: Env) -> Vec<u32> {
         env.storage()
             .instance()
-            .get(&VersionListKey)
+            .get(&VersionListKey::Key)
             .unwrap_or_else(|| Vec::new(&env))
     }
 
@@ -384,11 +627,77 @@ impl UpgradeManager {
         PROPOSAL_EXPIRY_SECS
     }
 
+    /// Current record schema, treating an absent marker as legacy schema 1.
+    pub fn storage_schema_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&StorageSchemaVersionKey::Key)
+            .unwrap_or(1)
+    }
+
+    fn require_current_schema(env: &Env) -> Result<(), UpgradeError> {
+        match Self::storage_schema_version(env.clone()) {
+            STORAGE_SCHEMA_VERSION => Ok(()),
+            1 => Err(UpgradeError::StorageMigrationRequired),
+            _ => Err(UpgradeError::UnsupportedStorageSchema),
+        }
+    }
+
+    fn read_record(env: &Env, version: u32) -> Result<VersionedUpgradeRecord, UpgradeError> {
+        if let Some(stored) = env
+            .storage()
+            .persistent()
+            .get::<_, VersionedUpgradeRecord>(&VersionedRecordKey { version })
+        {
+            if stored.schema_version != STORAGE_SCHEMA_VERSION {
+                return Err(UpgradeError::UnsupportedStorageSchema);
+            }
+            return Ok(stored);
+        }
+
+        let record: UpgradeRecord = env
+            .storage()
+            .persistent()
+            .get(&VersionKey { version })
+            .ok_or(UpgradeError::UnknownVersion)?;
+        Ok(VersionedUpgradeRecord {
+            schema_version: 1,
+            expected_current_version: Self::current_version_value(env.clone()),
+            expected_current_revision: Self::current_version_revision(env.clone()),
+            record,
+        })
+    }
+
+    fn read_current_record(
+        env: &Env,
+        version: u32,
+    ) -> Result<VersionedUpgradeRecord, UpgradeError> {
+        let stored = Self::read_record(env, version)?;
+        if stored.schema_version != STORAGE_SCHEMA_VERSION {
+            return Err(UpgradeError::StorageMigrationRequired);
+        }
+        Ok(stored)
+    }
+
+    fn current_version_value(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&CurrentVersionKey::Key)
+            .unwrap_or(0)
+    }
+
+    fn current_version_revision(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&CurrentVersionRevisionKey::Key)
+            .unwrap_or(0)
+    }
+
     fn require_governance(env: &Env, caller: &Address) -> Result<(), UpgradeError> {
         let governance: Address = env
             .storage()
             .instance()
-            .get(&GovernanceKey)
+            .get(&GovernanceKey::Key)
             .ok_or(UpgradeError::NotInitialized)?;
         caller.require_auth();
         if &governance != caller {
@@ -401,7 +710,7 @@ impl UpgradeManager {
         let authorized: BytesN<32> = env
             .storage()
             .persistent()
-            .get(&AuthorizedImplKey)
+            .get(&AuthorizedImplKey::Key)
             .ok_or(UpgradeError::UnauthorizedImplementation)?;
         if &authorized != implementation {
             return Err(UpgradeError::UnauthorizedImplementation);
@@ -933,22 +1242,6 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
-        let (client, gov, hash)
-        assert_eq!(
-            client.try_approve_upgrade(&attacker, &1),
-            Err(Ok(UpgradeError::Unauthorized))
-        );
-        assert_eq!(
-            client.try_execute_upgrade(&attacker, &1),
-            Err(Ok(UpgradeError::Unauthorized))
-        );
-    }
-
-    #[test]
-    fn rollback_to_expired_approved_target_is_rejected() {
-        let env = Env::default();
-        env.mock_all_auths();
-        env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
         let rsn = reason_bugfix(&env);
 
@@ -970,14 +1263,6 @@ mod test {
             client.try_rollback_upgrade(&gov, &1, &rsn),
             Err(Ok(UpgradeError::ProposalExpired))
         );
-        assert_eq!(
-            client.try_cancel_upgrade(&attacker, &1),
-            Err(Ok(UpgradeError::Unauthorized))
-        );
-        assert_eq!(
-            client.try_rollback_upgrade(&attacker, &1),
-            Err(Ok(UpgradeError::Unauthorized))
-        );
     }
 
     #[test]
@@ -987,7 +1272,17 @@ mod test {
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
         let rsn = reason_bugfix(&env);
-        );
+
+        client.propose_upgrade(&gov, &1, &hash);
+        client.approve_upgrade(&gov, &1);
+        client.execute_upgrade(&gov, &1);
+        client.propose_upgrade(&gov, &2, &hash);
+        client.approve_upgrade(&gov, &2);
+        client.execute_upgrade(&gov, &2);
+
+        env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 1);
+        client.rollback_upgrade(&gov, &1, &rsn);
+        assert_eq!(client.current_version(), 1);
     }
 
     #[test]
@@ -1031,21 +1326,16 @@ mod test {
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
-        client.propose_upgrade(&gov, &2, &hash);
-        client.approve_upgrade(&gov, &2);
-        client.execute_upgrade(&gov, &2);
-        assert_eq!(client.current_version(), 2);
-
-        // Executed versions are unaffected by expiry, so rollback still works
-        // long after the proposal window would have elapsed.
-        env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 1);
         assert_eq!(
-            client.try_rollback_upgrade(&gov, &1, &rsn),
-            Err(Ok(UpgradeError::ProposalExpired))
+            client.try_cancel_upgrade(&gov, &1),
+            Err(Ok(UpgradeError::InvalidState))
         );
     }
 
     #[test]
+    fn cancel_proposed_and_approved_versions() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
 
         client.propose_upgrade(&gov, &1, &hash);
         client.approve_upgrade(&gov, &1);
@@ -1155,6 +1445,16 @@ mod test {
         assert_eq!(UpgradeError::DuplicateVersion as u32, 7);
         assert_eq!(UpgradeError::NoRollbackTarget as u32, 8);
         assert_eq!(UpgradeError::InvalidRollbackTarget as u32, 9);
+        assert_eq!(UpgradeError::RollbackReasonTooLong as u32, 10);
+        assert_eq!(UpgradeError::InvalidImplementation as u32, 11);
+        assert_eq!(UpgradeError::ProposalExpired as u32, 12);
+        assert_eq!(UpgradeError::ExecutionConflict as u32, 13);
+        assert_eq!(UpgradeError::StorageMigrationRequired as u32, 14);
+        assert_eq!(UpgradeError::InvalidMigrationLimit as u32, 15);
+        assert_eq!(UpgradeError::UnsupportedStorageSchema as u32, 16);
+        assert_eq!(UpgradeError::MigrationRecordMissing as u32, 17);
+        assert_eq!(UpgradeError::ExecutionRevisionOverflow as u32, 18);
+        assert_eq!(UpgradeError::VersionHistoryFull as u32, 19);
     }
 
     #[test]
@@ -1169,20 +1469,249 @@ mod test {
             UpgradeError::DuplicateVersion as u32,
             UpgradeError::NoRollbackTarget as u32,
             UpgradeError::InvalidRollbackTarget as u32,
+            UpgradeError::RollbackReasonTooLong as u32,
+            UpgradeError::InvalidImplementation as u32,
+            UpgradeError::ProposalExpired as u32,
+            UpgradeError::ExecutionConflict as u32,
+            UpgradeError::StorageMigrationRequired as u32,
+            UpgradeError::InvalidMigrationLimit as u32,
+            UpgradeError::UnsupportedStorageSchema as u32,
+            UpgradeError::MigrationRecordMissing as u32,
+            UpgradeError::ExecutionRevisionOverflow as u32,
+            UpgradeError::VersionHistoryFull as u32,
         ];
         let mut sorted = codes.clone();
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(sorted.len(), codes.len());
+    }
 
+    #[test]
+    fn competing_executions_cannot_overwrite_current_version() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
         client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &2, &hash);
         client.approve_upgrade(&gov, &1);
+        client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &1);
 
-        // Executed versions are unaffected by expiry, so rollback still works
-        // long after the proposal window would have elapsed.
-        env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 1);
-        client.rollback_upgrade(&gov, &1, &rsn);
+        assert_eq!(
+            client.try_execute_upgrade(&gov, &2),
+            Err(Ok(UpgradeError::ExecutionConflict))
+        );
         assert_eq!(client.current_version(), 1);
+        assert_eq!(client.get_version(&2).state, UpgradeState::Approved);
+    }
+
+    #[test]
+    fn rollback_does_not_revalidate_stale_execution_proposals() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+        client.propose_upgrade(&gov, &0, &hash);
+        client.approve_upgrade(&gov, &0);
+        client.execute_upgrade(&gov, &0);
+
+        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &2, &hash);
+        client.approve_upgrade(&gov, &1);
+        client.approve_upgrade(&gov, &2);
+        client.execute_upgrade(&gov, &1);
+        client.rollback_upgrade(&gov, &0, &String::from_str(&env, "restore"));
+
+        assert_eq!(client.current_version(), 0);
+        assert_eq!(
+            client.try_execute_upgrade(&gov, &2),
+            Err(Ok(UpgradeError::ExecutionConflict))
+        );
+        assert_eq!(client.current_version(), 0);
+    }
+
+    #[test]
+    fn revoke_approval_resets_threshold_decision_atomically() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+        client.propose_upgrade(&gov, &1, &hash);
+        client.approve_upgrade(&gov, &1);
+
+        client.revoke_approval(&gov, &1);
+        let record = client.get_version(&1);
+        assert_eq!(record.state, UpgradeState::Proposed);
+        assert_eq!(record.approved_by, None);
+        assert_eq!(client.current_version(), 0);
+        assert_eq!(
+            client.try_execute_upgrade(&gov, &1),
+            Err(Ok(UpgradeError::InvalidState))
+        );
+    }
+
+    #[test]
+    fn revoke_approval_checks_authorization_and_state() {
+        let env = Env::default();
+        let (client, gov, hash) = setup(&env);
+        client.propose_upgrade(&gov, &1, &hash);
+        client.approve_upgrade(&gov, &1);
+
+        let attacker = Address::generate(&env);
+        assert_eq!(
+            client.try_revoke_approval(&attacker, &1),
+            Err(Ok(UpgradeError::Unauthorized))
+        );
+        client.execute_upgrade(&gov, &1);
+        assert_eq!(
+            client.try_revoke_approval(&gov, &1),
+            Err(Ok(UpgradeError::InvalidState))
+        );
+    }
+
+    #[test]
+    fn migration_is_bounded_resumable_and_governance_only() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, UpgradeManager);
+        let client = UpgradeManagerClient::new(&env, &contract_id);
+        let gov = Address::generate(&env);
+        client.initialize(&gov);
+        let implementation = hash(&env, 31);
+        let first = UpgradeRecord {
+            version: 1,
+            implementation: implementation.clone(),
+            state: UpgradeState::Approved,
+            proposed_by: gov.clone(),
+            approved_by: Some(gov.clone()),
+            executed_by: None,
+            cancelled_by: None,
+            expires_at: BASE_TS + PROPOSAL_EXPIRY_SECS,
+        };
+        let second = UpgradeRecord {
+            version: 2,
+            ..first.clone()
+        };
+        let versions = Vec::from_array(&env, &[1u32, 2u32]);
+        env.as_contract(&contract_id, || {
+            env.storage().instance().remove(&StorageSchemaVersionKey::Key);
+            env.storage().instance().set(&VersionListKey::Key, &versions);
+            env.storage()
+                .persistent()
+                .set(&VersionKey { version: 1 }, &first);
+            env.storage()
+                .persistent()
+                .set(&VersionKey { version: 2 }, &second);
+        });
+
+        let attacker = Address::generate(&env);
+        assert_eq!(
+            client.try_migrate_storage(&attacker, &1),
+            Err(Ok(UpgradeError::Unauthorized))
+        );
+        assert_eq!(
+            client.try_migrate_storage(&gov, &0),
+            Err(Ok(UpgradeError::InvalidMigrationLimit))
+        );
+        assert_eq!(
+            client.try_migrate_storage(&gov, &(MAX_MIGRATION_BATCH_SIZE + 1)),
+            Err(Ok(UpgradeError::InvalidMigrationLimit))
+        );
+
+        assert_eq!(client.migrate_storage(&gov, &1), 1);
+        assert_eq!(client.storage_schema_version(), 1);
+        assert_eq!(client.get_version(&1).state, UpgradeState::Proposed);
+        assert_eq!(client.get_version(&1).approved_by, None);
+        assert_eq!(client.migrate_storage(&gov, &1), 1);
+        assert_eq!(client.storage_schema_version(), STORAGE_SCHEMA_VERSION);
+        assert_eq!(client.get_version(&2).state, UpgradeState::Proposed);
+    }
+
+    #[test]
+    fn migration_failure_leaves_batch_unchanged() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, UpgradeManager);
+        let client = UpgradeManagerClient::new(&env, &contract_id);
+        let gov = Address::generate(&env);
+        client.initialize(&gov);
+        let implementation = hash(&env, 32);
+        let record = UpgradeRecord {
+            version: 1,
+            implementation,
+            state: UpgradeState::Proposed,
+            proposed_by: gov.clone(),
+            approved_by: None,
+            executed_by: None,
+            cancelled_by: None,
+            expires_at: BASE_TS + PROPOSAL_EXPIRY_SECS,
+        };
+        let versions = Vec::from_array(&env, &[1u32, 2u32]);
+        env.as_contract(&contract_id, || {
+            env.storage().instance().remove(&StorageSchemaVersionKey::Key);
+            env.storage().instance().set(&VersionListKey::Key, &versions);
+            env.storage()
+                .persistent()
+                .set(&VersionKey { version: 1 }, &record);
+        });
+
+        assert_eq!(
+            client.try_migrate_storage(&gov, &2),
+            Err(Ok(UpgradeError::MigrationRecordMissing))
+        );
+        env.as_contract(&contract_id, || {
+            assert!(env
+                .storage()
+                .persistent()
+                .has(&VersionKey { version: 1 }));
+            assert!(!env
+                .storage()
+                .persistent()
+                .has(&VersionedRecordKey { version: 1 }));
+            assert_eq!(
+                env.storage().instance().get::<_, u32>(&MigrationCursorKey::Key),
+                None
+            );
+        });
+        assert_eq!(client.storage_schema_version(), 1);
+    }
+
+    #[test]
+    fn mutations_are_blocked_until_legacy_migration_finishes() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, UpgradeManager);
+        let client = UpgradeManagerClient::new(&env, &contract_id);
+        let gov = Address::generate(&env);
+        let implementation = hash(&env, 33);
+        client.initialize(&gov);
+        client.authorize_implementation(&gov, &implementation);
+        env.as_contract(&contract_id, || {
+            env.storage().instance().remove(&StorageSchemaVersionKey::Key);
+        });
+        assert_eq!(
+            client.try_propose_upgrade(&gov, &1, &implementation),
+            Err(Ok(UpgradeError::StorageMigrationRequired))
+        );
+    }
+
+    #[test]
+    fn version_history_limit_is_enforced_without_mutation() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, UpgradeManager);
+        let client = UpgradeManagerClient::new(&env, &contract_id);
+        let gov = Address::generate(&env);
+        let implementation = hash(&env, 34);
+        client.initialize(&gov);
+        client.authorize_implementation(&gov, &implementation);
+        let mut versions = Vec::new(&env);
+        for version in 0..MAX_RECORDED_VERSIONS {
+            versions.push_back(version);
+        }
+        env.as_contract(&contract_id, || {
+            env.storage().instance().set(&VersionListKey::Key, &versions);
+        });
+
+        assert_eq!(
+            client.try_propose_upgrade(&gov, &MAX_RECORDED_VERSIONS, &implementation),
+            Err(Ok(UpgradeError::VersionHistoryFull))
+        );
+        assert_eq!(client.versions().len(), MAX_RECORDED_VERSIONS);
     }
 }
