@@ -43,7 +43,16 @@ path = "src/bin/release_validate.rs"
 # rate-limit module that guards relayer submission. It is enabled by default
 # for production builds and can be disabled only for local-network harnesses
 # that need to exercise the unlimited path.
+#
+# Reserve protocol and system tags (issue #809).
+# The `reserve-protocol` feature gates the typed reserve protocol module that
+# defines the reserve trust boundary, privileged reserve roles, replay
+# protection (monotonic reserve sequence), and failure-safe reserve state
+# transitions. It is enabled by default for production builds and can be
+# disabled only for local-network harnesses that need to exercise the
+# unguarded path.
 [features]
-default = ["network-binding", "relayer-rate-limit"]
+default = ["network-binding", "relayer-rate-limit", "reserve-protocol"]
 network-binding = []
 relayer-rate-limit = []
+reserve-protocol = []
