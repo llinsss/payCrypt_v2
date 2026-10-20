@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Deterministic contract event topic conventions for the Rust/Soroban
+  migration: every emitted event now uses a stable, typed topic layout so
+  off-chain indexers can subscribe and decode events without guessing. Each
+  event carries a fixed `(event_name, subject)` topic pair where `event_name`
+  is a compile-time `Symbol` constant (e.g. `payment_bounds_updated`,
+  `upgrade_proposed`) and `subject` is the affected account/asset identifier;
+  topic ordering is fixed (name first, subject second) and never varies by
+  call site. Topic symbols are validated deterministically against the same
+  bounded ASCII subset used for tags, so malformed or non-ASCII names are
+  rejected before emission rather than producing divergent topics. Event data
+  payloads remain unchanged, so existing consumers keep working; only the
+  topic layout is now guaranteed. Storage growth is unchanged (topics are not
+  persisted) and per-invocation work is O(1). Includes focused tests for
+  success, boundary (empty subject / max-length symbol), unauthorized, replay,
+  and failure paths, plus documentation of migration, indexing, monitoring,
+  and rollback behavior (#802).
 - Configurable minimum and maximum payment amounts: the contract stores an
   admin-managed `(min_amount, max_amount)` bound pair in instance storage and
   validates every payment amount against it deterministically before any funds
@@ -85,6 +101,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the compatibility implications for clients.
 
 ### Documentation
+- Contract event topic conventions (#802).
+  - **Migration.** Topics are additive and deterministic: the `(event_name,
+    subject)` layout is fixed at compile time, so no data migration is needed.
+    Indexers that previously matched on event data should switch to matching on
+    the `event_name` topic symbol; data payloads are unchanged.
+  - **Indexing.** Subscribe by the `event_name` topic (first topic) and use the
+    `subject` topic (second topic) to scope to an account/asset. Because topic
+    ordering and symbols are stable, indexers can build deterministic keys
+    without inspecting payloads.
+  - **Monitoring.** Alert on unexpected or missing `event_name` symbols; a
+    divergence indicates a contract version mismatch rather than a data issue.
+  - **Rollback.** Reverting to a prior contract version restores its prior
+    topic layout; since payloads are unchanged, indexers only need to re-point
+    their topic filters. No stored state is affected by the topic convention.
 - Tag normalization security assumptions (#955).
   - **Accepted Unicode subset.** Tags are restricted to a bounded, explicitly
     enumerated subset of Unicode rather than accepting arbitrary codepoints.
@@ -114,28 +144,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     contract normalizes again defensively, so pre-normalized input is
     idempotent. Clients MUST NOT rely on the contract to strip or repair
     invalid input — invalid tags are rejected, not coerced. Clients that
-    previously sent non-ASCII or confusable tags will observe a validation
-    failure where they may have previously succeeded, and should update their
-    input validation and error handling accordingly. Error codes and events are
-    unchanged by this documentation; the externally visible behavior is the
-    deterministic rejection described above.
-
-## [1.0.0] - 2024-02-21
-
-### Added
-
-- Local-network upgrade integration tests for the Rust/Soroban migration (#829).
-  - Typed upgrade-flow fixtures with deterministic ledger sequence and timestamp
-    values so local-network runs are reproducible.
-  - Success, boundary, unauthorized, replay, and external-call failure paths are
-    exercised against a local Soroban network.
-  - Coverage for authorization checks, boundary values (e.g. zero/max upgrade
-    amounts and ledger bounds), resource limits, and external-call failures.
-
-### Documentation
-
-- Documented the upgrade migration flow, indexing of upgrade events, monitoring
-  signals, and rollback behavior for the local-network integration tests (#829).
-- Documented the registry contract's externally visible contracts (#965):
-  - Canonical tag keys: tags are stored under a deterministic, normalized key
-    derived from the tag name 
+    previously sent non-ASCII or 
