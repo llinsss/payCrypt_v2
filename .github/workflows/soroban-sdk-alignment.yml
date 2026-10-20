@@ -1,0 +1,41 @@
+name: Soroban SDK Alignment
+
+# Audits every soroban-sdk declaration and lock entry against the canonical
+# pin in contracts/soroban/compatibility.json (see COMPATIBILITY.md).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "contracts/soroban/compatibility.json"
+      - "scripts/check-soroban-sdk.js"
+      - ".github/workflows/soroban-sdk-alignment.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "contracts/soroban/compatibility.json"
+      - "scripts/check-soroban-sdk.js"
+      - ".github/workflows/soroban-sdk-alignment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  soroban-sdk-alignment:
+    name: soroban-sdk version alignment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check soroban-sdk declarations against the compatibility matrix
+        run: node scripts/check-soroban-sdk.js

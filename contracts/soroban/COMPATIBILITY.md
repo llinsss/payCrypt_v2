@@ -8,6 +8,14 @@ The machine-readable source of truth is [`compatibility.json`](compatibility.jso
 
 The Soroban workflow runs the Rust contract, event fixture, and client simulation tests once for each network profile. These are deterministic local tests configured with the selected network's passphrase; they do not submit transactions to public RPC services or require funded accounts or secrets.
 
+## SDK Version Alignment
+
+Every `soroban-sdk` declaration in the repository must use the canonical pin in `compatibility.json` (`crates.soroban-sdk`, currently `=23.5.3`), or be recorded in `sdk_exceptions` with the exact requirement it declares. Each exception names the manifest, the requirement, and the reason it has not moved. `lockfiles` lists the lock files that must resolve soroban-sdk to the canonical version.
+
+`node scripts/check-soroban-sdk.js` enforces this. It fails on any undocumented drift, on an exception whose requirement changed or whose manifest no longer declares the SDK, and on a listed lock file that resolves a different version. The `soroban-sdk-alignment` workflow runs it on every change to a Cargo manifest, lock file, the matrix, or the check itself.
+
+Removing an exception is the migration checklist: port the crate to the canonical SDK, update its requirement to the canonical pin, and delete its `sdk_exceptions` entry in the same change.
+
 ## Upgrade Sequence
 
 1. Update the compatibility matrix and CI matrix first, and confirm all listed SDK, Rust, protocol, token, and passphrase combinations pass.
