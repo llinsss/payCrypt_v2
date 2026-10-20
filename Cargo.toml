@@ -29,3 +29,14 @@ codegen-units = 1
 [[bin]]
 name = "release-validate"
 path = "src/bin/release_validate.rs"
+
+# Signer-confusion prevention across Rust network environments (issue #807).
+# The `network-binding` feature gates the typed network-environment binding
+# (chain id / network passphrase) that ties signer authorization to a single
+# Soroban network so signatures valid on one network cannot be replayed on
+# another. It is enabled by default for production builds and can be turned
+# off only for local-network test harnesses that need to exercise the
+# unbound path.
+[features]
+default = ["network-binding"]
+network-binding = []
