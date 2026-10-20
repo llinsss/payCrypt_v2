@@ -29,3 +29,11 @@ codegen-units = 1
 [[bin]]
 name = "release-validate"
 path = "src/bin/release_validate.rs"
+
+# Pause domains contract (issue #796).
+# Typed Rust implementation of per-domain pause state with admin
+# authorization, structured events, bounded resource limits, and
+# upgrade-compatible storage versioning.
+[[bin]]
+name = "pause-domains"
+path = "src/bin/pause_domains.rs"
