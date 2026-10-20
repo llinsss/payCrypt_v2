@@ -57,6 +57,23 @@ over associations; it is checked lazily at the point of use.
 |--------------|---------------------------------|---------------------------------------|
 | `TagRenewed` | `tag_id`, `owner`, `new_expiry` | An owner successfully renews a tag.   |
 
+## Resource Budget
+
+`benches/resource_budget.rs` measures the CPU instructions and memory bytes of
+each entry point (`initialize_tag`, `inspect_tag` accepted and rejected,
+`inspect`, `propose_transfer`, `cancel_transfer`, `accept_transfer`) under the
+host budget, and fails if any measurement exceeds the ceiling recorded in
+`budget_ceilings.txt`.
+
+```sh
+cargo bench --bench resource_budget                 # check against ceilings
+BUDGET_RECORD=1 cargo bench --bench resource_budget # print values to record
+```
+
+Storage stays bounded by design: the registry uses three fixed instance keys
+(`tag`, `pending`, `version`), and each transition performs a constant number
+of reads and writes, so repeated transfers do not grow storage.
+
 ## Determinism
 
 All expiry checks use the ledger timestamp supplied by the host environment.

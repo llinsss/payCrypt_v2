@@ -151,6 +151,7 @@ pub enum EscrowError {
     InvalidExtension = 7,
     DeadlineOverflow = 8,
     AmountExceedsRemaining = 9,
+    AlreadyInitialized = 10,
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +238,9 @@ impl EscrowContract {
     ///
     /// The token transfer happens atomically inside this entrypoint, so the
     /// creator only authorises a single invocation.
+    ///
+    /// Fails with [`EscrowError::AlreadyInitialized`] if an escrow already
+    /// exists; the existing record is left untouched.
     pub fn create(
         env: Env,
         creator: Address,
@@ -251,7 +255,7 @@ impl EscrowContract {
             return Err(EscrowError::InvalidAmount);
         }
         if env.storage().persistent().has(&DataKey::Escrow()) {
-            return Err(EscrowError::NotInitialized);
+            return Err(EscrowError::AlreadyInitialized);
         }
 
         // Transfer the escrowed amount from creator to this contract.
@@ -284,7 +288,8 @@ impl EscrowContract {
     /// Like [`create`], but accepts a `metadata` string that is stored with the
     /// escrow record. Metadata must be at most [`MAX_METADATA_LEN`] bytes and
     /// contain only printable ASCII characters; otherwise [`MetadataTooLong`] or
-    /// [`InvalidMetadata`] is returned and no state is written.
+    /// [`InvalidMetadata`] is returned and no state is written. Fails with
+    /// [`EscrowError::AlreadyInitialized`] if an escrow already exists.
     pub fn create_with_metadata(
         env: Env,
         creator: Address,
@@ -306,7 +311,7 @@ impl EscrowContract {
             return Err(EscrowError::InvalidMetadata);
         }
         if env.storage().persistent().has(&DataKey::Escrow()) {
-            return Err(EscrowError::NotInitialized);
+            return Err(EscrowError::AlreadyInitialized);
         }
 
         let token_client = token::Client::new(&env, &asset);
