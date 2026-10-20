@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Soroban persistent contract schema versioning (#775):
+  - Typed persistent storage record for schema versioning (`current_version`,
+    `min_supported_version`, and bounded upgrade history metadata) stored
+    under a dedicated persistent key.
+  - Deterministic validation of schema versions: monotonic non-decreasing
+    upgrades, supported-range checks against `min_supported_version`, and
+    idempotent/replay rejection of already-applied versions.
+  - Admin-gated authorization on version mutation via `require_auth`,
+    rejecting unauthorized callers with typed errors.
+  - `schema_version_updated` contract event with stable topic tuple and typed
+    payload for off-chain indexing and monitoring.
+  - Unit/property/local-network tests covering success, boundary,
+    unauthorized, replay, and failure paths for schema versioning.
+  - Documentation of migration, indexing, monitoring, and rollback behavior
+    for persistent schema versioning.
+
 - Soroban TTL renewal design for persistent payment state (#773):
   - Typed persistent storage schema for payment records with TTL metadata
     (`last_renewed_ledger`, `ttl_extension_ledgers`) and deterministic
