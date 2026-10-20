@@ -121,6 +121,17 @@ pub struct AdminRotated {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminRotationProposed {
+    #[topic]
+    pub event_type: Symbol,
+    #[topic]
+    pub schema_version: u32,
+    pub current_admin: Address,
+    pub proposed_admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WithdrawalApprovalRevoked {
     #[topic]
     pub event_type: Symbol,
@@ -182,12 +193,22 @@ impl WalletContract {
         env.storage().instance().set(&DataKey::RestrictedDestinations, &restrict_destinations);
     }
 
+    /// Propose `new_admin` as the next admin. Only the current admin may call
+    /// this. A later proposal overwrites an earlier pending one. Emits
+    /// `AdminRotationProposed` on every successful call.
     pub fn propose_admin_rotation(env: Env, caller: Address, new_admin: Address) {
         require_admin(&env, &caller);
         if caller == new_admin {
             fail(&env, WalletError::InvalidRotation);
         }
         env.storage().instance().set(&DataKey::PendingAdmin, &new_admin);
+        AdminRotationProposed {
+            event_type: Symbol::new(&env, "wallet_admin_rotation_proposed"),
+            schema_version: 1,
+            current_admin: caller,
+            proposed_admin: new_admin,
+        }
+        .publish(&env);
     }
 
     pub fn execute_admin_rotation(env: Env, caller: Address) {
@@ -481,6 +502,16 @@ impl WalletContract {
     /// for new proposals is the wallet's token balance minus this value.
     pub fn reserved_balance(env: Env, token: Address) -> i128 {
         get_reserved(&env, &token)
+    }
+
+    /// Current admin, or `None` before `initialize`.
+    pub fn admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Admin)
+    }
+
+    /// Address proposed by the current admin and not yet executed, if any.
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::PendingAdmin)
     }
 
     pub fn is_signer(env: Env, signer: Address) -> bool {
