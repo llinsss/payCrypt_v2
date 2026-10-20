@@ -13,6 +13,9 @@ doctype = true
 [dependencies]
 soroban-sdk = { version = "21.7.0", features = ["alloc"] }
 
+[dev-dependencies]
+soroban-sdk = { version = "21.7.0", features = ["alloc", "testutils"] }
+
 [depdencies.stellar-token-client]
 git = "https://github.com/stellar/rs-contracts-token-client"
 rev = "d7c38b1a7f9e4b2c5d6e7a8b9c0d1e2f3a4b5c6d"
