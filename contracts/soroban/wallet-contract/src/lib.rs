@@ -25,6 +25,9 @@ pub enum WalletError {
     InvalidRotation = 17,
     ProposalExpired = 18,
     ApprovalNotFound = 19,
+    InsufficientAvailableBalance = 20,
+    ProposalNotExpired = 21,
+    ProposalReleased = 22,
 }
 
 #[contracttype]
@@ -42,6 +45,8 @@ enum DataKey {
     RestrictedDestinations,
     AllowedDestination(Address),
     PendingAdmin,
+    Reserved(Address),
+    Released(u64),
 }
 
 #[contracttype]
@@ -125,6 +130,19 @@ pub struct WithdrawalApprovalRevoked {
     pub proposal_id: u64,
     pub signer: Address,
     pub approval_count: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawalReleased {
+    #[topic]
+    pub event_type: Symbol,
+    #[topic]
+    pub schema_version: u32,
+    #[topic]
+    pub proposal_id: u64,
+    pub token: Address,
+    pub amount: i128,
 }
 
 #[contract]
@@ -271,6 +289,12 @@ impl WalletContract {
         if restricted && !env.storage().instance().get(&DataKey::AllowedDestination(destination.clone())).unwrap_or(false) {
             fail(&env, WalletError::DestinationNotAllowed);
         }
+        let reserved = get_reserved(&env, &token_address);
+        let balance = token::Client::new(&env, &token_address).balance(&env.current_contract_address());
+        if balance - reserved < amount {
+            fail(&env, WalletError::InsufficientAvailableBalance);
+        }
+        set_reserved(&env, &token_address, reserved + amount);
         let id: u64 = env.storage().instance().get(&DataKey::NextNonce).unwrap_or(0);
         let proposal = WithdrawalProposal {
             id,
@@ -396,6 +420,7 @@ impl WalletContract {
         );
 
         env.storage().instance().remove(&entered_flag);
+        set_reserved(&env, &proposal.token, get_reserved(&env, &proposal.token) - proposal.amount);
         proposal.executed = true;
         env.storage().instance().set(&DataKey::Proposal(proposal_id), &proposal);
         env.storage().instance().set(&DataKey::ExecutionNonce, &(execution_nonce + 1));
@@ -409,6 +434,43 @@ impl WalletContract {
             amount: proposal.amount,
         }
         .publish(&env);
+    }
+
+    /// Frees the funds reserved by a proposal that expired without executing.
+    ///
+    /// Permissionless: it only returns the reserved amount to the available
+    /// balance and never moves tokens. Each proposal can be released once.
+    /// Fails with `ProposalNotExpired` while the proposal is still live,
+    /// `ProposalExecuted` if it executed (its reservation was already freed),
+    /// and `ProposalReleased` if it was already released.
+    pub fn release_withdrawal(env: Env, proposal_id: u64) {
+        let proposal = get_proposal(&env, proposal_id);
+        if env.ledger().timestamp() < proposal.expiry {
+            fail(&env, WalletError::ProposalNotExpired);
+        }
+        if proposal.executed {
+            fail(&env, WalletError::ProposalExecuted);
+        }
+        let released_key = DataKey::Released(proposal_id);
+        if env.storage().instance().get(&released_key).unwrap_or(false) {
+            fail(&env, WalletError::ProposalReleased);
+        }
+        env.storage().instance().set(&released_key, &true);
+        set_reserved(&env, &proposal.token, get_reserved(&env, &proposal.token) - proposal.amount);
+        WithdrawalReleased {
+            event_type: Symbol::new(&env, "wallet_withdrawal_released"),
+            schema_version: 1,
+            proposal_id,
+            token: proposal.token,
+            amount: proposal.amount,
+        }
+        .publish(&env);
+    }
+
+    /// Total amount of `token` reserved by live proposals. The spendable balance
+    /// for new proposals is the wallet's token balance minus this value.
+    pub fn reserved_balance(env: Env, token: Address) -> i128 {
+        get_reserved(&env, &token)
     }
 
     pub fn is_signer(env: Env, signer: Address) -> bool {
@@ -430,6 +492,14 @@ impl WalletContract {
 
 fn get_signers(env: &Env) -> Map<Address, bool> {
     env.storage().instance().get(&DataKey::Signers).unwrap_or(Map::new(env))
+}
+
+fn get_reserved(env: &Env, token: &Address) -> i128 {
+    env.storage().instance().get(&DataKey::Reserved(token.clone())).unwrap_or(0)
+}
+
+fn set_reserved(env: &Env, token: &Address, amount: i128) {
+    env.storage().instance().set(&DataKey::Reserved(token.clone()), &amount);
 }
 
 fn get_proposal(env: &Env, proposal_id: u64) -> WithdrawalProposal {
