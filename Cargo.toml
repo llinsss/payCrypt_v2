@@ -37,3 +37,11 @@ path = "src/bin/release_validate.rs"
 [[bin]]
 name = "pause-domains"
 path = "src/bin/pause_domains.rs"
+
+# Dust handling and refund policy (issue #798).
+# Typed Rust implementation of sub-threshold dust accumulation and a
+# refund policy with admin authorization, structured events, bounded
+# resource limits, and upgrade-compatible storage versioning.
+[[bin]]
+name = "dust-refund"
+path = "src/bin/dust_refund.rs"
