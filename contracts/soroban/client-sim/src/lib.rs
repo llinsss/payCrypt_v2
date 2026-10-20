@@ -1,4 +1,122 @@
-use std::fmt;
+use std::{collections::HashSet, fmt, hash::Hash};
+
+/// Largest page a client requests in one call. Matches the registry contract's
+/// `MAX_PAGE_SIZE` so a single invocation never exceeds what the contract allows.
+pub const MAX_PAGE_SIZE: u32 = 50;
+
+/// Most pages [`collect_pages`] fetches before failing. Together with
+/// [`MAX_PAGE_SIZE`] this caps the work and memory a single walk can use, even
+/// if a contract or RPC endpoint keeps returning cursors.
+pub const MAX_PAGES: u32 = 100;
+
+/// Longest cursor accepted from a contract response.
+pub const MAX_CURSOR_LEN: usize = 256;
+
+/// One page returned by a paginated contract method.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Page<T> {
+    pub items: Vec<T>,
+    /// `None` on the final page.
+    pub next: Option<String>,
+}
+
+/// Error codes produced by [`collect_pages`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PaginationError<E> {
+    /// The requested page size was zero or above [`MAX_PAGE_SIZE`].
+    InvalidPageSize(u32),
+    /// A page returned more items than the requested page size.
+    PageTooLarge { returned: usize, max: u32 },
+    /// A cursor was empty, longer than [`MAX_CURSOR_LEN`], contained non-printable
+    /// bytes, or repeated the cursor that produced it.
+    MalformedCursor,
+    /// An entry key was already returned by an earlier page (1-based page number).
+    DuplicateEntry { page: u32 },
+    /// More than [`MAX_PAGES`] pages were returned without reaching the final page.
+    PageLimitExceeded,
+    /// The fetch closure failed, for example with a contract authorization error.
+    Fetch(E),
+}
+
+impl<E: fmt::Display> fmt::Display for PaginationError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidPageSize(size) => write!(formatter, "invalid page size {size}"),
+            Self::PageTooLarge { returned, max } => {
+                write!(formatter, "page returned {returned} items, maximum is {max}")
+            }
+            Self::MalformedCursor => write!(formatter, "malformed or repeated cursor"),
+            Self::DuplicateEntry { page } => write!(formatter, "duplicate entry on page {page}"),
+            Self::PageLimitExceeded => write!(formatter, "exceeded {MAX_PAGES} pages"),
+            Self::Fetch(error) => write!(formatter, "fetch failed: {error}"),
+        }
+    }
+}
+
+fn is_well_formed_cursor(cursor: &str) -> bool {
+    !cursor.is_empty()
+        && cursor.len() <= MAX_CURSOR_LEN
+        && cursor.bytes().all(|byte| byte.is_ascii_graphic())
+}
+
+/// Walks a cursor-paginated contract listing from the start and collects every
+/// item.
+///
+/// * `page_size` — items requested per page; must be in `1..=MAX_PAGE_SIZE`.
+/// * `fetch` — called with the cursor from the previous page (`None` for the
+///   first page) and `page_size`. Errors are returned as [`PaginationError::Fetch`].
+/// * `key` — identifies an item. Any key seen twice across pages is a
+///   [`PaginationError::DuplicateEntry`].
+///
+/// Returns every item in page order. The walk stops at the first page whose
+/// `next` is `None`. Each call performs at most [`MAX_PAGES`] fetches and holds at
+/// most `MAX_PAGES * MAX_PAGE_SIZE` items, so per-call work is bounded. A partial
+/// result is never returned: any error discards the items collected so far.
+pub fn collect_pages<T, K, E, F, G>(
+    page_size: u32,
+    mut fetch: F,
+    key: G,
+) -> Result<Vec<T>, PaginationError<E>>
+where
+    K: Eq + Hash,
+    F: FnMut(Option<&str>, u32) -> Result<Page<T>, E>,
+    G: Fn(&T) -> K,
+{
+    if page_size == 0 || page_size > MAX_PAGE_SIZE {
+        return Err(PaginationError::InvalidPageSize(page_size));
+    }
+
+    let mut items = Vec::new();
+    let mut seen = HashSet::new();
+    let mut cursor: Option<String> = None;
+
+    for page_number in 1..=MAX_PAGES {
+        let page = fetch(cursor.as_deref(), page_size).map_err(PaginationError::Fetch)?;
+        if page.items.len() > page_size as usize {
+            return Err(PaginationError::PageTooLarge {
+                returned: page.items.len(),
+                max: page_size,
+            });
+        }
+
+        for item in page.items {
+            if !seen.insert(key(&item)) {
+                return Err(PaginationError::DuplicateEntry { page: page_number });
+            }
+            items.push(item);
+        }
+
+        let Some(next) = page.next else {
+            return Ok(items);
+        };
+        if !is_well_formed_cursor(&next) || cursor.as_deref() == Some(next.as_str()) {
+            return Err(PaginationError::MalformedCursor);
+        }
+        cursor = Some(next);
+    }
+
+    Err(PaginationError::PageLimitExceeded)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NetworkProfile {
