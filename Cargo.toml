@@ -29,3 +29,11 @@ codegen-units = 1
 [[bin]]
 name = "release-validate"
 path = "src/bin/release_validate.rs"
+
+# Per-operation Soroban storage footprint limits (issue #777).
+# `cargo test --features footprint-limits` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# footprint limit validation in `src/footprint_limits.rs`.
+[features]
+default = []
+footprint-limits = []
