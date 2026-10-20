@@ -148,6 +148,11 @@ impl UpgradeManager {
 
     /// Propose a new upgrade version pointing at an authorized implementation hash.
     ///
+    /// A version identifier may be proposed only once. If `version` is already
+    /// recorded (in any state) the call returns [`UpgradeError::DuplicateVersion`]
+    /// and no state is mutated. The check is a single keyed lookup, so it costs
+    /// the same regardless of how many versions exist.
+    ///
     /// The proposal is valid for [`PROPOSAL_EXPIRY_SECS`] ledger seconds from
     /// this call. Once that window elapses (`ledger.timestamp() >=
     /// expires_at`) the proposal can no longer be approved or executed; it can
@@ -159,12 +164,12 @@ impl UpgradeManager {
         implementation: BytesN<32>,
     ) -> Result<(), UpgradeError> {
         Self::require_governance(&env, &governance)?;
-        Self::require_authorized_impl(&env, &implementation)?;
 
         let key = VersionKey { version };
         if env.storage().persistent().has(&key) {
             return Err(UpgradeError::DuplicateVersion);
         }
+        Self::require_authorized_impl(&env, &implementation)?;
 
         let expires_at = env.ledger().timestamp() + PROPOSAL_EXPIRY_SECS;
         let record = UpgradeRecord {
@@ -225,6 +230,9 @@ impl UpgradeManager {
     /// proposal whose window has elapsed cannot be executed and returns
     /// [`UpgradeError::ProposalExpired`] without mutating state; a new
     /// proposal must be created instead.
+    ///
+    /// A version executes at most once: re-executing an already executed
+    /// version returns [`UpgradeError::InvalidState`] and mutates nothing.
     pub fn execute_upgrade(
         env: Env,
         governance: Address,
