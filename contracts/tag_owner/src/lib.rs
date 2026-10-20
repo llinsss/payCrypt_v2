@@ -117,6 +117,12 @@ impl TagOwnerContract {
     ///
     /// The pending `new_owner` must authorize. Emits `recovery_done`.
     pub fn complete_recovery(env: Env) -> Result<(), Error> {
+        let old_owner: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Owner)
+            .ok_or(Error::NotInitialized)?;
+
         let request: RecoveryRequest = env
             .storage()
             .instance()
@@ -128,12 +134,6 @@ impl TagOwnerContract {
         }
 
         request.new_owner.require_auth();
-
-        let old_owner: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Owner)
-            .ok_or(Error::NotInitialized)?;
 
         env.storage()
             .instance()
