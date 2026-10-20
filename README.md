@@ -21,5 +21,7 @@
 <!-- handsoff-issue-973 -->
 - #973: Add wallet router rotation event schema
 
+<!-- handsoff-issue-799 -->
+- #799: Define Rust contract backward-compatibility guarantees
 <!-- handsoff-issue-1000 -->
 - #1000: Add property tests for arithmetic and fee calculations
