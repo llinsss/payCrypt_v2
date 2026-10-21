@@ -458,6 +458,10 @@ jobs:
       - name: Build contracts (wasm)
         run: cargo build --workspace --release --target wasm32-unknown-unknown
 
+      # ── Wallet interface compatibility (signatures + error codes) ────────
+      - name: Wallet interface fixture
+        run: scripts/check-wallet-interface.sh --wasm target/wasm32-unknown-unknown/release/wallet_contract.wasm
+
       # ── Artifact identity (deterministic hashes) ──────────────────────────
       - name: Record artifact identity
         run: |

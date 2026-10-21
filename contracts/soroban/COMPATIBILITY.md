@@ -8,6 +8,12 @@ The machine-readable source of truth is [`compatibility.json`](compatibility.jso
 
 The Soroban workflow runs the Rust contract, event fixture, and client simulation tests once for each network profile. These are deterministic local tests configured with the selected network's passphrase; they do not submit transactions to public RPC services or require funded accounts or secrets.
 
+## Wallet Interface Fixture
+
+[`wallet-contract/fixtures/interface.v1.json`](wallet-contract/fixtures/interface.v1.json) captures the wallet's exported functions (name, ordered input names, output count) and its `WalletError` codes. The Soroban workflow builds `wallet_contract.wasm` and runs `scripts/check-wallet-interface.sh`, which fails when the contract's spec drifts from the fixture. Parameter types are not compared by this check.
+
+Removing or renaming a function, reordering or renaming its inputs, or changing an error code is a wallet-interface break for existing clients. Make such a change only with a new contract version and matching client updates. Additive changes (new functions or new error codes with new values) require updating the fixture in the same change so the new surface is reviewed.
+
 ## Upgrade Sequence
 
 1. Update the compatibility matrix and CI matrix first, and confirm all listed SDK, Rust, protocol, token, and passphrase combinations pass.
