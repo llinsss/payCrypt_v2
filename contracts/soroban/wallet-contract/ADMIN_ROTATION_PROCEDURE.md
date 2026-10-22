@@ -17,15 +17,31 @@ This document outlines the design and operational procedures for rotating the ad
    - It updates `DataKey::Admin` to the `PendingAdmin` address and removes the `PendingAdmin` entry.
    - It emits an `AdminRotated` event.
 
+## Contract Interface
+- `initialize(admin, signers, threshold, max_withdrawal, restrict_destinations)`: sets `Admin` once. A second call fails with `AlreadyInitialized` (1).
+- `propose_admin_rotation(caller, new_admin)`:
+  - `caller` must be the current `Admin`; otherwise `Unauthorized` (15). Before initialization, `NotInitialized` (2).
+  - `new_admin == caller` fails with `InvalidRotation` (17).
+- `execute_admin_rotation(caller)`:
+  - Fails with `InvalidRotation` (17) when no admin is pending.
+  - Fails with `Unauthorized` (15) when `caller` is not the pending admin. This covers the old admin.
+- `admin()` returns the current admin, or `None` before initialization.
+- `pending_admin()` returns the proposed admin, or `None` if no rotation is pending. It is cleared on execution.
+
 ## Failure-Safe State Transitions
 - **Typo in Proposal**: If the `Admin` makes a typo when proposing the `new_admin`, the rotation is not finalized. The `Admin` retains their role and can call `propose_admin_rotation` again with the correct address, overwriting the previous `PendingAdmin`. This guarantees that the contract is never left in an un-administrable state due to a bad address.
 - **Replay Behavior**: Soroban's native auth framework and state transition determinism prevent replay attacks. Once the `PendingAdmin` executes the rotation, they become the new `Admin`, and the old `Admin`'s authority is immediately revoked. Any delayed or replayed transactions from the old `Admin` will fail authorization.
 
 ## Indexing & Monitoring
-- **Events**: The contract emits an `AdminRotated` event upon successful rotation. Indexers (e.g., Soroban RPC or custom data lakes) should listen for:
-  - `event_type`: `Symbol("wallet_admin_rotated")`
-  - `old_admin`: `Address`
-  - `new_admin`: `Address`
+- **Events**: The contract emits two events. Indexers (e.g., Soroban RPC or custom data lakes) should listen for both:
+  - `AdminRotationProposed` on every successful `propose_admin_rotation`. A later proposal overwrites an earlier one, so use the last event before an execution.
+    - `event_type`: `Symbol("wallet_admin_rotation_proposed")`, `schema_version`: `1`
+    - `current_admin`: `Address`
+    - `proposed_admin`: `Address`
+  - `AdminRotated` upon successful rotation.
+    - `event_type`: `Symbol("wallet_admin_rotated")`, `schema_version`: `1`
+    - `old_admin`: `Address`
+    - `new_admin`: `Address`
 - **Monitoring**: Alerts should be configured for the `AdminRotated` event. Given the sensitivity of the admin key, any unexpected rotation should trigger immediate incident response procedures.
 
 ## Migration & Rollback Behavior
