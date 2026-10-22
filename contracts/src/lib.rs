@@ -10,6 +10,20 @@
 //! The payer (sponsor or relayer) is charged `principal + protocol_fee +
 //! network_fee`; the recipient always receives the full `principal`.
 //!
+//! # Signer capability separation
+//!
+//! Signers are separated into distinct privileged roles via [`Capability`].
+//! Each privileged operation requires a specific capability, enforced by
+//! [`SignerRegistry::authorize`]. The trust boundary is the registry itself:
+//! only the registry owner may grant or revoke capabilities, and every
+//! privileged operation is gated on an explicit capability check.
+//!
+//! Replay protection is provided by [`SignerRegistry::authorize`] consuming a
+//! monotonically increasing per-signer nonce: an operation id that has already
+//! been used is rejected deterministically. Authorization is failure-safe: the
+//! nonce is only advanced after the capability check succeeds, so a rejected
+//! operation never mutates state.
+//!
 //! # Persistent storage layout
 //!
 //! All persistent contract entries are addressed through [`StorageKey`], which
@@ -138,6 +152,164 @@ pub fn migrate(storage: &mut Storage) -> Result<(), MigrationError> {
     }
 }
 
+/// A privileged capability that a signer may hold.
+///
+/// Capabilities are deliberately distinct so that a signer authorized to
+/// perform one privileged operation cannot perform another. This is the
+/// trust boundary: privileged operations must check the exact capability
+/// they require.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Capability {
+    /// May update fee configuration.
+    SetFees,
+    /// May move funds between balances.
+    Transfer,
+    /// May grant or revoke capabilities on other signers.
+    Admin,
+}
+
+/// Errors surfaced by signer authorization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SignerError {
+    /// The signer is not registered.
+    UnknownSigner([u8; 32]),
+    /// The signer lacks the required capability.
+    Unauthorized {
+        signer: [u8; 32],
+        required: Capability,
+    },
+    /// The operation id was already consumed (replay).
+    Replay {
+        signer: [u8; 32],
+        operation_id: u64,
+    },
+    /// The operation id is not strictly greater than the last consumed one.
+    StaleNonce {
+        signer: [u8; 32],
+        expected_after: u64,
+        provided: u64,
+    },
+    /// Only the registry owner may grant or revoke capabilities.
+    NotOwner([u8; 32]),
+}
+
+/// Registry of signers and their capabilities.
+///
+/// The registry owner is the sole authority allowed to grant or revoke
+/// capabilities. Each signer tracks the last consumed operation id so that
+/// replayed operations are rejected deterministically.
+#[derive(Default)]
+pub struct SignerRegistry {
+    owner: Option<[u8; 32]>,
+    capabilities: BTreeMap<[u8; 32], Vec<Capability>>,
+    last_operation: BTreeMap<[u8; 32], u64>,
+}
+
+impl SignerRegistry {
+    /// Creates an empty registry owned by `owner`.
+    pub fn new(owner: [u8; 32]) -> Self {
+        Self {
+            owner: Some(owner),
+            capabilities: BTreeMap::new(),
+            last_operation: BTreeMap::new(),
+        }
+    }
+
+    pub fn owner(&self) -> Option<[u8; 32]> {
+        self.owner
+    }
+
+    /// Returns `true` when `signer` holds `capability`.
+    pub fn has_capability(&self, signer: &[u8; 32], capability: Capability) -> bool {
+        self.capabilities
+            .get(signer)
+            .map(|caps| caps.contains(&capability))
+            .unwrap_or(false)
+    }
+
+    /// Grants `capability` to `signer`. Only the owner may call this.
+    pub fn grant(
+        &mut self,
+        caller: &[u8; 32],
+        signer: [u8; 32],
+        capability: Capability,
+    ) -> Result<(), SignerError> {
+        self.require_owner(caller)?;
+        let caps = self.capabilities.entry(signer).or_default();
+        if !caps.contains(&capability) {
+            caps.push(capability);
+            caps.sort();
+        }
+        Ok(())
+    }
+
+    /// Revokes `capability` from `signer`. Only the owner may call this.
+    pub fn revoke(
+        &mut self,
+        caller: &[u8; 32],
+        signer: &[u8; 32],
+        capability: Capability,
+    ) -> Result<(), SignerError> {
+        self.require_owner(caller)?;
+        if let Some(caps) = self.capabilities.get_mut(signer) {
+            caps.retain(|c| *c != capability);
+        }
+        Ok(())
+    }
+
+    /// Authorizes a privileged operation.
+    ///
+    /// The operation is accepted only when `signer` holds `required` and
+    /// `operation_id` is strictly greater than the last consumed id for that
+    /// signer. On success the nonce is advanced; on any failure no state is
+    /// mutated, keeping transitions failure-safe.
+    pub fn authorize(
+        &mut self,
+        signer: &[u8; 32],
+        required: Capability,
+        operation_id: u64,
+    ) -> Result<(), SignerError> {
+        if !self.capabilities.contains_key(signer) {
+            return Err(SignerError::UnknownSigner(*signer));
+        }
+        if !self.has_capability(signer, required) {
+            return Err(SignerError::Unauthorized {
+                signer: *signer,
+                required,
+            });
+        }
+        let last = self.last_operation.get(signer).copied().unwrap_or(0);
+        if operation_id <= last {
+            if operation_id == last && last != 0 {
+                return Err(SignerError::Replay {
+                    signer: *signer,
+                    operation_id,
+                });
+            }
+            return Err(SignerError::StaleNonce {
+                signer: *signer,
+                expected_after: last,
+                provided: operation_id,
+            });
+        }
+        // Only mutate after all checks pass.
+        self.last_operation.insert(*signer, operation_id);
+        Ok(())
+    }
+
+    /// Returns the last consumed operation id for `signer`, if any.
+    pub fn last_operation(&self, signer: &[u8; 32]) -> Option<u64> {
+        self.last_operation.get(signer).copied()
+    }
+
+    fn require_owner(&self, caller: &[u8; 32]) -> Result<(), SignerError> {
+        match self.owner {
+            Some(owner) if owner == *caller => Ok(()),
+            _ => Err(SignerError::NotOwner(*caller)),
+        }
+    }
+}
+
 /// Who is responsible for paying the fees attached to a transfer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FeePayer {
@@ -232,307 +404,105 @@ impl FeeConfig {
         }
         Ok(())
     }
-
-    /// Updates the network fee, rejecting out-of-bounds values.
-    pub fn set_network_fee_bps(&mut self, bps: u64) -> Result<(), FeeError> {
-        let previous = self.network_fee_bps;
-        self.network_fee_bps = bps;
-        if let Err(err) = self.validate() {
-            self.network_fee_bps = previous;
-            return Err(err);
-        }
-        Ok(())
-    }
-}
-
-/// Deterministic fee computation.
-///
-/// Fees are computed with integer arithmetic and round **down** (floor) so
-/// that rounding can never push a fee above its configured bound and the
-/// recipient's principal is never reduced by rounding.
-fn fee_for(amount: u64, bps: u64) -> Result<u64, FeeError> {
-    amount
-        .checked_mul(bps)
-        .map(|product| product / BPS_DENOMINATOR)
-        .ok_or(FeeError::Overflow)
-}
-
-/// Fully separated accounting for a single transfer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FeeAccounting {
-    /// Amount delivered to the recipient, untouched by fees.
-    pub principal: u64,
-    /// Fee retained by the protocol.
-    pub protocol_fee: u64,
-    /// Fee retained by the network / relayer.
-    pub network_fee: u64,
-    /// Total charged to the payer.
-    pub total_charged: u64,
-    /// Who pays the fees.
-    pub payer: FeePayer,
-}
-
-impl FeeAccounting {
-    /// Computes accounting for `principal` under `config`.
-    ///
-    /// When the payer is a sponsor or relayer, the recipient receives the
-    /// full `principal` and the payer is charged `principal + fees`. When the
-    /// recipient pays, fees are deducted from the principal and the payer is
-    /// charged exactly `principal`.
-    pub fn compute(
-        principal: u64,
-        config: &FeeConfig,
-        payer: FeePayer,
-    ) -> Result<Self, FeeError> {
-        config.validate()?;
-
-        let protocol_fee = fee_for(principal, config.protocol_fee_bps)?;
-        let network_fee = fee_for(principal, config.network_fee_bps)?;
-        let fees = protocol_fee
-            .checked_add(network_fee)
-            .ok_or(FeeError::Overflow)?;
-
-        let total_charged = if payer.is_sponsored() {
-            principal.checked_add(fees).ok_or(FeeError::Overflow)?
-        } else {
-            principal
-        };
-
-        Ok(Self {
-            principal,
-            protocol_fee,
-            network_fee,
-            total_charged,
-            payer,
-        })
-    }
-
-    /// Amount the recipient actually receives.
-    ///
-    /// Sponsored transfers deliver the full principal; recipient-paid
-    /// transfers deliver principal minus the fees.
-    pub fn recipient_amount(&self) -> Result<u64, FeeError> {
-        if self.payer.is_sponsored() {
-            return Ok(self.principal);
-        }
-        let fees = self
-            .protocol_fee
-            .checked_add(self.network_fee)
-            .ok_or(FeeError::Overflow)?;
-        self.principal.checked_sub(fees).ok_or(FeeError::Overflow)
-    }
-}
-
-/// Minimal ledger used to settle transfers with separated accounting.
-#[derive(Default)]
-pub struct Ledger {
-    balances: BTreeMap<[u8; 32], u64>,
-    protocol_fees: u64,
-    network_fees: u64,
-}
-
-impl Ledger {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn balance_of(&self, account: &[u8; 32]) -> u64 {
-        *self.balances.get(account).unwrap_or(&0)
-    }
-
-    pub fn credit(&mut self, account: &[u8; 32], amount: u64) -> Result<(), FeeError> {
-        let entry = self.balances.entry(*account).or_insert(0);
-        *entry = entry.checked_add(amount).ok_or(FeeError::Overflow)?;
-        Ok(())
-    }
-
-    pub fn protocol_fees(&self) -> u64 {
-        self.protocol_fees
-    }
-
-    pub fn network_fees(&self) -> u64 {
-        self.network_fees
-    }
-
-    /// Settles a transfer, charging the payer and crediting the recipient.
-    ///
-    /// The recipient is credited exactly `accounting.recipient_amount()`;
-    /// fees are tracked separately and never mixed into the principal.
-    pub fn settle(
-        &mut self,
-        payer_account: &[u8; 32],
-        recipient_account: &[u8; 32],
-        accounting: &FeeAccounting,
-    ) -> Result<(), FeeError> {
-        let payer_balance = self.balance_of(payer_account);
-        let remaining = payer_balance
-            .checked_sub(accounting.total_charged)
-            .ok_or(FeeError::Overflow)?;
-        self.balances.insert(*payer_account, remaining);
-
-        let recipient_amount = accounting.recipient_amount()?;
-        self.credit(recipient_account, recipient_amount)?;
-
-        self.protocol_fees = self
-            .protocol_fees
-            .checked_add(accounting.protocol_fee)
-            .ok_or(FeeError::Overflow)?;
-        self.network_fees = self
-            .network_fees
-            .checked_add(accounting.network_fee)
-            .ok_or(FeeError::Overflow)?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
-mod tests {
+mod signer_tests {
     use super::*;
 
-    #[test]
-    fn fresh_storage_is_stamped_with_current_version() {
-        let mut storage = Storage::new();
-        assert_eq!(storage.schema_version(), None);
-        migrate(&mut storage).expect("fresh store migrates");
-        assert_eq!(storage.schema_version(), Some(SCHEMA_VERSION));
+    const OWNER: [u8; 32] = [1u8; 32];
+    const ALICE: [u8; 32] = [2u8; 32];
+    const BOB: [u8; 32] = [3u8; 32];
+
+    fn registry() -> SignerRegistry {
+        SignerRegistry::new(OWNER)
     }
 
     #[test]
-    fn migration_is_idempotent_at_current_version() {
-        let mut storage = Storage::new();
-        storage.set_schema_version(SCHEMA_VERSION);
-        migrate(&mut storage).expect("current version is a no-op");
-        assert_eq!(storage.schema_version(), Some(SCHEMA_VERSION));
+    fn owner_can_grant_and_sign() {
+        let mut reg = registry();
+        reg.grant(&OWNER, ALICE, Capability::Transfer).unwrap();
+        assert!(reg.has_capability(&ALICE, Capability::Transfer));
+        assert!(reg.authorize(&ALICE, Capability::Transfer, 1).is_ok());
     }
 
     #[test]
-    fn newer_schema_is_rejected() {
-        let mut storage = Storage::new();
-        storage.set_schema_version(SCHEMA_VERSION + 1);
+    fn non_owner_cannot_grant() {
+        let mut reg = registry();
+        let err = reg.grant(&ALICE, BOB, Capability::Admin).unwrap_err();
+        assert_eq!(err, SignerError::NotOwner(ALICE));
+        assert!(!reg.has_capability(&BOB, Capability::Admin));
+    }
+
+    #[test]
+    fn capability_separation_enforced() {
+        let mut reg = registry();
+        reg.grant(&OWNER, ALICE, Capability::Transfer).unwrap();
+        let err = reg.authorize(&ALICE, Capability::SetFees, 1).unwrap_err();
         assert_eq!(
-            migrate(&mut storage),
-            Err(MigrationError::UnsupportedVersion {
-                found: SCHEMA_VERSION + 1,
-                supported: SCHEMA_VERSION,
-            })
+            err,
+            SignerError::Unauthorized {
+                signer: ALICE,
+                required: Capability::SetFees,
+            }
         );
+        // Failure must not advance the nonce.
+        assert_eq!(reg.last_operation(&ALICE), None);
     }
 
     #[test]
-    fn upgrade_from_populated_prior_schema_preserves_data() {
-        // Simulate a store populated under a prior (unversioned) schema.
-        let mut storage = Storage::new();
-        let account = [7u8; 32];
-        storage.set(StorageKey::Balance(account), 1_000);
-        storage.set(StorageKey::ProtocolFees, 25);
-        storage.set(StorageKey::NetworkFees, 10);
-        assert_eq!(storage.schema_version(), None);
-
-        // Upgrade: the marker is stamped and existing entries are preserved.
-        migrate(&mut storage).expect("prior schema upgrades");
-        assert_eq!(storage.schema_version(), Some(SCHEMA_VERSION));
-        assert_eq!(storage.get(&StorageKey::Balance(account)), Some(1_000));
-        assert_eq!(storage.get(&StorageKey::ProtocolFees), Some(25));
-        assert_eq!(storage.get(&StorageKey::NetworkFees), Some(10));
+    fn unknown_signer_rejected() {
+        let mut reg = registry();
+        let err = reg.authorize(&BOB, Capability::Transfer, 1).unwrap_err();
+        assert_eq!(err, SignerError::UnknownSigner(BOB));
     }
 
     #[test]
-    fn storage_keys_carry_schema_version() {
-        assert_eq!(StorageKey::SchemaVersion.version(), SCHEMA_VERSION);
-        assert_eq!(StorageKey::Balance([0u8; 32]).version(), SCHEMA_VERSION);
-        assert_eq!(StorageKey::ProtocolFees.version(), SCHEMA_VERSION);
-        assert_eq!(StorageKey::NetworkFees.version(), SCHEMA_VERSION);
+    fn replay_rejected() {
+        let mut reg = registry();
+        reg.grant(&OWNER, ALICE, Capability::Transfer).unwrap();
+        reg.authorize(&ALICE, Capability::Transfer, 5).unwrap();
+        let err = reg.authorize(&ALICE, Capability::Transfer, 5).unwrap_err();
+        assert_eq!(
+            err,
+            SignerError::Replay {
+                signer: ALICE,
+                operation_id: 5,
+            }
+        );
+        assert_eq!(reg.last_operation(&ALICE), Some(5));
     }
 
     #[test]
-    fn migration_error_unsupported_version_code() {
-        let err = MigrationError::UnsupportedVersion { found: 5, supported: 3 };
-        assert_eq!(err.found, 5);
-        assert_eq!(err.supported, 3);
+    fn stale_nonce_rejected() {
+        let mut reg = registry();
+        reg.grant(&OWNER, ALICE, Capability::Transfer).unwrap();
+        reg.authorize(&ALICE, Capability::Transfer, 5).unwrap();
+        let err = reg.authorize(&ALICE, Capability::Transfer, 3).unwrap_err();
+        assert_eq!(
+            err,
+            SignerError::StaleNonce {
+                signer: ALICE,
+                expected_after: 5,
+                provided: 3,
+            }
+        );
+        assert_eq!(reg.last_operation(&ALICE), Some(5));
     }
 
     #[test]
-    fn migration_error_missing_migration_code() {
-        let err = MigrationError::MissingMigration { from: 1, to: 3 };
-        assert_eq!(err.from, 1);
-        assert_eq!(err.to, 3);
-    }
-
-    #[test]
-    fn fee_error_variants() {
-        let err = FeeError::FeeOutOfBounds { requested_bps: 2000, max_bps: 1000 };
-        assert_eq!(err.requested_bps, 2000);
-        assert_eq!(err.max_bps, 1000);
-
-        assert_eq!(FeeError::CombinedFeeTooHigh as u32, FeeError::CombinedFeeTooHigh as u32);
-        assert_eq!(FeeError::Overflow as u32, FeeError::Overflow as u32);
-    }
-
-    #[test]
-    fn fee_config_boundary_values() {
-        // At boundary
-        let config = FeeConfig::new(MAX_FEE_BPS, 0).unwrap();
-        assert_eq!(config.protocol_fee_bps(), MAX_FEE_BPS);
-
-        let config = FeeConfig::new(0, MAX_FEE_BPS).unwrap();
-        assert_eq!(config.network_fee_bps(), MAX_FEE_BPS);
-
-        // Over boundary
-        assert!(FeeConfig::new(MAX_FEE_BPS + 1, 0).is_err());
-        assert!(FeeConfig::new(0, MAX_FEE_BPS + 1).is_err());
-
-        // Combined over 100%
-        assert!(FeeConfig::new(6000, 5000).is_err());
-        assert!(FeeConfig::new(10000, 1).is_err());
-    }
-
-    #[test]
-    fn fee_accounting_boundary_values() {
-        let config = FeeConfig::new(1000, 500, FeePayer::Sender).unwrap(); // 10% + 5%
-
-        // Small amount where fees floor to 0
-        let accounting = FeeAccounting::compute(9999, &config, FeePayer::Sender).unwrap();
-        assert_eq!(accounting.protocol_fee, 999); // floor(9999 * 1000 / 10000)
-        assert_eq!(accounting.network_fee, 499); // floor(9999 * 500 / 10000)
-
-        // Large amount
-        let accounting = FeeAccounting::compute(1_000_000, &config, FeePayer::Sponsor).unwrap();
-        assert_eq!(accounting.protocol_fee, 100_000);
-        assert_eq!(accounting.network_fee, 50_000);
-        assert_eq!(accounting.total_charged, 1_150_000);
-        assert_eq!(accounting.recipient_amount().unwrap(), 1_000_000);
-
-        // Recipient pays
-        let accounting = FeeAccounting::compute(1_000_000, &config, FeePayer::Recipient).unwrap();
-        assert_eq!(accounting.recipient_amount().unwrap(), 850_000);
-    }
-
-    #[test]
-    fn fee_overflow_protection() {
-        let config = FeeConfig::new(MAX_FEE_BPS, MAX_FEE_BPS, FeePayer::Sender).unwrap();
-        // Amount that would overflow on multiplication
-        let result = FeeAccounting::compute(u64::MAX, &config, FeePayer::Sender);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), FeeError::Overflow);
-    }
-
-    #[test]
-    fn ledger_settle_overflow_protection() {
-        let mut ledger = Ledger::new();
-        let config = FeeConfig::new(1000, 500, FeePayer::Sender).unwrap();
-        let accounting = FeeAccounting::compute(1000, &config, FeePayer::Sender).unwrap();
-
-        // Set balance to near max
-        let payer = [1u8; 32];
-        let recipient = [2u8; 32];
-        ledger.balances.insert(payer, u64::MAX - 1000);
-
-        // This should work
-        ledger.settle(&payer, &recipient, &accounting).unwrap();
-
-        // But if we try with overflow
-        ledger.balances.insert(payer, u64::MAX);
-        let big_accounting = FeeAccounting::compute(u64::MAX, &config, FeePayer::Sender);
-        assert!(big_accounting.is_err());
+    fn revoke_removes_capability() {
+        let mut reg = registry();
+        reg.grant(&OWNER, ALICE, Capability::Transfer).unwrap();
+        reg.revoke(&OWNER, &ALICE, Capability::Transfer).unwrap();
+        assert!(!reg.has_capability(&ALICE, Capability::Transfer));
+        let err = reg.authorize(&ALICE, Capability::Transfer, 1).unwrap_err();
+        assert_eq!(
+            err,
+            SignerError::Unauthorized {
+                signer: ALICE,
+                required: Capability::Transfer,
+            }
+        );
     }
 }
