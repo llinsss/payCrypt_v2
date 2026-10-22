@@ -2,6 +2,10 @@
 
 use soroban_sdk::{contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token, Address, Env, Map, Symbol, Vec};
 
+/// Instance storage layout version. Bump it, and add a matching entry to
+/// `compatibility.json`, whenever the `DataKey` layout changes.
+const STORAGE_SCHEMA_VERSION: u32 = 1;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -497,6 +501,12 @@ impl WalletContract {
 
     pub fn execution_nonce(env: Env) -> u64 {
         env.storage().instance().get(&DataKey::ExecutionNonce).unwrap_or(0)
+    }
+
+    /// Storage layout version this build reads and writes. Compare it with the
+    /// `storage_schemas` entries in `compatibility.json` before upgrading.
+    pub fn storage_schema_version(_env: Env) -> u32 {
+        STORAGE_SCHEMA_VERSION
     }
 }
 
