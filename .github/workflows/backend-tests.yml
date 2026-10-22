@@ -225,6 +225,11 @@ jobs:
         working-directory: indexer
         run: cargo build --release --target wasm32-unknown-unknown
 
+      - name: Run tag-squatting unit and property tests
+        working-directory: indexer
+        run: cargo test --release tag_registry
+        continue-on-error: false
+
       - name: Start deterministic local Stellar/Soroban network
         run: |
           docker run -d --name soroban-local \
@@ -257,6 +262,13 @@ jobs:
             --wasm "$SOROBAN_CONTRACT_WASM" \
             --source-account default \
             --network local
+
+      - name: Run local-network tag-squatting authorization tests
+        working-directory: indexer
+        env:
+          RUN_LOCAL_NETWORK_TESTS: "1"
+        run: cargo test --release --test tag_squatting_local_network -- --nocapture
+        continue-on-error: false
 
       # ── Transaction envelope integrity checks (issue #804) ────────────────
       # Deterministic validation of envelope structure, trust boundary,
