@@ -357,6 +357,24 @@ jobs:
             artifacts.sha256
           if-no-files-found: error
 
+  # ── Event topic collision gate ─────────────────────────────────────────────
+  # Fails when two contract crates publish the same event topic name (compared
+  # case-insensitively), so every topic maps to exactly one event schema.
+  # See contracts/README.md "Event topic collisions".
+  event-topics:
+    name: "ci/sdk (event topics)"
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check event topic collisions
+        run: node scripts/check-event-topics.js
+
   # ── 4. Rust SDK event decoding compatibility tests (#850) ──────────────────
   # Runs the SDK crate's event-decoding test suite, covering success,
   # boundary, unauthorized, replay and failure paths. This is the
@@ -457,6 +475,10 @@ jobs:
       # ── Build contracts (deterministic wasm) ──────────────────────────────
       - name: Build contracts (wasm)
         run: cargo build --workspace --release --target wasm32-unknown-unknown
+
+      # ── Wallet interface compatibility (signatures + error codes) ────────
+      - name: Wallet interface fixture
+        run: scripts/check-wallet-interface.sh --wasm target/wasm32-unknown-unknown/release/wallet_contract.wasm
 
       # ── Artifact identity (deterministic hashes) ──────────────────────────
       - name: Record artifact identity

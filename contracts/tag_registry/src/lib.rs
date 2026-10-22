@@ -39,6 +39,9 @@ pub enum RegistryError {
     /// The tag is within its post-release reservation window and cannot be
     /// re-registered yet.
     TagReserved = 6,
+    /// The event version counter is already at `u32::MAX` and cannot be
+    /// advanced. The operation is rejected rather than reusing a version.
+    VersionOverflow = 7,
 }
 
 /// Bounded reservation period (in ledgers) between a tag release and the
@@ -111,11 +114,13 @@ fn require_nonzero(env: &Env, addr: &Address) -> Result<(), RegistryError> {
     Ok(())
 }
 
-fn next_version(env: &Env) -> u32 {
+/// Advance the event version counter, rejecting exhaustion explicitly so a
+/// version is never reused.
+fn next_version(env: &Env) -> Result<u32, RegistryError> {
     let current: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
-    let next = current + 1;
+    let next = current.checked_add(1).ok_or(RegistryError::VersionOverflow)?;
     env.storage().instance().set(&DataKey::Version, &next);
-    next
+    Ok(next)
 }
 
 /// Enforce the bounded reservation window for a previously released tag.
@@ -164,7 +169,7 @@ impl TagRegistry {
         owned.push_back(canonical.clone());
         env.storage().persistent().set(&owned_key, &owned);
 
-        let version = next_version(&env);
+        let version = next_version(&env)?;
         env.events().publish(
             (symbol_short!("tag_reg"), version),
             (owner, canonical),
@@ -180,7 +185,7 @@ impl TagRegistry {
             .persistent()
             .get(&DataKey::Owner(canonical.clone()))
             .ok_or(RegistryError::TagNotRegistered)?;
-        let version = next_version(&env);
+        let version = next_version(&env)?;
         env.events().publish(
             (symbol_short!("tag_res"), version),
             (canonical, owner.clone()),
@@ -228,7 +233,7 @@ impl TagRegistry {
         to_owned.push_back(canonical.clone());
         env.storage().persistent().set(&to_key, &to_owned);
 
-        let version = next_version(&env);
+        let version = next_version(&env)?;
         env.events().publish(
             (symbol_short!("tag_xfer"), version),
             (from, to, canonical),
@@ -278,7 +283,7 @@ impl TagRegistry {
             .persistent()
             .set(&DataKey::ReleasedAt(canonical.clone()), &now);
 
-        let version = next_version(&env);
+        let version = next_version(&env)?;
         env.events().publish(
             (symbol_short!("tag_rel"), version),
             (owner, canonical, now),
@@ -309,7 +314,7 @@ impl TagRegistry {
             .persistent()
             .set(&DataKey::Wallet(canonical.clone()), &wallet);
 
-        let version = next_version(&env);
+        let version = next_version(&env)?;
         env.events().publish(
             (symbol_short!("tag_wall"), version),
             (canonical, wallet),

@@ -51,6 +51,29 @@ Numeric error codes returned by each contract are owned and recorded in
 them and must never be renumbered or reused. Add new variants with the next unused
 value and update that file in the same change.
 
+## Event topic collisions
+
+Indexers map each event to a schema by its topic name, so a topic must belong to
+exactly one contract crate. CI runs:
+
+```sh
+node scripts/check-event-topics.js
+```
+
+The script collects topic names from `symbol_short!("…")` and `Symbol::new(env, "…")`
+literals that are passed to `publish(...)` or returned from a `-> Symbol` helper.
+Storage keys and test code are ignored. It fails when:
+
+- **Invalid name** — a topic is empty, longer than 32 characters, or contains
+  anything other than `[A-Za-z0-9_]`.
+- **Ambiguous name** — two or more crates emit the same topic name. Comparison is
+  case-insensitive, so `Escrow_Created` and `escrow_created` collide.
+
+The failure output lists every `file:line` that emits the colliding topic. To fix
+it, rename the topic in one crate, for example by prefixing it with the crate name
+(`tag_registered` rather than `registered`). Renaming an already-deployed topic is
+an externally visible event change and needs a schema version bump in the indexer.
+
 ## Testing
 
 Run the contract test suite with:
@@ -61,3 +84,44 @@ cargo test
 
 Tests cover success paths, authorization, boundary conditions, and failure
 cases for each contract.
+
+### Local network integration suite
+
+`contracts/tests/integration.rs` runs representative contract flows
+(registration, deposit, transfer, withdrawal) against a local Stellar/Soroban
+network and checks invocation results, authorization, and rejection of
+over-withdrawals and negative amounts. It is a separate package so that the
+plain `cargo test` above does not need a running network.
+
+Start a local network (for example `stellar/quickstart --local --enable-soroban-rpc`),
+then run:
+
+```sh
+cd contracts/tests
+SOROBAN_SECRET_KEY=<funded secret> \
+CONTRACT_WASM=/path/to/reviewed.wasm \
+cargo test --test integration -- --nocapture
+```
+
+Environment variables:
+
+| Variable | Default |
+| --- | --- |
+| `SOROBAN_RPC_URL` | `http://localhost:8000/soroban/rpc` |
+| `SOROBAN_NETWORK_PASSPHRASE` | `Standalone Network ; February 2017` |
+| `SOROBAN_SECRET_KEY` | required, no default |
+| `CONTRACT_WASM` | `target/wasm32-unknown-unknown/release/contract.wasm` |
+
+If the RPC endpoint is unreachable the tests print a skip message and pass
+without exercising anything. Check the output for `skipping:` before treating a
+green run as coverage.
+
+Failure cases asserted by the suite:
+
+- Withdrawal by an unregistered account is rejected (authorization).
+- Withdrawal above the deposited balance is rejected (balance boundary).
+- A negative deposit is rejected (invalid input).
+
+The suite does not assert specific contract error codes or event payloads.
+Rollback behavior of a failed invocation is covered only indirectly: the
+over-withdrawal case checks that the call errors.

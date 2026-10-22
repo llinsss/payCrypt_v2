@@ -8,7 +8,28 @@
     "event-types": "0.1.0",
     "client-sim": "0.1.0"
   },
+  "lockfiles": ["contracts/soroban/Cargo.lock", "contracts/tag/fuzz/Cargo.lock"],
+  "sdk_exceptions": [
+    {"manifest": "Cargo.toml", "requirement": "21.7.0", "reason": "root taggedpay-soroban-allowlist is on the Soroban 21 line and has not been ported to the protocol 23 SDK"},
+    {"manifest": "contracts/upgrade_manager/Cargo.toml", "requirement": "21.7.0", "reason": "Soroban 21 line, aligned with the root crate; not yet ported to the protocol 23 SDK"},
+    {"manifest": "contracts/tag_registry/Cargo.toml", "requirement": "20.0.0", "reason": "Soroban 20 line; not yet ported to the protocol 23 SDK"},
+    {"manifest": "contracts/wallet/Cargo.toml", "requirement": "20.0.0", "reason": "Soroban 20 line; not yet ported to the protocol 23 SDK"},
+    {"manifest": "contracts/escrow/Cargo.toml", "requirement": "workspace", "reason": "inherits soroban-sdk from [workspace.dependencies], which the repo root does not define, so the crate does not resolve on its own"},
+    {"manifest": "contracts/test-support/Cargo.toml", "requirement": "workspace", "reason": "inherits soroban-sdk from [workspace.dependencies], which the repo root does not define, so the crate does not resolve on its own"}
+  ],
   "token_interfaces": ["SEP-41", "Stellar Asset Contract (SAC)"],
+  "storage_schemas": [
+    {
+      "contract": "wallet-contract",
+      "schema_version": 1,
+      "readable_by": {"crate": "wallet-contract", "versions": ["0.1.0"]},
+      "keys": ["Admin", "Signers", "Threshold", "NextNonce", "ExecutionNonce", "Proposal", "Approval", "SupportedToken", "MaxWithdrawal", "RestrictedDestinations", "AllowedDestination", "PendingAdmin", "Reserved", "Released"],
+      "deployed_versions": []
+    }
+  ],
+  "upgrade_paths": [
+    {"contract": "wallet-contract", "from_schema": 1, "to_schema": 1, "from_version": "0.1.0", "to_version": "0.1.0", "migration": "none", "status": "supported"}
+  ],
   "networks": [
     {"name": "testnet", "rpc_url": "https://soroban-testnet.stellar.org", "passphrase": "Test SDF Network ; September 2015", "ci": true},
     {"name": "futurenet", "rpc_url": "https://rpc-futurenet.stellar.org", "passphrase": "Test SDF Future Network ; October 2022", "ci": true}

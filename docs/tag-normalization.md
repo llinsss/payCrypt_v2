@@ -197,6 +197,31 @@ Each target is a thin wrapper: the properties themselves live in
 `contracts/tag/src/harness.rs` so the identical code runs under `cargo test` and
 under the fuzzer. A failure names the violated property and prints the input.
 
+### Corpus regression
+
+Minimized cases are committed under `contracts/tag/fuzz/corpus/<target>/`.
+The `Tag Fuzz Corpus` workflow (`.github/workflows/tag-fuzz-corpus.yml`) replays
+every committed case against its target on each change to `contracts/tag/**`:
+
+```sh
+cargo +nightly fuzz run tag_normalization fuzz/corpus/tag_normalization -- -runs=0 -timeout=10
+```
+
+`-runs=0` runs each entry once without mutation, so a fixed failure cannot
+return unnoticed. To persist a new finding:
+
+```sh
+# Shrink the crash to its smallest reproducer.
+cargo +nightly fuzz tmin tag_normalization fuzz/artifacts/tag_normalization/crash-<hash>
+
+# Copy the minimized input into the corpus under a descriptive name.
+cp fuzz/artifacts/tag_normalization/minimized-from-<hash> fuzz/corpus/tag_normalization/<name>
+```
+
+The workflow fails if a target has no cases, more than 256 cases, or any case
+larger than 4096 bytes. Those limits keep committed storage and per-run work
+bounded. Raise them only in the same change that justifies the growth.
+
 ### Host requirement for `cargo fuzz`
 
 Run `cargo fuzz` on **Linux or macOS**.
