@@ -28,3 +28,5 @@
 
 <!-- handsoff-issue-776 -->
 - #776: Separate user state from protocol configuration in Rust storage
+<!-- handsoff-issue-805 -->
+- #805: Add secure key storage adapters for Rust signers
