@@ -5,6 +5,7 @@ name: Backend Extended Tests
 # - Database migration tests
 # - Regression test: verify demo data never loads in production scripts
 # - Local-network authorization integration tests (Rust/Soroban)
+# - Transaction envelope integrity checks (issue #804)
 
 on:
   push:
@@ -260,9 +261,7 @@ jobs:
           soroban contract deploy \
             --wasm "$SOROBAN_CONTRACT_WASM" \
             --source-account default \
-            --network local \
-            --rpc-url "$SOROBAN_RPC_URL" \
-            --network-passphrase "$STELLAR_NETWORK_PASSPHRASE"
+            --network local
 
       - name: Run local-network tag-squatting authorization tests
         working-directory: indexer
@@ -270,3 +269,36 @@ jobs:
           RUN_LOCAL_NETWORK_TESTS: "1"
         run: cargo test --release --test tag_squatting_local_network -- --nocapture
         continue-on-error: false
+
+      # ── Transaction envelope integrity checks (issue #804) ────────────────
+      # Deterministic validation of envelope structure, trust boundary,
+      # privileged roles, replay protection, and failure-safe transitions.
+      - name: Run transaction envelope integrity tests
+        working-directory: indexer
+        run: |
+          cargo test --release --test envelope_integrity -- \
+            --nocapture --test-threads=1
+
+      - name: Run envelope integrity property tests
+        working-directory: indexer
+        run: |
+          cargo test --release --test envelope_integrity_props -- \
+            --nocapture --test-threads=1
+
+      - name: Run envelope integrity local-network tests
+        working-directory: indexer
+        env:
+          ENVELOPE_INTEGRITY_LOCAL_NETWORK: "1"
+        run: |
+          cargo test --release --test envelope_integrity_localnet -- \
+            --nocapture --test-threads=1
+
+      - name: Upload envelope integrity test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: envelope-integrity-results
+          path: |
+            indexer/target/envelope-integrity/**
+          if-no-files-found: ignore
+          retention-days: 7
