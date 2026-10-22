@@ -5,13 +5,13 @@ name: Backend Extended Tests
 # - Database migration tests
 # - Regression test: verify demo data never loads in production scripts
 # - Local-network authorization integration tests (Rust/Soroban)
+# - Transaction envelope integrity checks (issue #804)
 
 on:
   push:
     branches: [master]
     paths:
       - "backend/**"
-      - "contracts/**"
       - "contracts/**"
       - "indexer/**"
       - ".github/workflows/backend-tests.yml"
@@ -42,10 +42,8 @@ jobs:
         working-directory: .
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
-            contracts:
-              - "contracts/**"
-            indexer:
-              - "indexer/**"
+      contracts: ${{ steps.filter.outputs.contracts }}
+      indexer: ${{ steps.filter.outputs.indexer }}
     steps:
       - uses: actions/checkout@v4
 
@@ -207,46 +205,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: rustfmt, clippy, llvm-tools-preview
-
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry and build
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
           components: rustfmt, clippy, llvm-tools-preview
 
       - name: Cache cargo registry and build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry and build
         uses: actions/cache@v4
         with:
           path: |
@@ -263,6 +224,11 @@ jobs:
       - name: Build reviewed WASM artifacts
         working-directory: indexer
         run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Run tag-squatting unit and property tests
+        working-directory: indexer
+        run: cargo test --release tag_registry
+        continue-on-error: false
 
       - name: Start deterministic local Stellar/Soroban network
         run: |
@@ -295,18 +261,50 @@ jobs:
           soroban contract deploy \
             --wasm "$SOROBAN_CONTRACT_WASM" \
             --source-account default \
-            --network local \
-            --rpc-url "$SOROBAN_RPC_URL" \
-            --network-passphrase "$STELLAR_NETWORK_PASSPHRASE"
+            --network local
 
       - name: Run Soroban integration tests
-        working-directory: indexer
+        working-directory: contracts/tests
+        env:
+          CONTRACT_WASM: ${{ github.workspace }}/indexer/target/wasm32-unknown-unknown/release/paycrypt_contract.wasm
         run: cargo test --test integration -- --nocapture
 
-      - name: Dump local network logs on failure
-        if: failure()
-        run: docker logs soroban-local || true
+      - name: Run local-network tag-squatting authorization tests
+        working-directory: indexer
+        env:
+          RUN_LOCAL_NETWORK_TESTS: "1"
+        run: cargo test --release --test tag_squatting_local_network -- --nocapture
+        continue-on-error: false
 
-      - name: Stop local network
+      # ── Transaction envelope integrity checks (issue #804) ────────────────
+      # Deterministic validation of envelope structure, trust boundary,
+      # privileged roles, replay protection, and failure-safe transitions.
+      - name: Run transaction envelope integrity tests
+        working-directory: indexer
+        run: |
+          cargo test --release --test envelope_integrity -- \
+            --nocapture --test-threads=1
+
+      - name: Run envelope integrity property tests
+        working-directory: indexer
+        run: |
+          cargo test --release --test envelope_integrity_props -- \
+            --nocapture --test-threads=1
+
+      - name: Run envelope integrity local-network tests
+        working-directory: indexer
+        env:
+          ENVELOPE_INTEGRITY_LOCAL_NETWORK: "1"
+        run: |
+          cargo test --release --test envelope_integrity_localnet -- \
+            --nocapture --test-threads=1
+
+      - name: Upload envelope integrity test artifacts
         if: always()
-        run: docker rm -f soroban-local || true
+        uses: actions/upload-artifact@v4
+        with:
+          name: envelope-integrity-results
+          path: |
+            indexer/target/envelope-integrity/**
+          if-no-files-found: ignore
+          retention-days: 7

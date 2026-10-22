@@ -7,7 +7,7 @@
 //! # Rollback event
 //!
 //! Topics layout:
-//!   topic[0] = symbol_short!("upgrade_v1")   (schema version tag)
+//!   topic[0] = symbol_short!("upg_v1")       (schema version tag)
 //!   topic[1] = symbol_short!("rollback")      (event name)
 //!   topic[2] = source_version: u32            (current version before rollback)
 //!   topic[3] = target_version: u32            (version being rolled back to)
@@ -18,8 +18,11 @@
 //! The reason is free-form operator input and may contain secrets, so the
 //! event carries only its digest. The full reason stays off-chain and can be
 //! checked against the hash by anyone who holds it.
+//!
+//! Execution, approval revocation, and completed storage migration also emit
+//! events under the same schema tag. Failed transitions emit no event.
 
-use soroban_sdk::{symbol_short, Bytes, BytesN, Env, String, Symbol};
+use soroban_sdk::{symbol_short, Address, Bytes, BytesN, Env, String, Symbol};
 
 /// Schema version tag emitted as the first topic of every upgrade event.
 ///
@@ -29,6 +32,15 @@ pub const EVENT_SCHEMA_VERSION: Symbol = symbol_short!("upgrade_v2");
 
 /// Event name for a rollback transition.
 pub const EVENT_ROLLBACK: Symbol = symbol_short!("rollback");
+
+/// Event name for a successful execution.
+pub const EVENT_EXECUTED: Symbol = symbol_short!("executed");
+
+/// Event name for an approval revocation.
+pub const EVENT_APPROVAL_REVOKED: Symbol = symbol_short!("revoked");
+
+/// Event name for completion of the storage migration.
+pub const EVENT_MIGRATION_COMPLETED: Symbol = symbol_short!("migrated");
 
 /// Maximum length (in bytes) of the rollback reason string.
 ///
@@ -60,6 +72,30 @@ pub fn emit_rollback(env: &Env, source_version: u32, target_version: u32, reason
     env.events().publish(topics, reason_hash);
 }
 
+/// Emit the previous and newly installed current version.
+pub fn emit_execution(env: &Env, previous_version: u32, version: u32) {
+    env.events().publish(
+        (EVENT_SCHEMA_VERSION, EVENT_EXECUTED, previous_version, version),
+        (),
+    );
+}
+
+/// Emit the version and governance address whose approval was revoked.
+pub fn emit_approval_revoked(env: &Env, version: u32, approver: &Address) {
+    env.events().publish(
+        (EVENT_SCHEMA_VERSION, EVENT_APPROVAL_REVOKED, version),
+        approver.clone(),
+    );
+}
+
+/// Emit the schema and total version records after the final migration batch.
+pub fn emit_migration_completed(env: &Env, schema_version: u32, records_migrated: u32) {
+    env.events().publish(
+        (EVENT_SCHEMA_VERSION, EVENT_MIGRATION_COMPLETED, schema_version),
+        records_migrated,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,8 +104,11 @@ mod tests {
     /// The schema version and event name symbols are stable identifiers.
     #[test]
     fn event_symbols_are_stable() {
-        assert_eq!(EVENT_SCHEMA_VERSION, symbol_short!("upgrade_v2"));
+        assert_eq!(EVENT_SCHEMA_VERSION, symbol_short!("upg_v1"));
         assert_eq!(EVENT_ROLLBACK, symbol_short!("rollback"));
+        assert_eq!(EVENT_EXECUTED, symbol_short!("executed"));
+        assert_eq!(EVENT_APPROVAL_REVOKED, symbol_short!("revoked"));
+        assert_eq!(EVENT_MIGRATION_COMPLETED, symbol_short!("migrated"));
     }
 
     /// MAX_ROLLBACK_REASON_LEN is set to 256 to bound per-invocation work.

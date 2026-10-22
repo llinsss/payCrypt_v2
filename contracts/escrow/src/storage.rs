@@ -12,9 +12,19 @@
 //! | `DataKey::EscrowCount`     | instance   | `u32` (next escrow id)    |
 //! | `DataKey::Admin`           | instance   | `Address`                 |
 //! | `DataKey::Token`           | instance   | `Address` (asset binding) |
+//! | `DataKey::Dispute(id)`     | persistent | [`DisputeRecord`]         |
+//! | `DataKey::SchemaVersion`   | instance   | `u32` (layout version)    |
 //!
 //! Persistent entries are the only ones that can expire, so TTL renewal is
-//! applied to `DataKey::Escrow(id)` whenever an active escrow is touched.
+//! applied to `DataKey::Escrow(id)` and `DataKey::Dispute(id)` whenever an
+//! active escrow or dispute is touched.
+//!
+//! # Upgrade compatibility
+//!
+//! New keys are appended to [`DataKey`] and never renumbered, so previously
+//! written entries remain readable. [`SCHEMA_VERSION`] records the layout
+//! version in instance storage; [`migrate_schema`] is idempotent and only
+//! stamps the version, leaving existing escrow entries untouched.
 
 use soroban_sdk::{contracttype, Address, Env};
 
@@ -29,6 +39,9 @@ pub const ESCROW_TTL_LEDGERS: u32 = 100_000;
 /// this value, so repeated calls do not grow storage unboundedly.
 pub const ESCROW_TTL_THRESHOLD: u32 = 50_000;
 
+/// Current storage layout version. Bumped only on breaking layout changes.
+pub const SCHEMA_VERSION: u32 = 2;
+
 /// Deterministic storage keys for the escrow contract.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,6 +54,65 @@ pub enum DataKey {
     Admin,
     /// Bound asset/token address (instance).
     Token,
+    /// Per-escrow dispute record, keyed by escrow id (persistent).
+    Dispute(u32),
+    /// Storage layout version (instance).
+    SchemaVersion,
+}
+
+/// Lifecycle of an escrow dispute.
+///
+/// Transitions are strictly `Open -> Resolved`; any other transition is
+/// rejected by [`DisputeRecord::resolve`].
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    /// Dispute opened, awaiting resolution.
+    Open,
+    /// Dispute resolved by an authorized party.
+    Resolved,
+}
+
+/// Persistent dispute record attached to an escrow.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeRecord {
+    /// Escrow this dispute belongs to.
+    pub escrow_id: u32,
+    /// Party that opened the dispute.
+    pub opened_by: Address,
+    /// Current dispute status.
+    pub status: DisputeStatus,
+    /// Ledger sequence at which the dispute was opened (replay guard).
+    pub opened_at: u32,
+    /// Ledger sequence at which the dispute was resolved, if resolved.
+    pub resolved_at: Option<u32>,
+}
+
+impl DisputeRecord {
+    /// Open a new dispute. Deterministic: no clock or randomness is read.
+    pub fn open(env: &Env, escrow_id: u32, opened_by: Address) -> Self {
+        Self {
+            escrow_id,
+            opened_by,
+            status: DisputeStatus::Open,
+            opened_at: env.ledger().sequence(),
+            resolved_at: None,
+        }
+    }
+
+    /// Transition an open dispute to resolved.
+    ///
+    /// Returns `false` when the dispute is already resolved, which callers
+    /// surface as a replay/invalid-transition error.
+    pub fn resolve(&mut self, env: &Env) -> bool {
+        if self.status != DisputeStatus::Open {
+            return false;
+        }
+        self.status = DisputeStatus::Resolved;
+        self.resolved_at = Some(env.ledger().sequence());
+        true
+    }
 }
 
 /// Renew the TTL of a persistent escrow entry if it is near expiry.
@@ -93,6 +165,36 @@ pub fn remove_escrow(env: &Env, id: u32) {
     env.storage().persistent().remove(&DataKey::Escrow(id));
 }
 
+/// Read the dispute record for an escrow, renewing its TTL first.
+pub fn get_dispute(env: &Env, id: u32) -> Option<DisputeRecord> {
+    let key = DataKey::Dispute(id);
+    if !env.storage().persistent().has(&key) {
+        return None;
+    }
+    env.storage().persistent().extend_ttl(
+        &key,
+        ESCROW_TTL_THRESHOLD,
+        ESCROW_TTL_LEDGERS,
+    );
+    env.storage().persistent().get(&key)
+}
+
+/// Persist a dispute record and (re)arm its TTL.
+pub fn set_dispute(env: &Env, record: &DisputeRecord) {
+    let key = DataKey::Dispute(record.escrow_id);
+    env.storage().persistent().set(&key, record);
+    env.storage().persistent().extend_ttl(
+        &key,
+        ESCROW_TTL_THRESHOLD,
+        ESCROW_TTL_LEDGERS,
+    );
+}
+
+/// Remove a dispute record from persistent storage.
+pub fn remove_dispute(env: &Env, id: u32) {
+    env.storage().persistent().remove(&DataKey::Dispute(id));
+}
+
 /// Read the next escrow id counter from instance storage.
 pub fn get_escrow_count(env: &Env) -> u32 {
     env.storage()
@@ -124,4 +226,25 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 /// Store the contract admin address.
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
+}
+
+/// Read the recorded storage layout version, defaulting to `1` for
+/// instances written before versioning existed.
+pub fn get_schema_version(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::SchemaVersion)
+        .unwrap_or(1)
+}
+
+/// Idempotently stamp the current [`SCHEMA_VERSION`] into instance storage.
+///
+/// Existing escrow and dispute entries are left untouched, so this is safe to
+/// run on every upgrade and on already-migrated instances.
+pub fn migrate_schema(env: &Env) {
+    if get_schema_version(env) < SCHEMA_VERSION {
+        env.storage()
+            .instance()
+            .set(&DataKey::SchemaVersion, &SCHEMA_VERSION);
+    }
 }
