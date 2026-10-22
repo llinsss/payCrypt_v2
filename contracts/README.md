@@ -44,6 +44,29 @@ crate is added, add it to that list so release validation covers it.
 - **Invalid spec** — the script reports which contract failed spec validation
   and exits non-zero.
 
+## Event topic collisions
+
+Indexers map each event to a schema by its topic name, so a topic must belong to
+exactly one contract crate. CI runs:
+
+```sh
+node scripts/check-event-topics.js
+```
+
+The script collects topic names from `symbol_short!("…")` and `Symbol::new(env, "…")`
+literals that are passed to `publish(...)` or returned from a `-> Symbol` helper.
+Storage keys and test code are ignored. It fails when:
+
+- **Invalid name** — a topic is empty, longer than 32 characters, or contains
+  anything other than `[A-Za-z0-9_]`.
+- **Ambiguous name** — two or more crates emit the same topic name. Comparison is
+  case-insensitive, so `Escrow_Created` and `escrow_created` collide.
+
+The failure output lists every `file:line` that emits the colliding topic. To fix
+it, rename the topic in one crate, for example by prefixing it with the crate name
+(`tag_registered` rather than `registered`). Renaming an already-deployed topic is
+an externally visible event change and needs a schema version bump in the indexer.
+
 ## Testing
 
 Run the contract test suite with:
