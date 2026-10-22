@@ -598,7 +598,10 @@ impl PaymentContract {
             0,
             PaymentStatus::Cancelled,
         );
-        let remaining = amounts.funded - amounts.refunded;
+        let remaining = amounts
+            .funded
+            .checked_sub(amounts.refunded)
+            .ok_or(PaymentError::RefundExceedsFunded)?;
         if remaining > 0 {
             amounts.refunded += remaining;
             Self::set_amounts(&env, payment_id, &amounts);

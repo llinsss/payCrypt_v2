@@ -85,6 +85,10 @@ pub enum TagError {
     /// from [`TagContract::inspect_tag`] and from
     /// [`normalize::TagNameError::code`].
     InvalidTagName = 5,
+    /// The state version counter is already at `u32::MAX` and cannot be
+    /// advanced. The state change is rejected rather than saturating, so the
+    /// version never repeats or stalls silently.
+    VersionOverflow = 6,
 }
 
 #[contracttype]
@@ -286,7 +290,7 @@ impl TagContract {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, PENDING_KEY), &pending);
-        Self::bump_version(&env);
+        Self::bump_version(&env)?;
 
         Self::publish_transfer_event(&env, "transfer_pending", &tag.owner, &to);
         Ok(())
@@ -310,7 +314,7 @@ impl TagContract {
         env.storage()
             .instance()
             .remove(&Symbol::new(&env, PENDING_KEY));
-        Self::bump_version(&env);
+        Self::bump_version(&env)?;
 
         Self::publish_transfer_event(&env, "transfer_cancelled", &pending.from, &pending.to);
         Ok(())
@@ -343,7 +347,7 @@ impl TagContract {
         env.storage()
             .instance()
             .remove(&Symbol::new(&env, PENDING_KEY));
-        Self::bump_version(&env);
+        Self::bump_version(&env)?;
 
         Self::publish_transfer_event(&env, "transfer_accepted", &pending.from, &pending.to);
         Ok(())
@@ -359,12 +363,16 @@ impl TagContract {
     }
 
     /// Increment the stored version counter. Bounded to a single storage
-    /// write per state change.
-    fn bump_version(env: &Env) {
-        let next = Self::version(env.clone()).saturating_add(1);
+    /// write per state change. Returns [`TagError::VersionOverflow`] instead
+    /// of saturating once the counter reaches `u32::MAX`.
+    fn bump_version(env: &Env) -> Result<(), TagError> {
+        let next = Self::version(env.clone())
+            .checked_add(1)
+            .ok_or(TagError::VersionOverflow)?;
         env.storage()
             .instance()
             .set(&Symbol::new(env, VERSION_KEY), &next);
+        Ok(())
     }
 
     /// Persist a tag and bump the version. Shared by both initializers.
@@ -380,7 +388,7 @@ impl TagContract {
         env.storage()
             .instance()
             .set(&Symbol::new(env, TAG_KEY), &tag);
-        Self::bump_version(env);
+        Self::bump_version(env)?;
         Ok(())
     }
 

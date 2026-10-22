@@ -9,6 +9,18 @@
     "client-sim": "0.1.0"
   },
   "token_interfaces": ["SEP-41", "Stellar Asset Contract (SAC)"],
+  "storage_schemas": [
+    {
+      "contract": "wallet-contract",
+      "schema_version": 1,
+      "readable_by": {"crate": "wallet-contract", "versions": ["0.1.0"]},
+      "keys": ["Admin", "Signers", "Threshold", "NextNonce", "ExecutionNonce", "Proposal", "Approval", "SupportedToken", "MaxWithdrawal", "RestrictedDestinations", "AllowedDestination", "PendingAdmin", "Reserved", "Released"],
+      "deployed_versions": []
+    }
+  ],
+  "upgrade_paths": [
+    {"contract": "wallet-contract", "from_schema": 1, "to_schema": 1, "from_version": "0.1.0", "to_version": "0.1.0", "migration": "none", "status": "supported"}
+  ],
   "networks": [
     {"name": "testnet", "rpc_url": "https://soroban-testnet.stellar.org", "passphrase": "Test SDF Network ; September 2015", "ci": true},
     {"name": "futurenet", "rpc_url": "https://rpc-futurenet.stellar.org", "passphrase": "Test SDF Future Network ; October 2022", "ci": true}
