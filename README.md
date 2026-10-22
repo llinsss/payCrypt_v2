@@ -26,5 +26,7 @@
 <!-- handsoff-issue-1000 -->
 - #1000: Add property tests for arithmetic and fee calculations
 
+<!-- handsoff-issue-776 -->
+- #776: Separate user state from protocol configuration in Rust storage
 <!-- handsoff-issue-805 -->
 - #805: Add secure key storage adapters for Rust signers
