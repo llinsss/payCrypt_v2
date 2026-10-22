@@ -563,7 +563,9 @@ impl UpgradeManager {
     /// A bounded `reason` string is required to document why the rollback is
     /// occurring. The reason must not exceed [`MAX_ROLLBACK_REASON_LEN`] bytes.
     /// On success, a versioned rollback event is emitted with the source
-    /// version, target version, and reason.
+    /// version, target version, and the sha256 digest of the reason. The raw
+    /// reason is never emitted, so operator-supplied text cannot leak secrets
+    /// on-chain.
     pub fn rollback_upgrade(
         env: Env,
         governance: Address,

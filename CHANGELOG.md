@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Upgrade manager rollback events no longer emit the raw rollback reason.
+  The data payload is now `reason_hash: BytesN<32>`, the sha256 of the reason,
+  so operator-supplied free text cannot leak secrets on-chain. The schema tag
+  moves from `upgrade_v1` to `upgrade_v2`; indexers must decode the digest and
+  match the reason out-of-band (issue #1005).
+
 ### Added
 
 ### Security
