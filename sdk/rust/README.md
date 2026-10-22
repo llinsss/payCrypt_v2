@@ -74,6 +74,29 @@ match tx.sign(&key) {
 }
 ```
 
+## Contract error decoding
+
+Contract rejections surface as `SorobanError::ContractError(ContractErrorCode)`.
+The numeric code emitted by the payment contract is decoded with
+`ContractErrorCode::from_code(u32)`:
+
+| Code | Variant | Code | Variant |
+| --- | --- | --- | --- |
+| 1 | `AlreadyInitialized` | 8 | `AlreadyCancelled` |
+| 2 | `NotInitialized` | 9 | `AlreadyRefunded` |
+| 3 | `Unauthorized` | 10 | `RefundExceedsFunds` |
+| 4 | `PaymentNotFound` | 11 | `DuplicateOperation` |
+| 5 | `InvalidStatus` | 12 | `InvalidExpiry` |
+| 6 | `InvalidAmount` | 13 | `PaymentNotExpired` |
+| 7 | `PaymentExpired` | other | `Unknown(u32)` |
+
+- Decoding never fails. A code this client version does not know decodes to
+  `Unknown(u32)` with its raw value preserved, so newer contract versions can add
+  codes without breaking existing clients. Use `code()` to recover the number.
+- Contract errors are never retried: `RetryPolicy::is_error_retryable` returns
+  `false` for every `ContractError` variant.
+- Existing codes are stable; a code is never renumbered or reused.
+
 ## Testing
 
 Tests cover success, boundary, unauthorized, replay, and failure paths:
