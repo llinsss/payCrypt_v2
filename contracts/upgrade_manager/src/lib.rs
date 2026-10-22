@@ -9,6 +9,8 @@
 //! - bounds every proposal with a fixed validity window
 //!   ([`PROPOSAL_EXPIRY_SECS`]) after which it can no longer be approved or
 //!   executed,
+//! - records a persistent state schema per version and only rolls back to
+//!   versions whose schema can still read the current persistent state,
 //! - enforces rollback rules (only to previously approved/executed versions)
 //!   with a bounded reason string and emits a versioned rollback event.
 
@@ -46,6 +48,9 @@ pub struct UpgradeRecord {
     /// approved or executed. Executed versions and cancelled proposals are
     /// unaffected by expiry.
     pub expires_at: u64,
+    /// Persistent state schema this version's implementation can read and
+    /// write. Set at proposal time and never changed afterwards.
+    pub state_schema: u32,
 }
 
 /// Current on-disk representation of an upgrade record.
@@ -83,22 +88,27 @@ pub enum UpgradeError {
     /// or executed. No state is mutated when this is returned. The proposal
     /// may still be queried or cancelled.
     ProposalExpired = 12,
+    /// The rollback target's `state_schema` is older than the persistent
+    /// state schema already written by an executed version, so it cannot
+    /// safely read the current state. No state is mutated when this is
+    /// returned.
+    IncompatibleRollbackTarget = 13,
     /// Another upgrade or rollback changed the current version after this
     /// proposal was created. The record remains approved and can be reviewed.
-    ExecutionConflict = 13,
+    ExecutionConflict = 14,
     /// Mutating upgrade calls are disabled until legacy records are migrated.
-    StorageMigrationRequired = 14,
+    StorageMigrationRequired = 15,
     /// A storage migration batch must be between 1 and
     /// [`MAX_MIGRATION_BATCH_SIZE`] records.
-    InvalidMigrationLimit = 15,
+    InvalidMigrationLimit = 16,
     /// The stored schema version is newer than this contract supports.
-    UnsupportedStorageSchema = 16,
+    UnsupportedStorageSchema = 17,
     /// A legacy version listed for migration has no corresponding record.
-    MigrationRecordMissing = 17,
+    MigrationRecordMissing = 18,
     /// The monotonic execution revision cannot be incremented further.
-    ExecutionRevisionOverflow = 18,
+    ExecutionRevisionOverflow = 19,
     /// The bounded version history has reached its configured maximum.
-    VersionHistoryFull = 19,
+    VersionHistoryFull = 20,
 }
 
 /// Validity window (in ledger seconds) granted to every upgrade proposal.
@@ -238,11 +248,15 @@ impl UpgradeManager {
     /// this call. Once that window elapses (`ledger.timestamp() >=
     /// expires_at`) the proposal can no longer be approved or executed; it can
     /// only be cancelled or queried.
+    ///
+    /// `state_schema` records the persistent state schema the version can
+    /// read and write. It is stored with the record and checked on rollback.
     pub fn propose_upgrade(
         env: Env,
         governance: Address,
         version: u32,
         implementation: BytesN<32>,
+        state_schema: u32,
     ) -> Result<(), UpgradeError> {
         Self::require_governance(&env, &governance)?;
         Self::require_current_schema(&env)?;
@@ -281,6 +295,7 @@ impl UpgradeManager {
                 cancelled_by: None,
                 expires_at,
             },
+        };
         };
         env.storage().persistent().set(&key, &stored);
 
@@ -388,6 +403,10 @@ impl UpgradeManager {
         env.storage()
             .instance()
             .set(&CurrentVersionRevisionKey::Key, &next_revision);
+        // Track the newest persistent state schema written so far. It only
+        // ever moves forward, so rollback can compare against it in O(1).
+        let state_schema = Self::read_state_schema(&env).max(record.state_schema);
+        env.storage().instance().set(&StateSchemaKey, &state_schema);
         emit_execution(&env, current_version, version);
         Ok(())
     }
@@ -536,6 +555,11 @@ impl UpgradeManager {
     /// [`UpgradeError::ProposalExpired`]. Previously executed versions are
     /// unaffected by expiry.
     ///
+    /// The target's `state_schema` must be at least the persistent state
+    /// schema already written by executed versions ([`Self::state_schema`]).
+    /// A target built against an older schema cannot safely read the current
+    /// state and is rejected with [`UpgradeError::IncompatibleRollbackTarget`].
+    ///
     /// A bounded `reason` string is required to document why the rollback is
     /// occurring. The reason must not exceed [`MAX_ROLLBACK_REASON_LEN`] bytes.
     /// On success, a versioned rollback event is emitted with the source
@@ -584,6 +608,9 @@ impl UpgradeManager {
         if record.state == UpgradeState::Approved {
             Self::require_not_expired(&env, record.expires_at)?;
         }
+        if record.state_schema < Self::read_state_schema(&env) {
+            return Err(UpgradeError::IncompatibleRollbackTarget);
+        }
         Self::require_authorized_impl(&env, &record.implementation)?;
 
         env.storage()
@@ -608,6 +635,13 @@ impl UpgradeManager {
             .instance()
             .get(&CurrentVersionKey::Key)
             .unwrap_or(0)
+    }
+
+    /// Highest persistent state schema written by any executed version.
+    ///
+    /// Rollback targets must record a `state_schema` at or above this value.
+    pub fn state_schema(env: Env) -> u32 {
+        Self::read_state_schema(&env)
     }
 
     /// All recorded versions in proposal order.
@@ -718,6 +752,13 @@ impl UpgradeManager {
         Ok(())
     }
 
+    fn read_state_schema(env: &Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&StateSchemaKey)
+            .unwrap_or(0)
+    }
+
     fn require_not_expired(env: &Env, expires_at: u64) -> Result<(), UpgradeError> {
         if env.ledger().timestamp() >= expires_at {
             return Err(UpgradeError::ProposalExpired);
@@ -754,7 +795,7 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         assert_eq!(client.get_version(&1).state, UpgradeState::Proposed);
 
         client.approve_upgrade(&gov, &1);
@@ -769,7 +810,7 @@ mod test {
     fn cancel_records_cancelled_state() {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.cancel_upgrade(&gov, &1);
         assert_eq!(client.get_version(&1).state, UpgradeState::Cancelled);
     }
@@ -778,7 +819,7 @@ mod test {
     fn replay_is_rejected() {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
         // Replaying execute on an already executed version must fail.
@@ -788,7 +829,7 @@ mod test {
         );
         // Re-proposing the same version must fail.
         assert_eq!(
-            client.try_propose_upgrade(&gov, &1, &hash),
+            client.try_propose_upgrade(&gov, &1, &hash, &1),
             Err(Ok(UpgradeError::DuplicateVersion))
         );
     }
@@ -797,7 +838,7 @@ mod test {
     fn unauthorized_execution_is_rejected() {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
 
         let attacker = Address::generate(&env);
@@ -813,7 +854,7 @@ mod test {
         let (client, gov, _hash) = setup(&env);
         let rogue = BytesN::from_array(&env, &[9u8; 32]);
         assert_eq!(
-            client.try_propose_upgrade(&gov, &2, &rogue),
+            client.try_propose_upgrade(&gov, &2, &rogue, &1),
             Err(Ok(UpgradeError::UnauthorizedImplementation))
         );
     }
@@ -824,11 +865,11 @@ mod test {
         let (client, gov, hash) = setup(&env);
         let rsn = reason_bugfix(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &2);
         assert_eq!(client.current_version(), 2);
@@ -842,7 +883,7 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
         let rsn = reason_bugfix(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.cancel_upgrade(&gov, &1);
         assert_eq!(
             client.try_rollback_upgrade(&gov, &1, &rsn),
@@ -856,7 +897,7 @@ mod test {
         let (client, gov, hash) = setup(&env);
         let rsn = reason_bugfix(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
@@ -873,7 +914,7 @@ mod test {
         let (client, gov, hash) = setup(&env);
         let rsn = reason_bugfix(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
@@ -888,7 +929,7 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
@@ -905,11 +946,11 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &2);
         assert_eq!(client.current_version(), 2);
@@ -926,11 +967,11 @@ mod test {
         let (client, gov, hash) = setup(&env);
         let rsn = reason_bugfix(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &2);
         assert_eq!(client.current_version(), 2);
@@ -950,10 +991,10 @@ mod test {
         let (client, gov, hash) = setup(&env);
         let rsn = reason_bugfix(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
 
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &2);
         assert_eq!(client.current_version(), 2);
@@ -970,10 +1011,10 @@ mod test {
         let rsn = reason_bugfix(&env);
 
         // Version 1 is proposed, never approved.
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
 
         // Version 2 is executed.
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &2);
         assert_eq!(client.current_version(), 2);
@@ -990,11 +1031,11 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &2);
         assert_eq!(client.current_version(), 2);
@@ -1066,7 +1107,7 @@ mod test {
         // The window is fixed, positive, and bounded.
         assert!(window > 0);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         let record = client.get_version(&1);
         assert_eq!(record.expires_at, BASE_TS + window);
         assert_eq!(record.state, UpgradeState::Proposed);
@@ -1078,7 +1119,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
 
         // One second before the boundary the proposal is still approvable.
         env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() - 1);
@@ -1092,7 +1133,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
 
         // Exactly at expires_at the proposal is already expired.
         env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs());
@@ -1110,7 +1151,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
 
         env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 1);
         assert_eq!(
@@ -1125,7 +1166,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
 
         env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() - 1);
@@ -1140,7 +1181,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         assert_eq!(client.get_version(&1).state, UpgradeState::Approved);
 
@@ -1160,7 +1201,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
 
         env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 1);
@@ -1176,7 +1217,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
         assert_eq!(client.current_version(), 1);
@@ -1193,7 +1234,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
 
         env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 5);
         client.cancel_upgrade(&gov, &1);
@@ -1206,7 +1247,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
 
         env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 1);
         let record = client.get_version(&1);
@@ -1221,7 +1262,7 @@ mod test {
         env.mock_all_auths();
         env.ledger().set_timestamp(BASE_TS);
         let (client, gov, hash) = setup(&env);
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
 
         env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 1);
         let attacker = Address::generate(&env);
@@ -1246,11 +1287,11 @@ mod test {
         let rsn = reason_bugfix(&env);
 
         // Version 1 is approved but never executed.
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
 
         // Version 2 is approved and executed, becoming current.
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &2);
         assert_eq!(client.current_version(), 2);
@@ -1303,7 +1344,7 @@ mod test {
         let (client, gov, hash) = setup(&env);
 
         // Cannot approve non-proposed version
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
@@ -1314,7 +1355,7 @@ mod test {
         assert_eq!(client.try_cancel_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidState)));
 
         // Cannot propose same version
-        assert_eq!(client.try_propose_upgrade(&gov, &1, &hash), Err(Ok(UpgradeError::DuplicateVersion)));
+        assert_eq!(client.try_propose_upgrade(&gov, &1, &hash, &1), Err(Ok(UpgradeError::DuplicateVersion)));
     }
 
     #[test]
@@ -1322,9 +1363,18 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
+
+        client.propose_upgrade(&gov, &2, &hash, &1);
+        client.approve_upgrade(&gov, &2);
+        client.execute_upgrade(&gov, &2);
+        assert_eq!(client.current_version(), 2);
+
+        // Executed versions are unaffected by expiry, so rollback still works
+        // long after the proposal window would have elapsed.
+        env.ledger().set_timestamp(BASE_TS + client.proposal_expiry_secs() + 1);
 
         assert_eq!(
             client.try_cancel_upgrade(&gov, &1),
@@ -1337,7 +1387,7 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
@@ -1345,7 +1395,7 @@ mod test {
         assert_eq!(client.try_cancel_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidState)));
 
         // Cancel proposed works
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.cancel_upgrade(&gov, &2);
         assert_eq!(client.get_version(&2).state, UpgradeState::Cancelled);
 
@@ -1353,7 +1403,7 @@ mod test {
         assert_eq!(client.try_cancel_upgrade(&gov, &2), Err(Ok(UpgradeError::InvalidState)));
 
         // Cancel approved works
-        client.propose_upgrade(&gov, &3, &hash);
+        client.propose_upgrade(&gov, &3, &hash, &1);
         client.approve_upgrade(&gov, &3);
         client.cancel_upgrade(&gov, &3);
         assert_eq!(client.get_version(&3).state, UpgradeState::Cancelled);
@@ -1368,7 +1418,7 @@ mod test {
         assert_eq!(client.try_rollback_upgrade(&gov, &1), Err(Ok(UpgradeError::NoRollbackTarget)));
 
         // Proposed but not approved/executed
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         assert_eq!(client.try_rollback_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidRollbackTarget)));
     }
 
@@ -1377,7 +1427,7 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
@@ -1385,12 +1435,12 @@ mod test {
         assert_eq!(client.try_rollback_upgrade(&gov, &1), Err(Ok(UpgradeError::InvalidRollbackTarget)));
 
         // Cannot rollback to cancelled
-        client.propose_upgrade(&gov, &2, &hash);
+        client.propose_upgrade(&gov, &2, &hash, &1);
         client.cancel_upgrade(&gov, &2);
         assert_eq!(client.try_rollback_upgrade(&gov, &2), Err(Ok(UpgradeError::InvalidRollbackTarget)));
 
         // Cannot rollback to proposed only
-        client.propose_upgrade(&gov, &3, &hash);
+        client.propose_upgrade(&gov, &3, &hash, &1);
         assert_eq!(client.try_rollback_upgrade(&gov, &3), Err(Ok(UpgradeError::InvalidRollbackTarget)));
     }
 
@@ -1399,7 +1449,7 @@ mod test {
         let env = Env::default();
         let (client, gov, hash) = setup(&env);
 
-        client.propose_upgrade(&gov, &1, &hash);
+        client.propose_upgrade(&gov, &1, &hash, &1);
         client.approve_upgrade(&gov, &1);
         client.execute_upgrade(&gov, &1);
 
@@ -1426,11 +1476,11 @@ mod test {
         let (client, gov, hash) = setup(&env);
 
         // Version 0 is valid
-        client.propose_upgrade(&gov, &0, &hash);
+        client.propose_upgrade(&gov, &0, &hash, &1);
         assert_eq!(client.get_version(&0).version, 0);
 
         // Max u32 version
-        client.propose_upgrade(&gov, &u32::MAX, &hash);
+        client.propose_upgrade(&gov, &u32::MAX, &hash, &1);
         assert_eq!(client.get_version(&u32::MAX).version, u32::MAX);
     }
 
@@ -1492,6 +1542,22 @@ mod test {
         let (client, gov, hash) = setup(&env);
         client.propose_upgrade(&gov, &1, &hash);
         client.propose_upgrade(&gov, &2, &hash);
+
+        client.approve_upgrade(&gov, &1);
+        client.approve_upgrade(&gov, &2);
+        client.execute_upgrade(&gov, &1);
+
+        assert_eq!(
+            client.try_execute_upgrade(&gov, &2),
+            Err(Ok(UpgradeError::ExecutionConflict))
+        );
+        assert_eq!(client.current_version(), 1);
+        assert_eq!(client.get_version(&2).state, UpgradeState::Approved);
+    }
+
+    #[test]
+    fn rollback_does_not_revalidate_stale_execution_proposals() {
+        let env = Env::default
         client.approve_upgrade(&gov, &1);
         client.approve_upgrade(&gov, &2);
         client.execute_upgrade(&gov, &1);

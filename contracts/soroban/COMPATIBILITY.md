@@ -18,6 +18,6 @@ The Soroban workflow runs the Rust contract, event fixture, and client simulatio
 ## Rollback Sequence
 
 1. Stop new submissions and record deployed Wasm hashes, network, ledger, and compatibility-matrix revision.
-2. Repoint clients to the last compatible release and retain all event decoders already in production.
+2. Repoint clients to the last compatible release and retain all event decoders already in production. In the upgrade manager, a rollback target must record a `state_schema` at or above `state_schema()`; older targets are rejected with `IncompatibleRollbackTarget` (error code 13). The rollback event is unchanged.
 3. If contract state has changed, use an audited forward migration or an authorized pause/recovery operation. Soroban ledger state cannot be rolled back by redeploying older Wasm.
 4. Re-enable submissions only after simulation and balance/auth checks pass against current state on each supported network.
