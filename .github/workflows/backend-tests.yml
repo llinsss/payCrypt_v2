@@ -263,6 +263,12 @@ jobs:
             --source-account default \
             --network local
 
+      - name: Run Soroban integration tests
+        working-directory: contracts/tests
+        env:
+          CONTRACT_WASM: ${{ github.workspace }}/indexer/target/wasm32-unknown-unknown/release/paycrypt_contract.wasm
+        run: cargo test --test integration -- --nocapture
+
       - name: Run local-network tag-squatting authorization tests
         working-directory: indexer
         env:
