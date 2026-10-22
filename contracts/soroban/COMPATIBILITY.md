@@ -22,6 +22,14 @@ Current entries:
 
 The Soroban workflow runs the Rust contract, event fixture, and client simulation tests once for each network profile. These are deterministic local tests configured with the selected network's passphrase; they do not submit transactions to public RPC services or require funded accounts or secrets.
 
+## Client Pagination
+
+`client-sim` exposes `collect_pages` for walking cursor-paginated contract listings such as the registry's `list`. The helper is client-side only and does not change any contract storage or events.
+
+- Page size must be `1..=50` (`MAX_PAGE_SIZE`); each call issues at most 100 fetches (`MAX_PAGES`) and holds at most 5,000 items, so per-call work and memory are bounded.
+- Cursors must be 1–256 printable ASCII bytes (`MAX_CURSOR_LEN`) and may not repeat the cursor that produced them.
+- Error codes (`PaginationError`): `InvalidPageSize`, `PageTooLarge`, `MalformedCursor`, `DuplicateEntry` (includes the 1-based page number), `PageLimitExceeded`, and `Fetch` (carries the caller's contract or RPC error, such as an authorization failure). Any error discards partial results.
+
 ## Upgrade Sequence
 
 1. Update the compatibility matrix and CI matrix first, and confirm all listed SDK, Rust, protocol, token, and passphrase combinations pass.
