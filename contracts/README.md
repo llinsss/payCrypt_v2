@@ -44,6 +44,13 @@ crate is added, add it to that list so release validation covers it.
 - **Invalid spec** — the script reports which contract failed spec validation
   and exits non-zero.
 
+## Error codes
+
+Numeric error codes returned by each contract are owned and recorded in
+[`ERROR_CODES.md`](ERROR_CODES.md). Codes are scoped to the contract that emits
+them and must never be renumbered or reused. Add new variants with the next unused
+value and update that file in the same change.
+
 ## Event topic collisions
 
 Indexers map each event to a schema by its topic name, so a topic must belong to
