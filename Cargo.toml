@@ -29,3 +29,29 @@ codegen-units = 1
 [[bin]]
 name = "release-validate"
 path = "src/bin/release_validate.rs"
+
+# Per-operation Soroban storage footprint limits (issue #777).
+# `cargo test --features footprint-limits` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# footprint limit validation in `src/footprint_limits.rs`.
+#
+# Bounded payment metadata model (issue #778).
+# `cargo test --features payment-metadata` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# bounded metadata validation in `src/payment_metadata.rs`.
+#
+# Multi-asset escrow isolation (issue #779).
+# `cargo test --features escrow-isolation` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# per-asset isolated escrow model in `src/escrow_isolation.rs`.
+#
+# Payment intent lifecycle states (issue #780).
+# `cargo test --features payment-intent-lifecycle` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# payment intent lifecycle state machine in `src/payment_intent_lifecycle.rs`.
+[features]
+default = []
+footprint-limits = []
+payment-metadata = []
+escrow-isolation = []
+payment-intent-lifecycle = []
