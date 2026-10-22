@@ -39,9 +39,9 @@ Consequences:
 |--------------------|------------------------|-------------------|
 | `initialize`       | none (first-writer)    | `AlreadyInitialized` on replay |
 | `initialize_tag`   | none (first-writer)    | `AlreadyInitialized` on replay; `InvalidTagName` on bad input |
-| `propose_transfer` | current owner          | host abort        |
-| `cancel_transfer`  | current owner          | host abort; `NoPendingTransfer` if no proposal |
-| `accept_transfer`  | pending destination    | host abort; `NoPendingTransfer` if no proposal |
+| `propose_transfer` | current owner          | host abort; `VersionOverflow` if the version counter is at `u32::MAX` |
+| `cancel_transfer`  | current owner          | host abort; `NoPendingTransfer` if no proposal; `VersionOverflow` at `u32::MAX` |
+| `accept_transfer`  | pending destination    | host abort; `NoPendingTransfer` if no proposal; `VersionOverflow` at `u32::MAX` |
 | `get_tag`          | none (read-only)       | `NotInitialized`  |
 | `inspect_tag`      | none (read-only)       | never fails       |
 | `tag_byte_len`     | none (read-only)       | never fails       |

@@ -1,0 +1,18 @@
+[package]
+name = "contract-integration"
+version = "0.1.0"
+edition = "2021"
+description = "Local Stellar/Soroban network integration suite for the reviewed contract WASM"
+license = "MIT"
+publish = false
+
+# The suite is a standalone package so that `cargo test` in the workspace root
+# stays hermetic. It only runs against a live local network; see
+# `integration.rs` for the environment variables it reads.
+[dev-dependencies]
+soroban-client = "0.3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[[test]]
+name = "integration"
+path = "integration.rs"

@@ -15,6 +15,7 @@ soroban-sdk = { version = "21.7.0", features = ["alloc"] }
 
 [dev-dependencies]
 soroban-sdk = { version = "21.7.0", features = ["alloc", "testutils"] }
+proptest = "1.4.0"
 
 [profile.release]
 opt-level = "z"
@@ -29,3 +30,88 @@ codegen-units = 1
 [[bin]]
 name = "release-validate"
 path = "src/bin/release_validate.rs"
+
+# Tag-squatting prevention (issue #810).
+# The `tag-registry` binary hosts the deterministic tag registration
+# validation logic (trust boundary, privileged roles, replay handling,
+# and failure-safe state transitions) used to prevent tag squatting in
+# the Rust/Soroban registry. Run its unit/property tests with
+# `cargo test --bin tag-registry`.
+[[bin]]
+name = "tag-registry"
+path = "src/bin/tag_registry.rs"
+
+# Pause domains contract (issue #796).
+# Typed Rust implementation of per-domain pause state with admin
+# authorization, structured events, bounded resource limits, and
+# upgrade-compatible storage versioning.
+[[bin]]
+name = "pause-domains"
+path = "src/bin/pause_domains.rs"
+
+# Dust handling and refund policy (issue #798).
+# Typed Rust implementation of sub-threshold dust accumulation and a
+# refund policy with admin authorization, structured events, bounded
+# resource limits, and upgrade-compatible storage versioning.
+[[bin]]
+name = "dust-refund"
+path = "src/bin/dust_refund.rs"
+
+# Signer-confusion prevention across Rust network environments (issue #807).
+# The `network-binding` feature gates the typed network-environment binding
+# (chain id / network passphrase) that ties signer authorization to a single
+# Soroban network so signatures valid on one network cannot be replayed on
+# another. It is enabled by default for production builds and can be turned
+# off only for local-network test harnesses that need to exercise the
+# unbound path.
+#
+# Relayer submission rate limiting (issue #808).
+# The `relayer-rate-limit` feature gates the typed per-submitter/per-window
+# rate-limit module that guards relayer submission. It is enabled by default
+# for production builds and can be disabled only for local-network harnesses
+# that need to exercise the unlimited path.
+#
+# Reserve protocol and system tags (issue #809).
+# The `reserve-protocol` feature gates the typed reserve protocol module that
+# defines the reserve trust boundary, privileged reserve roles, replay
+# protection (monotonic reserve sequence), and failure-safe reserve state
+# transitions. It is enabled by default for production builds and can be
+# disabled only for local-network harnesses that need to exercise the
+# unguarded path.
+#
+# Log redaction for Soroban auth entries and signed payloads (issue #812).
+# The `log-redaction` feature gates the typed redaction module that strips
+# Soroban authorization entries and signed payloads from log records before
+# they are emitted. It is enabled by default for production builds and can be
+# disabled only for local-network harnesses that need to exercise the raw
+# (unredacted) logging path.
+#
+# Per-operation Soroban storage footprint limits (issue #777).
+# `cargo test --features footprint-limits` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# footprint limit validation in `src/footprint_limits.rs`.
+#
+# Bounded payment metadata model (issue #778).
+# `cargo test --features payment-metadata` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# bounded metadata validation in `src/payment_metadata.rs`.
+#
+# Multi-asset escrow isolation (issue #779).
+# `cargo test --features escrow-isolation` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# per-asset isolated escrow model in `src/escrow_isolation.rs`.
+#
+# Payment intent lifecycle states (issue #780).
+# `cargo test --features payment-intent-lifecycle` runs the deterministic
+# success/boundary/unauthorized/replay/failure tests for the typed
+# payment intent lifecycle state machine in `src/payment_intent_lifecycle.rs`.
+[features]
+default = ["network-binding", "relayer-rate-limit", "reserve-protocol", "log-redaction"]
+network-binding = []
+relayer-rate-limit = []
+reserve-protocol = []
+log-redaction = []
+footprint-limits = []
+payment-metadata = []
+escrow-isolation = []
+payment-intent-lifecycle = []

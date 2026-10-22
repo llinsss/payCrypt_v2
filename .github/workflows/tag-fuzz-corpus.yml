@@ -1,0 +1,80 @@
+name: Tag Fuzz Corpus
+
+# Replays the committed, minimized fuzz cases in contracts/tag/fuzz/corpus
+# against the tag fuzz targets. Each case runs once with no mutation, so a
+# previously fixed failure cannot silently return.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/tag/**'
+      - '.github/workflows/tag-fuzz-corpus.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'contracts/tag/**'
+      - '.github/workflows/tag-fuzz-corpus.yml'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Storage bounds for committed corpus entries. Keep in step with
+  # docs/tag-normalization.md ("Tests and fuzzing").
+  CORPUS_MAX_FILES: "256"
+  CORPUS_MAX_BYTES: "4096"
+
+jobs:
+  corpus-replay:
+    name: Replay tag fuzz corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: contracts/tag
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [tag_normalization, tag_equivalence]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts/tag/fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+
+      - name: Check corpus storage bounds
+        run: |
+          set -euo pipefail
+          dir="fuzz/corpus/${{ matrix.target }}"
+          test -d "$dir" || { echo "::error::missing corpus directory $dir"; exit 1; }
+          count=$(find "$dir" -type f | wc -l | tr -d ' ')
+          if [ "$count" -eq 0 ]; then
+            echo "::error::corpus $dir is empty"
+            exit 1
+          fi
+          if [ "$count" -gt "$CORPUS_MAX_FILES" ]; then
+            echo "::error::corpus $dir has $count cases (max $CORPUS_MAX_FILES)"
+            exit 1
+          fi
+          oversized=$(find "$dir" -type f -size +"${CORPUS_MAX_BYTES}"c)
+          if [ -n "$oversized" ]; then
+            echo "::error::corpus entries larger than $CORPUS_MAX_BYTES bytes:"
+            echo "$oversized"
+            exit 1
+          fi
+
+      # -runs=0 executes every corpus entry once and exits without mutating
+      # the corpus. -timeout bounds the work any single input may trigger.
+      - name: Replay corpus
+        run: cargo +nightly fuzz run "${{ matrix.target }}" "fuzz/corpus/${{ matrix.target }}" -- -runs=0 -timeout=10
