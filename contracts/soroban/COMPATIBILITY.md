@@ -22,6 +22,12 @@ Current entries:
 
 The Soroban workflow runs the Rust contract, event fixture, and client simulation tests once for each network profile. These are deterministic local tests configured with the selected network's passphrase; they do not submit transactions to public RPC services or require funded accounts or secrets.
 
+## Wallet Interface Fixture
+
+[`wallet-contract/fixtures/interface.v1.json`](wallet-contract/fixtures/interface.v1.json) captures the wallet's exported functions (name, ordered input names, output count) and its `WalletError` codes. The Soroban workflow builds `wallet_contract.wasm` and runs `scripts/check-wallet-interface.sh`, which fails when the contract's spec drifts from the fixture. Parameter types are not compared by this check.
+
+Removing or renaming a function, reordering or renaming its inputs, or changing an error code is a wallet-interface break for existing clients. Make such a change only with a new contract version and matching client updates. Additive changes (new functions or new error codes with new values) require updating the fixture in the same change so the new surface is reviewed.
+
 ## SDK Version Alignment
 
 Every `soroban-sdk` declaration in the repository must use the canonical pin in `compatibility.json` (`crates.soroban-sdk`, currently `=23.5.3`), or be recorded in `sdk_exceptions` with the exact requirement it declares. Each exception names the manifest, the requirement, and the reason it has not moved. `lockfiles` lists the lock files that must resolve soroban-sdk to the canonical version.
