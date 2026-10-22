@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Anti-spam deposits for public tag addresses in the Rust/Soroban contracts (#811).
+  - Typed `TagDepositConfig` (asset, base amount, per-address minimum) with deterministic
+    validation: non-negative amounts, supported asset, and bounded configuration values.
+  - Trust boundary: only the contract admin may set or update deposit configuration;
+    unauthorized callers are rejected before any state mutation.
+  - Privileged roles: admin configures deposits; tag owners may not alter deposit terms.
+  - Replay-safe/idempotent deposit handling keyed by a unique deposit id so duplicate
+    submissions do not double-charge or double-credit.
+  - Failure-safe state transitions: validation and authorization run before writes, so a
+    failed deposit leaves balances and tag state unchanged (no partial state).
+  - Tests covering success, boundary amounts, unauthorized callers, replay, and failure paths.
+
 - Rust/Soroban registry: prevent tag squatting (#810).
   - **Typed validation:** tag registration is validated deterministically before any state is written — tag format/normalization, ownership, and reservation checks are enforced by typed Rust logic rather than ad-hoc string handling.
   - **Trust boundary & privileged roles:** the registry defines who may register, reserve, transfer, and release a tag. Registration is restricted to the authenticated owner of the tag; reservation and administrative transfer/release require an explicit privileged role. Unauthorized callers are rejected before state mutation.
@@ -108,26 +120,33 @@ All notable changes to this project will be documented in this file.
   - Unit/property/local-network tests covering success, boundary, unauthorized,
     replay, and failure paths.
 
-### Migration & operations
+### Migration / Indexing / Monitoring / Rollback
 
-- **Migration:** Existing single-asset escrow entries are migrated to the new
-  per-asset key space on first access; no manual data migration is required.
-  The contract version is bumped and older entries remain readable during the
-  upgrade window. Payment intent records are stored under additive `intent_id`
-  keys, so pre-existing intents (if any) are read as `Created` and can be
-  advanced through the normal lifecycle without a data migration.
-- **Indexing:** Off-chain indexers should key escrow records by
-  `(asset, escrow_id)` and consume the new escrow events (`escrow_created`,
-  `escrow_released`, `escrow_refunded`, `escrow_asset_isolated`). Indexers should
-  key payment intents by `intent_id` and track status by consuming the intent
-  lifecycle events (`intent_created`, `intent_authorized`, `intent_funded`,
+- **Migration:** Existing public tags default to a zero deposit until the admin
+  sets a configuration; no data backfill is required. Existing single-asset
+  escrow entries are migrated to the new per-asset key space on first access;
+  no manual data migration is required. The contract version is bumped and
+  older entries remain readable during the upgrade window. Payment intent
+  records are stored under additive `intent_id` keys, so pre-existing intents
+  (if any) are read as `Created` and can be advanced through the normal
+  lifecycle without a data migration.
+- **Indexing:** Emit a `deposit` event (tag address, asset, amount, deposit id)
+  for off-chain indexers; idempotent ids let indexers deduplicate replays.
+  Off-chain indexers should key escrow records by `(asset, escrow_id)` and
+  consume the new escrow events (`escrow_created`, `escrow_released`,
+  `escrow_refunded`, `escrow_asset_isolated`). Indexers should key payment
+  intents by `intent_id` and track status by consuming the intent lifecycle
+  events (`intent_created`, `intent_authorized`, `intent_funded`,
   `intent_settled`, `intent_cancelled`, `intent_expired`).
-- **Monitoring:** Alert on repeated unauthorized escrow attempts and on any
-  escrow event whose asset does not match the stored escrow asset. Alert on
+- **Monitoring:** Alert on repeated unauthorized config attempts and on
+  deposit-id collisions. Alert on repeated unauthorized escrow attempts and on
+  any escrow event whose asset does not match the stored escrow asset. Alert on
   repeated unauthorized intent transitions, on any intent event whose status
   does not follow the expected transition graph, and on intents stuck in a
   non-terminal state past their expiry window.
-- **Rollback:** Reverting to the previous contract version is safe because the
-  per-asset keys are additive; legacy single-asset reads continue to work until
-  the new entries are drained. Payment intent keys are likewise additive, so a
-  rollback leaves intent records intact and readable by the prior version.
+- **Rollback:** Disabling deposits is a config change (set amount to zero); no
+  state migration is needed to revert. Reverting to the previous contract
+  version is safe because the per-asset keys are additive; legacy single-asset
+  reads continue to work until the new entries are drained. Payment intent keys
+  are likewise additive, so a rollback leaves intent records intact and
+  readable by the prior version.
