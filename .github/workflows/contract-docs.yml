@@ -1,0 +1,105 @@
+# Contract Docs
+#
+# Builds the Soroban contract documentation from source and publishes it as a
+# workflow artifact:
+#   - fails when any public contract entry point (`pub fn` in a
+#     `#[contractimpl]` block) has no `///` doc comment
+#   - Markdown API reference per contract (entry points, error codes, events)
+#   - rustdoc for the contracts/soroban workspace (warnings are errors)
+#   - Soroban spec extracted from the built wasm via `stellar contract inspect`
+#
+# Artifact: contract-docs-<sha>, retained 14 days
+
+name: Contract Docs
+
+on:
+  pull_request:
+    paths:
+      - "contracts/soroban/**"
+      - ".github/workflows/contract-docs.yml"
+  push:
+    branches: [master]
+    paths:
+      - "contracts/soroban/**"
+      - ".github/workflows/contract-docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-docs-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.84.0"
+  STELLAR_CLI_VERSION: "22.0.1"
+
+jobs:
+  contract-docs:
+    name: Generated contract docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: contracts/soroban
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts/soroban
+
+      # Fails on undocumented public entry points before any docs are published.
+      - name: Check public entry points are documented
+        run: node scripts/generate-contract-docs.mjs target/contract-docs
+
+      - name: Build rustdoc (warnings are errors)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --locked --workspace --no-deps
+
+      - name: Build Soroban wasm
+        run: cargo build --locked --release --target wasm32-unknown-unknown -p wallet-contract
+
+      - name: Install stellar-cli
+        run: cargo install --locked stellar-cli --version "${STELLAR_CLI_VERSION}"
+
+      - name: Extract Soroban specs from wasm
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p target/contract-docs/spec
+          wasm_files=(target/wasm32-unknown-unknown/release/*.wasm)
+          if [ ${#wasm_files[@]} -eq 0 ]; then
+            echo "::error::No Soroban wasm artifacts found; cannot extract specs"
+            exit 1
+          fi
+          for wasm in "${wasm_files[@]}"; do
+            name="$(basename "$wasm" .wasm)"
+            stellar contract inspect --wasm "$wasm" --output docs > "target/contract-docs/spec/${name}.txt"
+            test -s "target/contract-docs/spec/${name}.txt" || { echo "::error::Empty spec for ${name}"; exit 1; }
+          done
+
+      - name: Include rustdoc output
+        run: |
+          set -euo pipefail
+          cp -r target/doc target/contract-docs/rustdoc
+
+      - name: Upload contract docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-docs-${{ github.sha }}
+          path: contracts/soroban/target/contract-docs
+          retention-days: 14
+          if-no-files-found: error

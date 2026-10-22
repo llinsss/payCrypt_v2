@@ -165,6 +165,12 @@ pub struct WalletContract;
 
 #[contractimpl]
 impl WalletContract {
+    /// One-time setup. Stores the admin, signer set, approval threshold, the
+    /// per-proposal withdrawal cap, and the destination policy. Requires `admin`
+    /// authorization. Fails with `AlreadyInitialized` on a second call,
+    /// `InvalidThreshold` unless `1 <= threshold <= signers.len()`,
+    /// `InvalidWithdrawal` if `max_withdrawal <= 0`, and `DuplicateSigner` if a
+    /// signer appears more than once.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -199,7 +205,9 @@ impl WalletContract {
 
     /// Propose `new_admin` as the next admin. Only the current admin may call
     /// this. A later proposal overwrites an earlier pending one. Emits
-    /// `AdminRotationProposed` on every successful call.
+    /// `AdminRotationProposed` on every successful call. Fails with
+    /// `InvalidRotation` if `new_admin` equals the caller. The rotation takes
+    /// effect only when the pending admin calls `execute_admin_rotation`.
     pub fn propose_admin_rotation(env: Env, caller: Address, new_admin: Address) {
         require_admin(&env, &caller);
         if caller == new_admin {
@@ -215,6 +223,9 @@ impl WalletContract {
         .publish(&env);
     }
 
+    /// Completes a pending admin rotation. The caller must authorize and must be
+    /// the pending admin. Fails with `InvalidRotation` if no rotation is pending
+    /// and `Unauthorized` for any other caller. Emits `wallet_admin_rotated`.
     pub fn execute_admin_rotation(env: Env, caller: Address) {
         require_initialized(&env);
         caller.require_auth();
@@ -277,11 +288,16 @@ impl WalletContract {
         env.storage().instance().set(&DataKey::Threshold, &threshold);
     }
 
+    /// Allows or disallows `token` for new withdrawal proposals. Admin only.
+    /// Existing proposals are not affected.
     pub fn set_token_supported(env: Env, caller: Address, token: Address, supported: bool) {
         require_admin(&env, &caller);
         env.storage().instance().set(&DataKey::SupportedToken(token), &supported);
     }
 
+    /// Sets the per-proposal withdrawal cap and whether destinations must be on
+    /// the allowlist. Admin only. Fails with `InvalidWithdrawal` if
+    /// `max_withdrawal <= 0`.
     pub fn set_withdrawal_policy(
         env: Env,
         caller: Address,
@@ -296,11 +312,23 @@ impl WalletContract {
         env.storage().instance().set(&DataKey::RestrictedDestinations, &restrict_destinations);
     }
 
+    /// Adds or removes `destination` from the allowlist. The allowlist is enforced
+    /// only while destination restriction is enabled. Admin only.
     pub fn set_destination_allowed(env: Env, caller: Address, destination: Address, allowed: bool) {
         require_admin(&env, &caller);
         env.storage().instance().set(&DataKey::AllowedDestination(destination), &allowed);
     }
 
+    /// Creates a withdrawal proposal and reserves `amount` of `token_address`.
+    /// The proposer must be an active signer and counts as the first approval.
+    /// Returns the proposal id, which equals its execution nonce.
+    ///
+    /// Checks run in this order: token supported (`UnsupportedToken`),
+    /// `0 < amount <= max_withdrawal` (`InvalidWithdrawal`), `expiry` in the
+    /// future (`ProposalExpired`), destination allowlisted when restricted
+    /// (`DestinationNotAllowed`), and `amount` within the balance minus existing
+    /// reservations (`InsufficientAvailableBalance`). Emits
+    /// `wallet_withdrawal_proposed`.
     pub fn propose_withdrawal(
         env: Env,
         proposer: Address,
@@ -360,6 +388,11 @@ impl WalletContract {
         id
     }
 
+    /// Records `signer`'s approval of a live, unexecuted proposal. The signer must
+    /// be an active signer and may approve each proposal once. Fails with
+    /// `StaleProposal` when the proposal's nonce is below the execution nonce,
+    /// `ProposalExpired` at or after `expiry`, `ProposalExecuted`, and
+    /// `DuplicateApproval`. Emits `wallet_withdrawal_approved`.
     pub fn approve(env: Env, signer: Address, proposal_id: u64) {
         require_signer(&env, &signer);
         let mut proposal = get_proposal(&env, proposal_id);
@@ -425,6 +458,12 @@ impl WalletContract {
         .publish(&env);
     }
 
+    /// Transfers a proposal's reserved funds to its destination once approvals
+    /// reach the threshold. The caller must be an active signer. Proposals
+    /// execute strictly in nonce order: only the proposal whose nonce equals the
+    /// execution nonce may run. Fails with `StaleProposal`, `ProposalExpired`,
+    /// `ProposalExecuted`, `InsufficientApprovals`, or `ReentrancyDetected`.
+    /// Emits `wallet_withdrawal_executed`.
     pub fn execute(env: Env, caller: Address, proposal_id: u64) {
         require_signer(&env, &caller);
         let mut proposal = get_proposal(&env, proposal_id);
@@ -518,18 +557,23 @@ impl WalletContract {
         env.storage().instance().get(&DataKey::PendingAdmin)
     }
 
+    /// Returns whether `signer` is in the active signer set.
     pub fn is_signer(env: Env, signer: Address) -> bool {
         get_signers(&env).contains_key(signer)
     }
 
+    /// Returns the current approval threshold, or `0` before initialization.
     pub fn threshold(env: Env) -> u32 {
         env.storage().instance().get(&DataKey::Threshold).unwrap_or(0)
     }
 
+    /// Returns the stored proposal. Fails with `UnknownProposal` if the id does
+    /// not exist.
     pub fn proposal(env: Env, proposal_id: u64) -> WithdrawalProposal {
         get_proposal(&env, proposal_id)
     }
 
+    /// Returns the nonce of the next proposal that may execute.
     pub fn execution_nonce(env: Env) -> u64 {
         env.storage().instance().get(&DataKey::ExecutionNonce).unwrap_or(0)
     }
