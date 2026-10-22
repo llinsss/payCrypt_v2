@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env, Symbol};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, BytesN, Env, Symbol};
 
 /// Storage keys for the wallet contract.
 #[contracttype]
@@ -55,6 +55,16 @@ pub const ROUTER_RECOVERY_DELAY: u32 = 17_280; // ~1 day at 5s/ledger
 /// react to a limit change before it takes effect.
 pub const WITHDRAW_LIMIT_DELAY: u32 = 17_280; // ~1 day at 5s/ledger
 
+/// Instance TTL threshold (ledgers). The instance entry is renewed only once
+/// its remaining TTL drops below this value, keeping per-invocation work and
+/// storage writes bounded.
+pub const INSTANCE_TTL_THRESHOLD: u32 = 120_960; // ~7 days at 5s/ledger
+
+/// Instance TTL target (ledgers) applied on renewal. All wallet state, including
+/// pending router proposals and recovery slots, lives in instance storage, so
+/// renewing this TTL keeps that state from expiring.
+pub const INSTANCE_TTL_EXTEND_TO: u32 = 518_400; // ~30 days at 5s/ledger
+
 #[contract]
 pub struct WalletContract;
 
@@ -79,6 +89,19 @@ impl WalletContract {
         env.storage().instance().set(&DataKey::Owner, &owner);
         env.storage().instance().set(&DataKey::Router, &router);
         env.storage().instance().set(&DataKey::Token, &token);
+        extend_instance_ttl(&env);
+
+        Ok(())
+    }
+
+    /// Renew the wallet's instance TTL. Permissionless: it only extends the
+    /// lifetime of existing state and never changes it. Fails with
+    /// `WalletError::NotInitialized` before `initialize`.
+    pub fn extend_ttl(env: Env) -> Result<(), WalletError> {
+        if !env.storage().instance().has(&DataKey::Owner) {
+            return Err(WalletError::NotInitialized);
+        }
+        extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -161,6 +184,7 @@ impl WalletContract {
     pub fn propose_router(env: Env, new_router: Address) {
         let owner = load_owner(&env);
         owner.require_auth();
+        extend_instance_ttl(&env);
 
         let now = env.ledger().sequence();
         env.storage().instance().set(&DataKey::PendingRouter, &new_router);
@@ -180,6 +204,7 @@ impl WalletContract {
     pub fn commit_router(env: Env) -> Result<(), WalletError> {
         let owner = load_owner(&env);
         owner.require_auth();
+        extend_instance_ttl(&env);
 
         let new_router: Address = env
             .storage()
@@ -214,6 +239,7 @@ impl WalletContract {
     pub fn cancel_router_rotation(env: Env) {
         let owner = load_owner(&env);
         owner.require_auth();
+        extend_instance_ttl(&env);
         env.storage().instance().remove(&DataKey::PendingRouter);
         env.storage().instance().remove(&DataKey::PendingRouterAt);
     }
@@ -230,6 +256,7 @@ impl WalletContract {
     pub fn propose_router_recovery(env: Env, new_router: Address) {
         let owner = load_owner(&env);
         owner.require_auth();
+        extend_instance_ttl(&env);
 
         let now = env.ledger().sequence();
         env.storage()
@@ -252,6 +279,7 @@ impl WalletContract {
     pub fn commit_router_recovery(env: Env) -> Result<(), WalletError> {
         let owner = load_owner(&env);
         owner.require_auth();
+        extend_instance_ttl(&env);
 
         let new_router: Address = env
             .storage()
@@ -303,6 +331,7 @@ impl WalletContract {
             .get(&DataKey::Router)
             .ok_or(WalletError::NotInitialized)?;
         router.require_auth();
+        extend_instance_ttl(&env);
 
         let token_addr: Address = env
             .storage()
@@ -319,6 +348,25 @@ impl WalletContract {
 
         Ok(())
     }
+
+    /// Replace the contract Wasm with the uploaded code identified by
+    /// `new_wasm_hash`. Only the owner may upgrade. Storage is preserved across
+    /// the upgrade, so pending router proposals, recovery slots, and the pause
+    /// flag carry over unchanged. The new Wasm must already be uploaded to the
+    /// ledger.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let owner = load_owner(&env);
+        owner.require_auth();
+        extend_instance_ttl(&env);
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+
+        env.events().publish(
+            (Symbol::new(&env, "upgraded"),),
+            (owner, new_wasm_hash),
+        );
+    }
 }
 
 /// Load the owner, failing with `WalletError::NotInitialized` before `initialize`.
@@ -327,4 +375,13 @@ fn load_owner(env: &Env) -> Address {
         .instance()
         .get(&DataKey::Owner)
         .unwrap_or_else(|| env.panic_with_error(WalletError::NotInitialized))
+}
+
+/// Renew the instance TTL when it drops below [`INSTANCE_TTL_THRESHOLD`].
+/// Instance storage holds all wallet state, so this single call keeps the
+/// whole wallet, including pending router configuration, from expiring.
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 }

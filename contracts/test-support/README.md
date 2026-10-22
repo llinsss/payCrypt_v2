@@ -36,6 +36,24 @@ For each value-moving contract, the table below records whether the contract
 > fee-on-transfer token is a legitimate token variant, so the contract must
 > account for the reduced received amount rather than revert).
 
+## Authorization fixtures
+
+The `auth` module configures the test `Env`'s mocked authorization so tests
+state who authorized which call without building `MockAuth` trees by hand.
+These helpers only change what the test host reports as signed. They never
+bypass a contract's own `require_auth` checks, which still run.
+
+| Helper | Mocked authorization | Expected contract outcome |
+| --- | --- | --- |
+| `authorize_all` | every `require_auth` succeeds | authorized path proceeds |
+| `unauthorized` | no `require_auth` succeeds (`set_auths(&[])`) | rejected with an auth error |
+| `authorize_invoke` | one address, for one exact `(contract, fn, args)` | proceeds only for that call |
+| `authorize_delegated` | owner signs for a delegate call that sub-invokes one target call | proceeds only for that chain |
+
+Each helper replaces the previous mock set, so call one helper right before
+the invocation it covers. Changing the args, target, or function in a test
+should make the call fail.
+
 ## Usage
 
 Import the doubles from the shared test-support module in each crate's test
