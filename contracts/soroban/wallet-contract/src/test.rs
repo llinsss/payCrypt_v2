@@ -1,5 +1,56 @@
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger as _}, token::StellarAssetClient};
+use soroban_sdk::{contract, contractimpl, contracttype, testutils::{Address as _, Ledger as _}, token::StellarAssetClient};
+
+#[contract]
+struct ReentrantToken;
+
+#[contracttype]
+#[derive(Clone)]
+enum ReentrantTokenKey {
+    Balance(Address),
+    Wallet,
+    Signer,
+    ProposalId,
+    ReentryBlocked,
+}
+
+#[contractimpl]
+impl ReentrantToken {
+    pub fn balance(env: Env, id: Address) -> i128 {
+        env.storage().instance().get(&ReentrantTokenKey::Balance(id)).unwrap_or(0)
+    }
+
+    pub fn mint(env: Env, id: Address, amount: i128) {
+        let balance = Self::balance(env.clone(), id.clone());
+        env.storage().instance().set(&ReentrantTokenKey::Balance(id), &(balance + amount));
+    }
+
+    pub fn configure_reentry(env: Env, wallet: Address, signer: Address, proposal_id: u64) {
+        env.storage().instance().set(&ReentrantTokenKey::Wallet, &wallet);
+        env.storage().instance().set(&ReentrantTokenKey::Signer, &signer);
+        env.storage().instance().set(&ReentrantTokenKey::ProposalId, &proposal_id);
+    }
+
+    pub fn reentry_was_blocked(env: Env) -> bool {
+        env.storage().instance().get(&ReentrantTokenKey::ReentryBlocked).unwrap_or(false)
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        let wallet: Address = env.storage().instance().get(&ReentrantTokenKey::Wallet).unwrap();
+        let signer: Address = env.storage().instance().get(&ReentrantTokenKey::Signer).unwrap();
+        let proposal_id: u64 = env.storage().instance().get(&ReentrantTokenKey::ProposalId).unwrap();
+        let nested = WalletContractClient::new(&env, &wallet).try_execute(&signer, &proposal_id);
+        env.storage().instance().set(&ReentrantTokenKey::ReentryBlocked, &nested.is_err());
+
+        let from_balance = Self::balance(env.clone(), from.clone());
+        if from_balance < amount {
+            panic_with_error!(&env, WalletError::InvalidWithdrawal);
+        }
+        let to_balance = Self::balance(env.clone(), to.clone());
+        env.storage().instance().set(&ReentrantTokenKey::Balance(from), &(from_balance - amount));
+        env.storage().instance().set(&ReentrantTokenKey::Balance(to), &(to_balance + amount));
+    }
+}
 
 fn setup(env: &Env, threshold: u32) -> (WalletContractClient<'_>, Address, Address, Address, Address) {
     env.mock_all_auths();
@@ -306,28 +357,25 @@ fn reentrancy_detected_during_execute() {
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let signer_a = Address::generate(&env);
-    let signer_b = Address::generate(&env);
     let destination = Address::generate(&env);
+    let token_id = env.register(ReentrantToken, ());
+    let token = ReentrantTokenClient::new(&env, &token_id);
     let wallet_id = env.register(WalletContract, ());
     let wallet = WalletContractClient::new(&env, &wallet_id);
-    let signers = Vec::from_array(&env, [signer_a.clone(), signer_b.clone()]);
-    wallet.initialize(&admin, &signers, &2, &100, &false);
-
-    let token_admin = Address::generate(&env);
-    let token = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
-    wallet.set_token_supported(&admin, &token, &true);
-    let token_client = StellarAssetClient::new(&env, &token);
-    token_client.mint(&wallet.address, &50);
+    let signers = Vec::from_array(&env, [signer_a.clone(), token_id.clone()]);
+    wallet.initialize(&admin, &signers, &1, &100, &false);
+    wallet.set_token_supported(&admin, &token_id, &true);
+    token.mint(&wallet.address, &50);
 
     env.ledger().set_timestamp(100);
-    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25, &2000);
-    wallet.approve(&signer_b, &proposal_id);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token_id, &destination, &25, &2000);
+    token.configure_reentry(&wallet.address, &token_id, &proposal_id);
 
-    // The reentrancy guard is set during execute
-    // We can't easily test reentrancy without a malicious token contract,
-    // but we verify the error variant exists and the guard logic is in place
-    wallet.execute(&signer_b, &proposal_id);
+    wallet.execute(&signer_a, &proposal_id);
+    assert!(token.reentry_was_blocked());
     assert_eq!(wallet.execution_nonce(), 1);
+    assert_eq!(wallet.reserved_balance(&token_id), 0);
+    assert_eq!(token.balance(&destination), 25);
 }
 
 #[test]
@@ -424,4 +472,38 @@ fn boundary_withdrawal_amounts() {
     // Valid amount
     let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &50, &2000);
     wallet.execute(&signer_a, &proposal_id);
+}
+
+#[test]
+fn execute_requires_an_active_signer() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, _, destination) = setup(&env, 1);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &10, &2000);
+
+    let outsider = Address::generate(&env);
+    assert!(wallet.try_execute(&outsider, &proposal_id).is_err());
+    assert_eq!(wallet.execution_nonce(), 0);
+    assert!(!wallet.proposal(&proposal_id).executed);
+}
+
+#[test]
+fn failed_token_transfer_rolls_back_withdrawal_state() {
+    let env = Env::default();
+    let (wallet, admin, signer_a, _, destination) = setup(&env, 1);
+    let token = supported_token(&env, &wallet, &admin);
+    env.ledger().set_timestamp(100);
+    let proposal_id = wallet.propose_withdrawal(&signer_a, &token, &destination, &25, &2000);
+
+    // The transfer now fails because the wallet's token balance no longer
+    // covers the proposal. Every execution write must be rolled back.
+    StellarAssetClient::new(&env, &token).burn(&wallet.address, &50);
+    let result = wallet.try_execute(&signer_a, &proposal_id);
+
+    assert!(result.is_err());
+    assert_eq!(wallet.execution_nonce(), 0);
+    assert!(!wallet.proposal(&proposal_id).executed);
+    assert_eq!(wallet.reserved_balance(&token), 25);
+    assert_eq!(soroban_sdk::token::Client::new(&env, &token).balance(&destination), 0);
 }
