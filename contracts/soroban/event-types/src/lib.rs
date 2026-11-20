@@ -74,7 +74,7 @@ pub enum DecodeError {
 }
 
 impl EventEnvelope {
-    pub fn decode(self) -> Result<DecodedEvent, DecodeError> {
+    pub fn decode(&self) -> Result<DecodedEvent, DecodeError> {
         if !(1..=CURRENT_SCHEMA_VERSION).contains(&self.schema_version) {
             return Err(DecodeError::UnsupportedSchemaVersion(self.schema_version));
         }
@@ -141,11 +141,39 @@ mod tests {
         let mut events: Vec<EventEnvelope> =
             serde_json::from_str(include_str!("../fixtures/events.v2.json")).expect("fixture parses");
         events[0].schema_version = 99;
-        assert!(matches!(events.remove(0).decode(), Err(DecodeError::UnsupportedSchemaVersion(99))));
+        assert!(matches!(
+            events[0].decode(),
+            Err(DecodeError::UnsupportedSchemaVersion(99))
+        ));
 
         let mut events: Vec<EventEnvelope> =
             serde_json::from_str(include_str!("../fixtures/events.v2.json")).expect("fixture parses");
         events[0].event_type = "registry_unknown".to_owned();
-        assert!(matches!(events.remove(0).decode(), Err(DecodeError::UnknownEventType(_))));
+        assert!(matches!(
+            events[0].decode(),
+            Err(DecodeError::UnknownEventType(_))
+        ));
+    }
+
+    #[test]
+    fn replay_keeps_processing_after_unknown_future_schema_events() {
+        let events: Vec<EventEnvelope> =
+            serde_json::from_str(include_str!("../fixtures/events.replay.json"))
+                .expect("replay fixture parses");
+
+        assert_eq!(events.len(), 3);
+        assert!(matches!(
+            events[0].decode(),
+            Ok(DecodedEvent::RegistryTagRegistered(_, _))
+        ));
+        assert!(matches!(
+            events[1].decode(),
+            Err(DecodeError::UnsupportedSchemaVersion(3))
+        ));
+        assert_eq!(events[1].event_id, "tx-future:0:0");
+        assert!(matches!(
+            events[2].decode(),
+            Ok(DecodedEvent::WalletWithdrawalExecuted(_, _))
+        ));
     }
 }
