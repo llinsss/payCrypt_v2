@@ -338,6 +338,7 @@ impl WalletContract {
         expiry: u64,
     ) -> u64 {
         require_signer(&env, &proposer);
+        ensure_not_reentrant(&env);
         if !env.storage().instance().get(&DataKey::SupportedToken(token_address.clone())).unwrap_or(false) {
             fail(&env, WalletError::UnsupportedToken);
         }
@@ -353,7 +354,11 @@ impl WalletContract {
             fail(&env, WalletError::DestinationNotAllowed);
         }
         let reserved = get_reserved(&env, &token_address);
+        // `balance` is an external token call too; keep the withdrawal state
+        // locked while it runs in case a non-standard token calls back.
+        enter_reentrancy_guard(&env);
         let balance = token::Client::new(&env, &token_address).balance(&env.current_contract_address());
+        leave_reentrancy_guard(&env);
         if balance - reserved < amount {
             fail(&env, WalletError::InsufficientAvailableBalance);
         }
@@ -395,6 +400,7 @@ impl WalletContract {
     /// `DuplicateApproval`. Emits `wallet_withdrawal_approved`.
     pub fn approve(env: Env, signer: Address, proposal_id: u64) {
         require_signer(&env, &signer);
+        ensure_not_reentrant(&env);
         let mut proposal = get_proposal(&env, proposal_id);
         let execution_nonce: u64 = env.storage().instance().get(&DataKey::ExecutionNonce).unwrap_or(0);
         if proposal.nonce < execution_nonce {
@@ -430,6 +436,7 @@ impl WalletContract {
     /// This allows signers to withdraw their delegated approval before execution.
     pub fn revoke_approval(env: Env, signer: Address, proposal_id: u64) {
         require_signer(&env, &signer);
+        ensure_not_reentrant(&env);
         let mut proposal = get_proposal(&env, proposal_id);
         let execution_nonce: u64 = env.storage().instance().get(&DataKey::ExecutionNonce).unwrap_or(0);
         if proposal.nonce < execution_nonce {
@@ -466,6 +473,7 @@ impl WalletContract {
     /// Emits `wallet_withdrawal_executed`.
     pub fn execute(env: Env, caller: Address, proposal_id: u64) {
         require_signer(&env, &caller);
+        ensure_not_reentrant(&env);
         let mut proposal = get_proposal(&env, proposal_id);
         let execution_nonce: u64 = env.storage().instance().get(&DataKey::ExecutionNonce).unwrap_or(0);
         if proposal.nonce != execution_nonce {
@@ -481,11 +489,14 @@ impl WalletContract {
         if proposal.approval_count < threshold {
             fail(&env, WalletError::InsufficientApprovals);
         }
-        let entered_flag = Symbol::new(&env, "reentrancy_guard");
-        if env.storage().instance().get::<_, bool>(&entered_flag).unwrap_or(false) {
-            fail(&env, WalletError::ReentrancyDetected);
-        }
-        env.storage().instance().set(&entered_flag, &true);
+
+        // Apply effects before the external token call. If transfer fails,
+        // Soroban rolls back these writes and the guard in the same invocation.
+        enter_reentrancy_guard(&env);
+        set_reserved(&env, &proposal.token, get_reserved(&env, &proposal.token) - proposal.amount);
+        proposal.executed = true;
+        env.storage().instance().set(&DataKey::Proposal(proposal_id), &proposal);
+        env.storage().instance().set(&DataKey::ExecutionNonce, &(execution_nonce + 1));
 
         token::Client::new(&env, &proposal.token).transfer(
             &env.current_contract_address(),
@@ -493,11 +504,7 @@ impl WalletContract {
             &proposal.amount,
         );
 
-        env.storage().instance().remove(&entered_flag);
-        set_reserved(&env, &proposal.token, get_reserved(&env, &proposal.token) - proposal.amount);
-        proposal.executed = true;
-        env.storage().instance().set(&DataKey::Proposal(proposal_id), &proposal);
-        env.storage().instance().set(&DataKey::ExecutionNonce, &(execution_nonce + 1));
+        leave_reentrancy_guard(&env);
         WithdrawalExecuted {
             event_type: Symbol::new(&env, "wallet_withdrawal_executed"),
             schema_version: 1,
@@ -518,6 +525,7 @@ impl WalletContract {
     /// `ProposalExecuted` if it executed (its reservation was already freed),
     /// and `ProposalReleased` if it was already released.
     pub fn release_withdrawal(env: Env, proposal_id: u64) {
+        ensure_not_reentrant(&env);
         let proposal = get_proposal(&env, proposal_id);
         if env.ledger().timestamp() < proposal.expiry {
             fail(&env, WalletError::ProposalNotExpired);
@@ -595,6 +603,22 @@ fn get_reserved(env: &Env, token: &Address) -> i128 {
 
 fn set_reserved(env: &Env, token: &Address, amount: i128) {
     env.storage().instance().set(&DataKey::Reserved(token.clone()), &amount);
+}
+
+fn ensure_not_reentrant(env: &Env) {
+    let key = Symbol::new(env, "reentrancy_guard");
+    if env.storage().instance().get::<_, bool>(&key).unwrap_or(false) {
+        fail(env, WalletError::ReentrancyDetected);
+    }
+}
+
+fn enter_reentrancy_guard(env: &Env) {
+    ensure_not_reentrant(env);
+    env.storage().instance().set(&Symbol::new(env, "reentrancy_guard"), &true);
+}
+
+fn leave_reentrancy_guard(env: &Env) {
+    env.storage().instance().remove(&Symbol::new(env, "reentrancy_guard"));
 }
 
 fn get_proposal(env: &Env, proposal_id: u64) -> WithdrawalProposal {
