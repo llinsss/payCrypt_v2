@@ -1,0 +1,55 @@
+[
+  {
+    "event_id": "tx-registry:0:0",
+    "event_type": "registry_tag_registered",
+    "schema_version": 2,
+    "contract_id": "CAREGISTRY",
+    "ledger": 100,
+    "transaction_hash": "tx-registry",
+    "operation_index": 0,
+    "event_index": 0,
+    "data": {
+      "tag": "alice",
+      "owner": "GOWNER1",
+      "wallet_id": "CAWALLET1",
+      "created_at_ledger": 99
+    }
+  },
+  {
+    "event_id": "tx-future:0:0",
+    "event_type": "payment_settled",
+    "schema_version": 3,
+    "contract_id": "CAPAYMENT",
+    "ledger": 104,
+    "transaction_hash": "tx-future",
+    "operation_index": 0,
+    "event_index": 0,
+    "data": {
+      "payment_id": "payment-9",
+      "sender": "GSENDER1",
+      "recipient": "GRECIPIENT1",
+      "token": "CUSDC",
+      "amount": 600,
+      "memo": "invoice-9",
+      "settlement_reference": "settlement-9"
+    }
+  },
+  {
+    "event_id": "tx-wallet:0:0",
+    "event_type": "wallet_withdrawal_executed",
+    "schema_version": 2,
+    "contract_id": "CAWALLET1",
+    "ledger": 105,
+    "transaction_hash": "tx-wallet",
+    "operation_index": 0,
+    "event_index": 0,
+    "data": {
+      "proposal_id": 8,
+      "nonce": 8,
+      "destination": "GDEST2",
+      "token": "CUSDC",
+      "amount": 300,
+      "approval_count": 2
+    }
+  }
+]
