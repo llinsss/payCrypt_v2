@@ -32,6 +32,7 @@ pub enum WalletError {
     InsufficientAvailableBalance = 20,
     ProposalNotExpired = 21,
     ProposalReleased = 22,
+    InvalidFeeConfig = 26,
 }
 
 #[contracttype]
@@ -51,6 +52,8 @@ enum DataKey {
     PendingAdmin,
     Reserved(Address),
     Released(u64),
+    FeeRecipient,
+    FeeBasisPoints,
 }
 
 #[contracttype]
@@ -158,6 +161,17 @@ pub struct WithdrawalReleased {
     pub proposal_id: u64,
     pub token: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigUpdated {
+    #[topic]
+    pub event_type: Symbol,
+    #[topic]
+    pub schema_version: u32,
+    pub recipient: Address,
+    pub basis_points: u32,
 }
 
 #[contract]
@@ -582,6 +596,34 @@ impl WalletContract {
     /// `storage_schemas` entries in `compatibility.json` before upgrading.
     pub fn storage_schema_version(_env: Env) -> u32 {
         STORAGE_SCHEMA_VERSION
+    }
+
+    /// Sets the protocol fee configuration. Admin only.
+    /// basis_points must be <= 1000 (10% max); fails with InvalidFeeConfig otherwise.
+    pub fn set_fee_config(env: Env, caller: Address, recipient: Address, basis_points: u32) {
+        require_admin(&env, &caller);
+        if basis_points > 1000 {
+            fail(&env, WalletError::InvalidFeeConfig);
+        }
+        env.storage().instance().set(&DataKey::FeeRecipient, &recipient);
+        env.storage().instance().set(&DataKey::FeeBasisPoints, &basis_points);
+        FeeConfigUpdated {
+            event_type: Symbol::new(&env, "wallet_fee_config_updated"),
+            schema_version: 1,
+            recipient,
+            basis_points,
+        }
+        .publish(&env);
+    }
+
+    /// Returns the current fee config (recipient, basis_points), or None if not set.
+    pub fn fee_config(env: Env) -> Option<(Address, u32)> {
+        let recipient: Option<Address> = env.storage().instance().get(&DataKey::FeeRecipient);
+        let bps: Option<u32> = env.storage().instance().get(&DataKey::FeeBasisPoints);
+        match (recipient, bps) {
+            (Some(r), Some(b)) => Some((r, b)),
+            _ => None,
+        }
     }
 }
 
