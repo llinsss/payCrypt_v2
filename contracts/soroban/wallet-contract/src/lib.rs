@@ -32,6 +32,7 @@ pub enum WalletError {
     InsufficientAvailableBalance = 20,
     ProposalNotExpired = 21,
     ProposalReleased = 22,
+    LedgerSequenceTooOld = 24,
 }
 
 #[contracttype]
@@ -51,6 +52,7 @@ enum DataKey {
     PendingAdmin,
     Reserved(Address),
     Released(u64),
+    MaxProposalAgeLedgers,
 }
 
 #[contracttype]
@@ -65,6 +67,7 @@ pub struct WithdrawalProposal {
     pub expiry: u64,
     pub approval_count: u32,
     pub executed: bool,
+    pub created_sequence: u32,
 }
 
 #[contractevent]
@@ -369,6 +372,7 @@ impl WalletContract {
             expiry,
             approval_count: 1,
             executed: false,
+            created_sequence: env.ledger().sequence(),
         };
         env.storage().instance().set(&DataKey::Proposal(id), &proposal);
         env.storage().instance().set(&DataKey::Approval(id, proposer), &true);
@@ -403,6 +407,7 @@ impl WalletContract {
         if env.ledger().timestamp() >= proposal.expiry {
             fail(&env, WalletError::ProposalExpired);
         }
+        check_ledger_freshness(&env, proposal.created_sequence);
         if proposal.executed {
             fail(&env, WalletError::ProposalExecuted);
         }
@@ -477,6 +482,7 @@ impl WalletContract {
         if proposal.executed {
             fail(&env, WalletError::ProposalExecuted);
         }
+        check_ledger_freshness(&env, proposal.created_sequence);
         let threshold: u32 = env.storage().instance().get(&DataKey::Threshold).unwrap();
         if proposal.approval_count < threshold {
             fail(&env, WalletError::InsufficientApprovals);
@@ -583,6 +589,13 @@ impl WalletContract {
     pub fn storage_schema_version(_env: Env) -> u32 {
         STORAGE_SCHEMA_VERSION
     }
+
+    /// Sets the maximum ledger-sequence age for proposals. Admin only.
+    /// Approve and execute fail with `LedgerSequenceTooOld` for older proposals.
+    pub fn set_max_proposal_age(env: Env, caller: Address, max_age_ledgers: u32) {
+        require_admin(&env, &caller);
+        env.storage().instance().set(&DataKey::MaxProposalAgeLedgers, &max_age_ledgers);
+    }
 }
 
 fn get_signers(env: &Env) -> Map<Address, bool> {
@@ -631,6 +644,14 @@ fn require_signer(env: &Env, signer: &Address) {
 
 fn fail(env: &Env, error: WalletError) -> ! {
     panic_with_error!(env, error)
+}
+
+fn check_ledger_freshness(env: &Env, created_sequence: u32) {
+    let max_age: u32 = env.storage().instance().get(&DataKey::MaxProposalAgeLedgers).unwrap_or(1000);
+    let age = env.ledger().sequence().saturating_sub(created_sequence);
+    if age > max_age {
+        fail(env, WalletError::LedgerSequenceTooOld);
+    }
 }
 
 #[cfg(test)]
