@@ -32,6 +32,7 @@ pub enum WalletError {
     InsufficientAvailableBalance = 20,
     ProposalNotExpired = 21,
     ProposalReleased = 22,
+    CircuitBreakerActive = 25,
 }
 
 #[contracttype]
@@ -51,6 +52,7 @@ enum DataKey {
     PendingAdmin,
     Reserved(Address),
     Released(u64),
+    CircuitBreaker,
 }
 
 #[contracttype]
@@ -158,6 +160,17 @@ pub struct WithdrawalReleased {
     pub proposal_id: u64,
     pub token: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CircuitBreakerTripped {
+    #[topic]
+    pub event_type: Symbol,
+    #[topic]
+    pub schema_version: u32,
+    pub tripped_by: Address,
+    pub active: bool,
 }
 
 #[contract]
@@ -338,6 +351,9 @@ impl WalletContract {
         expiry: u64,
     ) -> u64 {
         require_signer(&env, &proposer);
+        if env.storage().instance().get::<_, bool>(&DataKey::CircuitBreaker).unwrap_or(false) {
+            fail(&env, WalletError::CircuitBreakerActive);
+        }
         if !env.storage().instance().get(&DataKey::SupportedToken(token_address.clone())).unwrap_or(false) {
             fail(&env, WalletError::UnsupportedToken);
         }
@@ -466,6 +482,9 @@ impl WalletContract {
     /// Emits `wallet_withdrawal_executed`.
     pub fn execute(env: Env, caller: Address, proposal_id: u64) {
         require_signer(&env, &caller);
+        if env.storage().instance().get::<_, bool>(&DataKey::CircuitBreaker).unwrap_or(false) {
+            fail(&env, WalletError::CircuitBreakerActive);
+        }
         let mut proposal = get_proposal(&env, proposal_id);
         let execution_nonce: u64 = env.storage().instance().get(&DataKey::ExecutionNonce).unwrap_or(0);
         if proposal.nonce != execution_nonce {
@@ -582,6 +601,25 @@ impl WalletContract {
     /// `storage_schemas` entries in `compatibility.json` before upgrading.
     pub fn storage_schema_version(_env: Env) -> u32 {
         STORAGE_SCHEMA_VERSION
+    }
+
+    /// Trips or clears the circuit breaker. Admin only.
+    /// When active, propose_withdrawal and execute both fail with CircuitBreakerActive.
+    pub fn set_circuit_breaker(env: Env, caller: Address, active: bool) {
+        require_admin(&env, &caller);
+        env.storage().instance().set(&DataKey::CircuitBreaker, &active);
+        CircuitBreakerTripped {
+            event_type: Symbol::new(&env, "wallet_circuit_breaker"),
+            schema_version: 1,
+            tripped_by: caller,
+            active,
+        }
+        .publish(&env);
+    }
+
+    /// Returns true if the circuit breaker is active.
+    pub fn circuit_breaker_active(env: Env) -> bool {
+        env.storage().instance().get(&DataKey::CircuitBreaker).unwrap_or(false)
     }
 }
 
