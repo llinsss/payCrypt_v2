@@ -642,6 +642,148 @@ impl ContractCall {
     }
 }
 
+// ── Issue #787: Native XLM and token asset distinction ────────────────────────
+
+/// Distinguishes native XLM from SEP-41 token contracts.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AssetKind {
+    /// The Stellar native asset (XLM), transferred via `payment` operations.
+    Native,
+    /// A SEP-41 token contract identified by its Soroban contract ID.
+    Token(StrKey),
+}
+
+impl AssetKind {
+    /// Build from an asset, treating `Asset::Native` as `AssetKind::Native`
+    /// and `Asset::Issued` as a SAC contract (classic-to-Soroban bridge).
+    pub fn from_asset(asset: &Asset) -> Self {
+        match asset {
+            Asset::Native => AssetKind::Native,
+            Asset::Issued { code: _, issuer } => AssetKind::Token(issuer.clone()),
+        }
+    }
+
+    /// Return `true` only for XLM.
+    pub fn is_native(&self) -> bool {
+        matches!(self, AssetKind::Native)
+    }
+}
+
+// ── Issue #788: Payment reference uniqueness constraints ──────────────────────
+
+use std::collections::HashSet;
+
+/// Enforces that payment references are used at most once within a session.
+#[derive(Debug, Default)]
+pub struct PaymentReferenceGuard {
+    seen: HashSet<String>,
+}
+
+/// Error returned when a duplicate payment reference is detected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateReferenceError(pub String);
+
+impl fmt::Display for DuplicateReferenceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "duplicate payment reference: {}", self.0)
+    }
+}
+
+impl PaymentReferenceGuard {
+    /// Create an empty guard.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register `reference`; returns `Err` if already registered.
+    pub fn register(&mut self, reference: &str) -> Result<(), DuplicateReferenceError> {
+        if self.seen.contains(reference) {
+            return Err(DuplicateReferenceError(reference.to_string()));
+        }
+        self.seen.insert(reference.to_string());
+        Ok(())
+    }
+
+    /// Return `true` if `reference` has already been registered.
+    pub fn is_duplicate(&self, reference: &str) -> bool {
+        self.seen.contains(reference)
+    }
+}
+
+// ── Issue #789: Contract ID allowlists for trusted dependencies ───────────────
+
+/// Allowlist of trusted contract IDs. Any call targeting a contract outside
+/// the list is rejected before it reaches the network.
+#[derive(Debug, Clone, Default)]
+pub struct ContractAllowlist {
+    ids: HashSet<String>,
+}
+
+/// Error returned when a contract ID is not on the allowlist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractNotAllowedError(pub String);
+
+impl fmt::Display for ContractNotAllowedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "contract not on allowlist: {}", self.0)
+    }
+}
+
+impl ContractAllowlist {
+    /// Build an allowlist from an iterator of validated contract IDs.
+    pub fn new(ids: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        ContractAllowlist {
+            ids: ids.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Check whether `contract_id` is allowed, returning `Err` if not.
+    pub fn check(&self, contract_id: &str) -> Result<(), ContractNotAllowedError> {
+        if self.ids.contains(contract_id) {
+            Ok(())
+        } else {
+            Err(ContractNotAllowedError(contract_id.to_string()))
+        }
+    }
+}
+
+// ── Issue #790: Authorization handoff for contract-to-contract calls ──────────
+
+/// Wraps a `ContractCall` with sub-invocation authorization metadata so the
+/// host can verify that the calling contract explicitly authorised the callee.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorizedC2CCall {
+    /// The outbound call being authorized.
+    pub call: ContractCall,
+    /// The contract that is granting the authorization (the caller).
+    pub authorizing_contract: StrKey,
+}
+
+impl AuthorizedC2CCall {
+    /// Build an authorized cross-contract call.
+    ///
+    /// `authorizing_contract` must be a `C...` StrKey; `call` is validated by
+    /// `ContractCall::new` before this constructor is reached.
+    pub fn new(
+        authorizing_contract: &str,
+        call: ContractCall,
+    ) -> Result<Self, ValidationError> {
+        let authorizing_contract = StrKey::parse_contract_id(authorizing_contract)?;
+        Ok(AuthorizedC2CCall {
+            call,
+            authorizing_contract,
+        })
+    }
+
+    /// Ensure the calling contract is on the allowlist before executing.
+    pub fn check_allowlist(
+        &self,
+        allowlist: &ContractAllowlist,
+    ) -> Result<(), ContractNotAllowedError> {
+        allowlist.check(self.call.contract_id().as_str())
+    }
+}
+
 fn base32_decode(s: &str) -> Result<Vec<u8>, ValidationError> {
     const ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     let mut bits: u32 = 0;
