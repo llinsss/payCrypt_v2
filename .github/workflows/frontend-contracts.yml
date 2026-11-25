@@ -382,3 +382,35 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
 
+
+  wasm-reproducibility:
+    name: WASM artifact reproducibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: First build
+        run: |
+          cargo build --release --target wasm32-unknown-unknown
+          find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm' \
+            -exec sha256sum {} \; | sort > /tmp/hashes_first.txt
+          cat /tmp/hashes_first.txt
+      - name: Second build (separate target dir)
+        env:
+          CARGO_TARGET_DIR: target2
+        run: |
+          cargo build --release --target wasm32-unknown-unknown
+          find target2/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm' \
+            -exec sha256sum {} \; | sort | sed 's|target2/|target/|g' > /tmp/hashes_second.txt
+          cat /tmp/hashes_second.txt
+      - name: Compare hashes
+        run: |
+          if ! diff -u /tmp/hashes_first.txt /tmp/hashes_second.txt; then
+            echo "::error::WASM artifacts are not reproducible — hashes differ between builds"
+            exit 1
+          fi
+          echo "All WASM artifacts are reproducible."
