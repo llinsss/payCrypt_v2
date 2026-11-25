@@ -32,6 +32,7 @@ pub enum WalletError {
     InsufficientAvailableBalance = 20,
     ProposalNotExpired = 21,
     ProposalReleased = 22,
+    InvalidMemo = 23,
 }
 
 #[contracttype]
@@ -65,6 +66,8 @@ pub struct WithdrawalProposal {
     pub expiry: u64,
     pub approval_count: u32,
     pub executed: bool,
+    pub memo: Option<Symbol>,
+    pub destination_tag: Option<u32>,
 }
 
 #[contractevent]
@@ -82,6 +85,8 @@ pub struct WithdrawalProposed {
     pub destination: Address,
     pub amount: i128,
     pub expiry: u64,
+    pub memo: Option<Symbol>,
+    pub destination_tag: Option<u32>,
 }
 
 #[contractevent]
@@ -336,6 +341,8 @@ impl WalletContract {
         destination: Address,
         amount: i128,
         expiry: u64,
+        memo: Option<Symbol>,
+        destination_tag: Option<u32>,
     ) -> u64 {
         require_signer(&env, &proposer);
         if !env.storage().instance().get(&DataKey::SupportedToken(token_address.clone())).unwrap_or(false) {
@@ -369,6 +376,8 @@ impl WalletContract {
             expiry,
             approval_count: 1,
             executed: false,
+            memo: memo.clone(),
+            destination_tag,
         };
         env.storage().instance().set(&DataKey::Proposal(id), &proposal);
         env.storage().instance().set(&DataKey::Approval(id, proposer), &true);
@@ -383,6 +392,8 @@ impl WalletContract {
             destination: proposal.destination,
             amount: proposal.amount,
             expiry: proposal.expiry,
+            memo,
+            destination_tag,
         }
         .publish(&env);
         id
