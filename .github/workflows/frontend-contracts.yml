@@ -382,3 +382,48 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
 
+
+  interface-snapshot:
+    name: Contract interface snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install stellar-cli
+        run: cargo install --locked stellar-cli --version 22.0.1
+      - name: Build Soroban contracts (wasm32)
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Generate interface snapshots
+        run: |
+          set -euo pipefail
+          for wasm in $(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' ! -name '*_test.wasm'); do
+            name=$(basename "$wasm" .wasm)
+            snapshot_path="contracts/soroban/${name}/interface.snapshot"
+            if [ ! -f "$snapshot_path" ]; then
+              echo "No snapshot file at $snapshot_path; skipping diff check."
+              continue
+            fi
+            stellar contract inspect --wasm "$wasm" --output xdr-base64-array > /tmp/${name}.generated
+            committed=$(grep -v '^#' "$snapshot_path" | grep -v '^$')
+            generated=$(cat /tmp/${name}.generated)
+            if [ "$committed" = "PENDING" ]; then
+              echo "::notice::Snapshot for ${name} is PENDING — upload /tmp/${name}.generated as the new baseline."
+            elif [ "$committed" != "$generated" ]; then
+              echo "::error::Interface snapshot mismatch for ${name}. Run 'stellar contract inspect --wasm <wasm> --output xdr-base64-array' and commit the result to ${snapshot_path}."
+              diff <(echo "$committed") <(echo "$generated") || true
+              exit 1
+            else
+              echo "${name}: interface snapshot matches."
+            fi
+          done
+      - name: Upload generated snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interface-snapshots
+          path: /tmp/*.generated
+          if-no-files-found: ignore
