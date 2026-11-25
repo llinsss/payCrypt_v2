@@ -202,7 +202,9 @@ pub enum SignerError {
 pub struct SignerRegistry {
     owner: Option<[u8; 32]>,
     capabilities: BTreeMap<[u8; 32], Vec<Capability>>,
-    last_operation: BTreeMap<[u8; 32], u64>,
+    /// Per-(signer, capability) nonce domains so replay protection is scoped
+    /// per operation type rather than global per signer (#791).
+    nonce_domains: BTreeMap<([u8; 32], Capability), u64>,
 }
 
 impl SignerRegistry {
@@ -211,7 +213,7 @@ impl SignerRegistry {
         Self {
             owner: Some(owner),
             capabilities: BTreeMap::new(),
-            last_operation: BTreeMap::new(),
+            nonce_domains: BTreeMap::new(),
         }
     }
 
@@ -278,7 +280,8 @@ impl SignerRegistry {
                 required,
             });
         }
-        let last = self.last_operation.get(signer).copied().unwrap_or(0);
+        let domain_key = (*signer, required);
+        let last = self.nonce_domains.get(&domain_key).copied().unwrap_or(0);
         if operation_id <= last {
             if operation_id == last && last != 0 {
                 return Err(SignerError::Replay {
@@ -293,13 +296,22 @@ impl SignerRegistry {
             });
         }
         // Only mutate after all checks pass.
-        self.last_operation.insert(*signer, operation_id);
+        self.nonce_domains.insert(domain_key, operation_id);
         Ok(())
     }
 
-    /// Returns the last consumed operation id for `signer`, if any.
+    /// Returns the last consumed operation id for `signer` in the given capability domain.
+    pub fn last_operation_for(&self, signer: &[u8; 32], capability: Capability) -> Option<u64> {
+        self.nonce_domains.get(&(*signer, capability)).copied()
+    }
+
+    /// Returns the highest nonce used by `signer` across all capability domains.
     pub fn last_operation(&self, signer: &[u8; 32]) -> Option<u64> {
-        self.last_operation.get(signer).copied()
+        self.nonce_domains
+            .iter()
+            .filter(|((s, _), _)| s == signer)
+            .map(|(_, &v)| v)
+            .max()
     }
 
     fn require_owner(&self, caller: &[u8; 32]) -> Result<(), SignerError> {
