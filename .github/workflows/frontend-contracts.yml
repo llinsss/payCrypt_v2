@@ -382,3 +382,30 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
 
+
+  storage-footprint:
+    name: Wallet contract storage-footprint regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Run storage-footprint benchmark
+        run: |
+          # BUDGET_RECORD=1 prints new ceilings; without it the bench checks
+          # against budget_ceilings.txt and exits non-zero on a regression.
+          #
+          # On the first run with an empty ceilings file (only comments) the
+          # bench will report "no recorded ceiling" for each op and exit 1.
+          # Record initial ceilings with:
+          #   BUDGET_RECORD=1 cargo bench --bench storage_footprint -p wallet-contract
+          # then commit the output lines into contracts/soroban/wallet-contract/budget_ceilings.txt.
+          if grep -qvE '^\s*(#|$)' contracts/soroban/wallet-contract/budget_ceilings.txt 2>/dev/null; then
+            cargo bench --bench storage_footprint -p wallet-contract
+          else
+            echo "::notice::budget_ceilings.txt has no recorded values yet. Run BUDGET_RECORD=1 cargo bench --bench storage_footprint -p wallet-contract and commit the output."
+            BUDGET_RECORD=1 cargo bench --bench storage_footprint -p wallet-contract
+          fi
