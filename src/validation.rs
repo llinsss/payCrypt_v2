@@ -295,6 +295,26 @@ fn crc16_xmodem(data: &[u8]) -> u16 {
     crc
 }
 
+/// SEP-41 interface methods a recipient contract must expose for token transfers.
+pub const REQUIRED_SEP41_METHODS: &[&str] = &["transfer", "balance"];
+
+/// Check that a recipient contract exposes the SEP-41 interface required by
+/// Soroban token payouts (issue #785).
+///
+/// `exported_methods` is the list of function names exported by the contract,
+/// obtained from a prior contract meta query. Returns the first missing method
+/// name, or `Ok(())` when all required methods are present.
+pub fn check_recipient_contract_compatibility<'a>(
+    exported_methods: &[&'a str],
+) -> Result<(), &'a str> {
+    for &required in REQUIRED_SEP41_METHODS {
+        if !exported_methods.contains(&required) {
+            return Err(required);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
