@@ -37,6 +37,8 @@ pub enum ValidationError {
     EmptyNetworkPassphrase,
     /// The network passphrase did not match the expected network.
     NetworkMismatch { expected: String, found: String },
+    /// A payment amount was zero, negative, or exceeded the maximum supply.
+    InvalidPaymentAmount { found: i128 },
 }
 
 impl fmt::Display for ValidationError {
@@ -71,6 +73,9 @@ impl fmt::Display for ValidationError {
             ValidationError::EmptyNetworkPassphrase => write!(f, "network passphrase is empty"),
             ValidationError::NetworkMismatch { expected, found } => {
                 write!(f, "network mismatch: expected '{expected}', found '{found}'")
+            }
+            ValidationError::InvalidPaymentAmount { found } => {
+                write!(f, "payment amount {found} stroops is out of range (must be 1..={MAX_PAYMENT_STROOPS})")
             }
         }
     }
@@ -240,6 +245,18 @@ fn validate_asset_code(code: &str) -> Result<(), ValidationError> {
 pub fn reject_token_contract(contract: &str) -> Result<(), ValidationError> {
     if ContractId::parse(contract).is_ok() {
         return Err(ValidationError::TokenContractNotAllowed);
+    }
+    Ok(())
+}
+
+/// Maximum single-payment amount in stroops (500 billion XLM × 10 000 000 stroops/XLM).
+/// Keeps arithmetic within i128 range and far below the total XLM supply.
+pub const MAX_PAYMENT_STROOPS: i128 = 500_000_000_000 * 10_000_000;
+
+/// Validate that a payment amount in stroops is positive and ≤ MAX_PAYMENT_STROOPS.
+pub fn validate_payment_amount(stroops: i128) -> Result<(), ValidationError> {
+    if stroops <= 0 || stroops > MAX_PAYMENT_STROOPS {
+        return Err(ValidationError::InvalidPaymentAmount { found: stroops });
     }
     Ok(())
 }
