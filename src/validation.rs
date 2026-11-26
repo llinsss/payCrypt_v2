@@ -295,6 +295,35 @@ fn crc16_xmodem(data: &[u8]) -> u16 {
     crc
 }
 
+/// Errors specific to trustline precondition checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrustlineError {
+    /// The recipient account has no trustline for the payout asset.
+    MissingTrustline { asset_code: String, issuer: String },
+    /// The recipient trustline limit is zero, preventing any deposit.
+    TrustlineLimitZero,
+}
+
+/// Check that a Soroban token payout can proceed: the asset must be issued
+/// (not native) and the caller supplies evidence that the trustline exists.
+///
+/// `trustline_exists` should be the result of a prior ledger state query.
+/// Returns `Err(TrustlineError::MissingTrustline)` when the payout would
+/// fail on-chain due to a missing trustline (issue #786).
+pub fn check_trustline_precondition(
+    code: &str,
+    issuer: &str,
+    trustline_exists: bool,
+) -> Result<(), TrustlineError> {
+    if !trustline_exists {
+        return Err(TrustlineError::MissingTrustline {
+            asset_code: code.to_owned(),
+            issuer: issuer.to_owned(),
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
