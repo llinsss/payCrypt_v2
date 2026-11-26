@@ -295,6 +295,36 @@ fn crc16_xmodem(data: &[u8]) -> u16 {
     crc
 }
 
+/// Maximum number of assets an admin rescue operation may move in one call.
+/// Bounded to prevent fee exhaustion and unbounded storage access (issue #797).
+pub const ADMIN_RESCUE_MAX_ASSETS: usize = 10;
+
+/// Errors produced by bounded admin rescue validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdminRescueError {
+    /// The caller is not the designated admin account.
+    Unauthorized,
+    /// The rescue batch exceeds ADMIN_RESCUE_MAX_ASSETS.
+    BatchTooLarge { requested: usize, limit: usize },
+}
+
+/// Validate a bounded admin rescue request before it reaches Soroban.
+///
+/// `is_admin` must be derived from an on-chain admin authorization check.
+/// `asset_count` is the number of assets the caller wants to move.
+pub fn validate_admin_rescue(is_admin: bool, asset_count: usize) -> Result<(), AdminRescueError> {
+    if !is_admin {
+        return Err(AdminRescueError::Unauthorized);
+    }
+    if asset_count > ADMIN_RESCUE_MAX_ASSETS {
+        return Err(AdminRescueError::BatchTooLarge {
+            requested: asset_count,
+            limit: ADMIN_RESCUE_MAX_ASSETS,
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
