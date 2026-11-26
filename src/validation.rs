@@ -295,6 +295,16 @@ fn crc16_xmodem(data: &[u8]) -> u16 {
     crc
 }
 
+/// Validate that an issued asset has a legal code AND a valid issuer account ID.
+///
+/// Convenience wrapper for issue #783: combines the two validation rules that
+/// every issued-asset path must pass before hitting Soroban.
+pub fn validate_issued_asset(code: &str, issuer: &str) -> Result<(), ValidationError> {
+    validate_asset_code(code)?;
+    AccountId::parse(issuer)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
